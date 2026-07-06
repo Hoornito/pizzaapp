@@ -31,7 +31,9 @@ declare module 'next-auth' {
   }
 }
 
-declare module 'next-auth/jwt' {
+// En next-auth v5 (Auth.js) la interfaz JWT vive en @auth/core/jwt; el submódulo
+// 'next-auth/jwt' no es resoluble para la augmentation de tipos.
+declare module '@auth/core/jwt' {
   interface JWT {
     role: Role;
     phone?: string | null;
