@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { signIn, getProviders } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Box from '@mui/material/Box';
@@ -16,7 +16,7 @@ import { useForm } from 'react-hook-form';
 import { BrandLogo } from '@/components/layout/BrandLogo';
 import type { LoginInput } from '@/lib/validators';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/menu';
@@ -154,5 +154,14 @@ export default function LoginPage() {
         </Link>
       </Typography>
     </Box>
+  );
+}
+
+// useSearchParams() exige un límite de Suspense para poder prerenderar la página.
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, use } from 'react';
+import { useState, useEffect, useRef, useCallback, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
@@ -62,7 +62,7 @@ function BreathingStepIcon({ active, completed, icon }: StepIconProps) {
   );
 }
 
-export default function OrderDetailPage({ params }: Props) {
+function OrderDetailContent({ params }: Props) {
   const { id } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -388,5 +388,14 @@ export default function OrderDetailPage({ params }: Props) {
         </Box>
       </Paper>
     </Container>
+  );
+}
+
+// useSearchParams() exige un límite de Suspense para poder prerenderar la página.
+export default function OrderDetailPage({ params }: Props) {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <OrderDetailContent params={params} />
+    </Suspense>
   );
 }
