@@ -9,7 +9,9 @@ COPY package*.json ./
 # `npm install` (no `npm ci`) porque el lockfile del monorepo vive en la raíz,
 # no en apps/web (que es el contexto de build). apps/web/package.json ya lista
 # todas las dependencias, así que la instalación es completa igual.
-RUN npm install
+# `--legacy-peer-deps`: next-auth v5 beta declara un peer de nodemailer@7 que
+# choca con el nodemailer@6 del proyecto; sin el flag, npm aborta por ERESOLVE.
+RUN npm install --legacy-peer-deps
 
 # ─── Development ──────────────────────────────────────────────────────────────
 FROM base AS development
