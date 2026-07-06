@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     }
 
     const dbToken = await prisma.whatsAppToken.findFirst({
-      where: { token, isUsed: false },
+      where: { token, used: false },
     });
 
     if (!dbToken) {
