@@ -1,0 +1,22 @@
+# Caddy saca y renueva el certificado HTTPS (Let's Encrypt) solo, apenas el DNS
+# apunte a este servidor y los puertos 80/443 estén abiertos. Los websockets de
+# socket.io pasan de forma transparente (Caddy detecta el Upgrade automáticamente).
+
+{
+	# Email para Let's Encrypt (avisos de vencimiento / recuperación).
+	email agus.fernandez.y@gmail.com
+}
+
+# www → dominio raíz (una sola URL canónica).
+www.pizzacambalache.com.ar {
+	redir https://pizzacambalache.com.ar{uri} permanent
+}
+
+pizzacambalache.com.ar {
+	encode zstd gzip
+	# Sube de archivos / imágenes: subimos el límite por las dudas.
+	request_body {
+		max_size 15MB
+	}
+	reverse_proxy app:3000
+}

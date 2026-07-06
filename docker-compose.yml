@@ -1,0 +1,87 @@
+services:
+  app:
+    build:
+      context: ./apps/web
+      dockerfile: ../../docker/Dockerfile
+      target: development
+    container_name: pizzaapp_web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      TZ: America/Argentina/Buenos_Aires
+      DATABASE_URL: postgresql://pizzaapp:pizzaapp123@postgres:5432/pizzaapp?schema=public
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      AUTH_SECRET: ${AUTH_SECRET:-dev-secret-change-in-production-32c}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN}
+      MERCADOPAGO_PUBLIC_KEY: ${MERCADOPAGO_PUBLIC_KEY}
+      NEXT_PUBLIC_MERCADOPAGO_PUBLIC_KEY: ${NEXT_PUBLIC_MERCADOPAGO_PUBLIC_KEY}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-pizza-verify-token}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM:-Pizzería <noreply@pizzeria.com>}
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pizzaapp_network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: pizzaapp_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pizzaapp
+      POSTGRES_PASSWORD: pizzaapp123
+      POSTGRES_DB: pizzaapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pizzaapp -d pizzaapp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pizzaapp_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: pizzaapp_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pizzaapp_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  pizzaapp_network:
+    driver: bridge

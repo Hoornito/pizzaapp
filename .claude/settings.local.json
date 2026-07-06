@@ -1,0 +1,44 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"z:/PizzaApp/apps/web/src/app/\\(auth\\)/login\" \"z:/PizzaApp/apps/web/src/app/\\(auth\\)/register\" \"z:/PizzaApp/apps/web/src/app/\\(customer\\)/menu\" \"z:/PizzaApp/apps/web/src/app/\\(customer\\)/promotions\" \"z:/PizzaApp/apps/web/src/app/\\(customer\\)/cart\" \"z:/PizzaApp/apps/web/src/app/\\(customer\\)/checkout\" \"z:/PizzaApp/apps/web/src/app/\\(customer\\)/orders/[id]\" \"z:/PizzaApp/apps/web/src/app/\\(customer\\)/pedido/[token]\" \"z:/PizzaApp/apps/web/src/app/\\(customer\\)/profile\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/dashboard\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/orders/[id]\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/products/new\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/products/[id]\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/categories\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/promotions/new\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/promotions/[id]\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/users/[id]\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/reports\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/settings/hours\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/settings/zones\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/settings/delivery\" \"z:/PizzaApp/apps/web/src/app/\\(admin\\)/admin/print/[orderId]\" && echo \"Done batch 1\")",
+      "Bash(mkdir -p \"z:/PizzaApp/apps/web/src/app/api/auth/[...nextauth]\" \"z:/PizzaApp/apps/web/src/app/api/products/[id]\" \"z:/PizzaApp/apps/web/src/app/api/categories/[id]\" \"z:/PizzaApp/apps/web/src/app/api/promotions/[id]\" \"z:/PizzaApp/apps/web/src/app/api/orders/[id]/status\" \"z:/PizzaApp/apps/web/src/app/api/cart\" \"z:/PizzaApp/apps/web/src/app/api/users/[id]\" \"z:/PizzaApp/apps/web/src/app/api/payments/create-preference\" \"z:/PizzaApp/apps/web/src/app/api/payments/webhook\" \"z:/PizzaApp/apps/web/src/app/api/whatsapp/webhook\" \"z:/PizzaApp/apps/web/src/app/api/whatsapp/send\" \"z:/PizzaApp/apps/web/src/app/api/whatsapp/token\" \"z:/PizzaApp/apps/web/src/app/api/reports/export\" \"z:/PizzaApp/apps/web/src/app/api/settings/hours\" \"z:/PizzaApp/apps/web/src/app/api/settings/zones/[id]\" \"z:/PizzaApp/apps/web/src/app/api/settings/delivery/[id]\" \"z:/PizzaApp/apps/web/src/app/api/notifications\" \"z:/PizzaApp/apps/web/src/app/api/uploads\" && echo \"Done batch 2\")",
+      "Bash(node ../../node_modules/prisma/build/index.js generate)",
+      "PowerShell(Get-Process node,tsx -ErrorAction SilentlyContinue)",
+      "Bash(node ../../node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(node ../../node_modules/prisma/build/index.js migrate dev --name add_finance)",
+      "Bash(node ../../node_modules/tsx/dist/cli.mjs server.ts)",
+      "Bash(break)",
+      "Bash(node ../../node_modules/prisma/build/index.js migrate dev --name add_cash_shift)",
+      "Bash(grep -vE \"EPERM|tmp|Update available|major update|pris.ly|npm i|^│|^└|^┌|^$\")",
+      "Bash(node ../../node_modules/tsx/dist/cli.mjs scripts/test-finance.ts)",
+      "Bash(node ../../node_modules/tsx/dist/cli.mjs scripts/reset-today.ts)",
+      "Bash(node ../../node_modules/prisma/build/index.js migrate dev --name add_employees)",
+      "Bash(grep -vE \"EPERM|tmp[0-9]|Update available|major update|pris.ly|npm i|^│|^└|^┌|^$|query_engine\")",
+      "Bash(node ../../node_modules/prisma/build/index.js migrate dev --name add_employee_movements)",
+      "Bash(grep -vE \"EPERM|tmp[0-9]|Update available|major update|pris.ly|npm i|^│|^└|^┌|^$|query_engine|Running generate\")",
+      "Bash(npx tsc *)",
+      "Bash(docker compose *)",
+      "Bash(npx prisma *)",
+      "Bash(npm run *)",
+      "Bash(echo \"Dev server lanzado \\(PID $!\\). Esperando a que escuche en :3000...\")",
+      "Bash(curl -s -o /dev/null -w \"menu: %{http_code}\\\\n\" http://localhost:3000/menu)",
+      "Bash(grep -viE \"^$|major-version|major update|please follow|Run the following|npm i|update available|│|└|┌|prisma@latest|^Tip:|pris.ly\")",
+      "Bash(npm run dev > /tmp/pizzadev.log 2>&1 & *)",
+      "Bash(netstat -ano)",
+      "Bash(awk '{print $NF}')",
+      "WebFetch(domain:www.mercadopago.com.ar)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(type\\(d\\)\\); [print\\(m.get\\('id'\\),'|',m.get\\('payment_type_id'\\),'|',m.get\\('name'\\)\\) for m in \\(d if isinstance\\(d,list\\) else []\\)]\")",
+      "Bash(python -c ' *)",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -o /dev/null -w \"checkout:%{http_code}\\\\n\" http://localhost:3000/checkout)",
+      "Bash(curl -s -o /dev/null -w \"process:%{http_code}\\\\n\" -X POST http://localhost:3000/api/payments/process -H \"Content-Type: application/json\" -d '{}')",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'server\\\\.ts|tsx|next|npm' } | Select-Object ProcessId,@{n='Cmd';e={$_.CommandLine.Substring\\(0,[Math]::Min\\(120,$_.CommandLine.Length\\)\\)}} | Format-Table -AutoSize -Wrap)"
+    ],
+    "additionalDirectories": [
+      "z:\\PizzaApp\\apps\\web\\src\\app\\(customer)\\orders",
+      "z:\\PizzaApp\\apps\\web\\src\\app\\api\\auth",
+      "\\tmp"
+    ]
+  }
+}
