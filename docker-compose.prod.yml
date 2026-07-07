@@ -33,6 +33,8 @@ services:
       SMTP_PASS: ${SMTP_PASS}
       SMTP_FROM: ${SMTP_FROM}
       JWT_SECRET: ${JWT_SECRET}
+      QZ_CERTIFICATE_B64: ${QZ_CERTIFICATE_B64}
+      QZ_PRIVATE_KEY_B64: ${QZ_PRIVATE_KEY_B64}
     depends_on:
       postgres:
         condition: service_healthy
