@@ -1,0 +1,20 @@
+# Evita copiar al contexto de build artefactos locales (de Windows) que rompen
+# el build del contenedor o filtran secrets a la imagen.
+node_modules
+.next
+out
+build
+
+# Secrets / entorno local (el runtime los inyecta por env, no van en la imagen).
+.env
+.env.*
+!.env.example
+
+# Git y varios
+.git
+.gitignore
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+coverage
