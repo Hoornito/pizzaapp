@@ -1,7 +1,9 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  // Sin `output: 'standalone'`: usamos un server custom (server.ts) que sirve el
+  // build normal de `.next`. El modo standalone rompía los clientReferenceManifest
+  // de las páginas al correr con server custom.
   // Renombrado en Next 15: antes vivía en experimental.serverComponentsExternalPackages.
   serverExternalPackages: ['@prisma/client', 'prisma'],
   images: {

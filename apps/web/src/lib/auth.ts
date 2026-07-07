@@ -53,6 +53,9 @@ if (process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET) {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // Detrás del reverse proxy (Caddy) Auth.js no confía en el Host por defecto;
+  // se lo indicamos explícitamente para producción.
+  trustHost: true,
   adapter: PrismaAdapter(prisma),
   session: { strategy: 'jwt' },
   pages: {
