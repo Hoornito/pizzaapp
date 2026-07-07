@@ -18,6 +18,7 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
+import { isStaff, isAdmin } from '@/lib/roles';
 import { BrandLogo } from './BrandLogo';
 import { useCartStore } from '@/store/cartStore';
 import { useUIStore } from '@/store/uiStore';
@@ -77,17 +78,17 @@ export function CustomerHeader() {
                 open={Boolean(anchorEl)}
                 onClose={() => setAnchorEl(null)}
               >
-                {session.user.role === 'ADMIN' && [
+                {isStaff(session.user.role) && [
                   <MenuItem
                     key="admin"
                     component={Link}
-                    href="/admin/dashboard"
+                    href={isAdmin(session.user.role) ? '/admin/dashboard' : '/admin/pos'}
                     onClick={() => setAnchorEl(null)}
                   >
                     <ListItemIcon>
                       <DashboardIcon fontSize="small" />
                     </ListItemIcon>
-                    Panel de administración
+                    {isAdmin(session.user.role) ? 'Panel de administración' : 'Panel de mostrador'}
                   </MenuItem>,
                   <Divider key="admin-divider" />,
                 ]}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { signIn, getProviders } from 'next-auth/react';
+import { signIn, getProviders, getSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -51,7 +51,18 @@ function LoginForm() {
       if (result?.error) {
         setError('Email o contraseña incorrectos');
       } else {
-        router.push(callbackUrl);
+        // El personal (ADMIN/MOSTRADOR) entra al panel; el cliente, al menú.
+        // Si venía con un callbackUrl explícito, se respeta.
+        const role = (await getSession())?.user?.role;
+        const dest =
+          callbackUrl !== '/menu'
+            ? callbackUrl
+            : role === 'ADMIN'
+              ? '/admin/dashboard'
+              : role === 'MOSTRADOR'
+                ? '/admin/pos'
+                : '/menu';
+        router.push(dest);
         router.refresh();
       }
     } catch {
