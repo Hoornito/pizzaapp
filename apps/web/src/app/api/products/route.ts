@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const available = searchParams.get('available');
   const search = searchParams.get('search') || undefined;
   const page = parseInt(searchParams.get('page') || '1');
-  const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100);
+  const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 500);
 
   const result = await getProducts({
     categoryId,

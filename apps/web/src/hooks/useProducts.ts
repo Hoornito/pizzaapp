@@ -15,6 +15,8 @@ export function useProducts(params?: { categoryId?: string; available?: boolean 
       const qs = new URLSearchParams();
       if (params?.categoryId) qs.set('categoryId', params.categoryId);
       if (params?.available !== undefined) qs.set('available', String(params.available));
+      // El menú/mostrador necesitan TODO el catálogo, no una página de 50.
+      qs.set('limit', '500');
       const res = await fetch(`/api/products?${qs.toString()}`);
       const json = await res.json();
       setProducts(json.data || []);
