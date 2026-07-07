@@ -22,6 +22,12 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+  // La home '/' redirige a /menu a nivel de routing (antes de renderizar). Se hace
+  // acá y no con una page que llame a redirect(), porque esa page —envuelta en el
+  // layout cliente— dispara el bug "clientReferenceManifest" con el server custom.
+  async redirects() {
+    return [{ source: '/', destination: '/menu', permanent: false }];
+  },
 };
 
 export default nextConfig;
