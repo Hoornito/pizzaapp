@@ -13,6 +13,7 @@ export const STAFF_ROLES: Role[] = ['ADMIN', 'MOSTRADOR'];
  * siguen exigiendo ADMIN aparte.
  */
 export const ADMIN_ONLY_PREFIXES = [
+  '/admin/dashboard',
   '/admin/finance',
   '/admin/employees',
   '/admin/reports',

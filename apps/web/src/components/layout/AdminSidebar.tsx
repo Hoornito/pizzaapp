@@ -33,7 +33,7 @@ const DRAWER_WIDTH = 240;
 // `adminOnly`: solo lo ve el ADMIN. El MOSTRADOR no ve finanzas, empleados,
 // usuarios ni reportes.
 const navItems = [
-  { label: 'Dashboard', icon: <DashboardIcon />, href: '/admin/dashboard' },
+  { label: 'Dashboard', icon: <DashboardIcon />, href: '/admin/dashboard', adminOnly: true },
   { label: 'Mostrador', icon: <PointOfSaleIcon />, href: '/admin/pos' },
   { label: 'Pedidos', icon: <ShoppingBagIcon />, href: '/admin/orders' },
   { label: 'Productos', icon: <LocalPizzaIcon />, href: '/admin/products' },

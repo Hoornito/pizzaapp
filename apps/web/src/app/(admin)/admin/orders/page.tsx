@@ -57,7 +57,11 @@ function localToday(): string {
 function primaryNext(order: any): { status: string; label: string } | null {
   switch (order.status) {
     case 'RECIBIDO': return { status: 'CONFIRMADO', label: 'Confirmar pedido' };
-    case 'CONFIRMADO': return { status: 'LISTO', label: 'Marcar listo' };
+    // CONFIRMADO y los estados intermedios legacy avanzan a LISTO.
+    case 'CONFIRMADO':
+    case 'PREPARANDO':
+    case 'EN_HORNO':
+      return { status: 'LISTO', label: 'Marcar listo' };
     case 'LISTO':
       return order.deliveryType === 'DELIVERY'
         ? { status: 'EN_REPARTO', label: 'Enviar a reparto' }

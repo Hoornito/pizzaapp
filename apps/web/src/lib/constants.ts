@@ -55,6 +55,10 @@ export const NEXT_STATUSES: Record<string, string[]> = {
   PENDIENTE_PAGO: ['CANCELADO'],
   RECIBIDO: ['CONFIRMADO', 'CANCELADO'],
   CONFIRMADO: ['LISTO', 'CANCELADO'],
+  // Estados intermedios (legacy): igual pueden avanzar a LISTO o cancelarse,
+  // así ningún pedido queda trabado sin acciones.
+  PREPARANDO: ['LISTO', 'CANCELADO'],
+  EN_HORNO: ['LISTO', 'CANCELADO'],
   LISTO: ['EN_REPARTO', 'ENTREGADO'],
   EN_REPARTO: ['ENTREGADO'],
   ENTREGADO: [],
