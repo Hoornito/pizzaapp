@@ -34,22 +34,16 @@ RUN npm run build
 FROM base AS production
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/server.ts ./server.ts
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-
-USER nextjs
-EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "-r", "tsx/cjs", "server.ts"]
+# El server custom (server.ts) NO usa el output "standalone": corre con tsx y en
+# tiempo de ejecución importa el código de src/ (socket-server, servicios) y usa
+# el tsconfig para resolver los alias '@/'. Por eso copiamos la app construida
+# COMPLETA (incluye .next, src, server.ts, tsconfig, prisma y node_modules).
+COPY --from=builder /app ./
+
+EXPOSE 3000
+
+# npm run start = "NODE_ENV=production tsx server.ts"
+CMD ["npm", "run", "start"]
