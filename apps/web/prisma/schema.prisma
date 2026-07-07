@@ -10,6 +10,7 @@ datasource db {
 enum Role {
   CUSTOMER
   ADMIN
+  MOSTRADOR
 }
 
 enum OrderStatus {

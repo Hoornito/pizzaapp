@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth';
 import { NextResponse } from 'next/server';
+import { isStaff, isAdmin, isAdminOnlyPath } from '@/lib/roles';
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
@@ -10,8 +11,13 @@ export default auth((req) => {
     if (!session) {
       return NextResponse.redirect(new URL('/login', req.url));
     }
-    if (session.user.role !== 'ADMIN') {
+    // Solo personal (ADMIN o MOSTRADOR) entra al panel.
+    if (!isStaff(session.user.role)) {
       return NextResponse.redirect(new URL('/menu', req.url));
+    }
+    // El mostrador no puede entrar a las secciones exclusivas de ADMIN.
+    if (!isAdmin(session.user.role) && isAdminOnlyPath(pathname)) {
+      return NextResponse.redirect(new URL('/admin/pos', req.url));
     }
   }
 
@@ -19,6 +25,10 @@ export default auth((req) => {
   if ((pathname === '/login' || pathname === '/register') && session) {
     if (session.user.role === 'ADMIN') {
       return NextResponse.redirect(new URL('/admin/dashboard', req.url));
+    }
+    // El mostrador arranca directo en la pantalla de carga de pedidos.
+    if (session.user.role === 'MOSTRADOR') {
+      return NextResponse.redirect(new URL('/admin/pos', req.url));
     }
     return NextResponse.redirect(new URL('/menu', req.url));
   }

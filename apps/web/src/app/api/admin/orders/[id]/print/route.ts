@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { isStaff } from '@/lib/roles';
 import { emitPrintOrder } from '@/lib/socket-server';
 
 /**
@@ -9,7 +10,7 @@ import { emitPrintOrder } from '@/lib/socket-server';
  */
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session || session.user.role !== 'ADMIN') {
+  if (!session || !isStaff(session.user.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
   const { id } = await params;

@@ -5,11 +5,12 @@ import { startOfDay, endOfDay } from 'date-fns';
 import { parseLocalDate } from '@/services/finance.service';
 import { createOrder } from '@/services/order.service';
 import { createOrderSchema } from '@/lib/validators';
+import { isStaff } from '@/lib/roles';
 import type { OrderStatus, Prisma } from '@prisma/client';
 
 export async function GET(req: NextRequest) {
   const session = await auth();
-  if (!session || session.user.role !== 'ADMIN') {
+  if (!session || !isStaff(session.user.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
 // Carga de un pedido desde el mostrador / admin: se confirma e imprime al instante.
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session || session.user.role !== 'ADMIN') {
+  if (!session || !isStaff(session.user.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 

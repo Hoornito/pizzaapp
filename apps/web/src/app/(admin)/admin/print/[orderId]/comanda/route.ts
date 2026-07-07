@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { readFileSync } from 'fs';
 import path from 'path';
 import { auth } from '@/lib/auth';
+import { isStaff } from '@/lib/roles';
 import { prisma } from '@/lib/prisma';
 import { isPizzaItemNotes } from '@/lib/pizza';
 import { formatOrderPayment, parseOrderCustomer, groupTicketItems } from '@/lib/utils';
@@ -31,7 +32,7 @@ function getLogoDataUri(): string | null {
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   const session = await auth();
-  if (!session || session.user.role !== 'ADMIN') {
+  if (!session || !isStaff(session.user.role)) {
     return new Response('No autorizado', { status: 401 });
   }
 

@@ -24,11 +24,14 @@ import PrintIcon from '@mui/icons-material/Print';
 import PointOfSaleIcon from '@mui/icons-material/PointOfSale';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import type { Role } from '@prisma/client';
 import { BrandLogo } from './BrandLogo';
-import { useUIStore } from '@/store/uiStore';
+import { isAdmin } from '@/lib/roles';
 
 const DRAWER_WIDTH = 240;
 
+// `adminOnly`: solo lo ve el ADMIN. El MOSTRADOR no ve finanzas, empleados,
+// usuarios ni reportes.
 const navItems = [
   { label: 'Dashboard', icon: <DashboardIcon />, href: '/admin/dashboard' },
   { label: 'Mostrador', icon: <PointOfSaleIcon />, href: '/admin/pos' },
@@ -36,21 +39,23 @@ const navItems = [
   { label: 'Productos', icon: <LocalPizzaIcon />, href: '/admin/products' },
   { label: 'Categorías', icon: <CategoryIcon />, href: '/admin/categories' },
   { label: 'Promociones', icon: <LocalOfferIcon />, href: '/admin/promotions' },
-  { label: 'Usuarios', icon: <PeopleIcon />, href: '/admin/users' },
-  { label: 'Finanzas', icon: <AccountBalanceWalletIcon />, href: '/admin/finance' },
-  { label: 'Empleados', icon: <BadgeIcon />, href: '/admin/employees' },
+  { label: 'Usuarios', icon: <PeopleIcon />, href: '/admin/users', adminOnly: true },
+  { label: 'Finanzas', icon: <AccountBalanceWalletIcon />, href: '/admin/finance', adminOnly: true },
+  { label: 'Empleados', icon: <BadgeIcon />, href: '/admin/employees', adminOnly: true },
   { label: 'Impresión', icon: <PrintIcon />, href: '/admin/print-station' },
-  { label: 'Reportes', icon: <BarChartIcon />, href: '/admin/reports' },
+  { label: 'Reportes', icon: <BarChartIcon />, href: '/admin/reports', adminOnly: true },
   { label: 'Configuración', icon: <SettingsIcon />, href: '/admin/settings' },
 ];
 
 interface AdminSidebarProps {
+  role: Role;
   mobileOpen?: boolean;
   onClose?: () => void;
 }
 
-function DrawerContent({ onNavigate }: { onNavigate?: () => void }) {
+function DrawerContent({ role, onNavigate }: { role: Role; onNavigate?: () => void }) {
   const pathname = usePathname();
+  const items = navItems.filter((item) => !item.adminOnly || isAdmin(role));
 
   return (
     <Box>
@@ -67,7 +72,7 @@ function DrawerContent({ onNavigate }: { onNavigate?: () => void }) {
       </Toolbar>
       <Divider />
       <List>
-        {navItems.map((item) => {
+        {items.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + '/');
           return (
             <ListItem key={item.href} disablePadding>
@@ -99,7 +104,7 @@ function DrawerContent({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function AdminSidebar({ mobileOpen, onClose }: AdminSidebarProps) {
+export function AdminSidebar({ role, mobileOpen, onClose }: AdminSidebarProps) {
   return (
     <Box component="nav" sx={{ width: { md: DRAWER_WIDTH }, flexShrink: { md: 0 } }}>
       {/* Mobile drawer */}
@@ -113,7 +118,7 @@ export function AdminSidebar({ mobileOpen, onClose }: AdminSidebarProps) {
           '& .MuiDrawer-paper': { boxSizing: 'border-box', width: DRAWER_WIDTH },
         }}
       >
-        <DrawerContent onNavigate={onClose} />
+        <DrawerContent role={role} onNavigate={onClose} />
       </Drawer>
 
       {/* Desktop drawer */}
@@ -125,7 +130,7 @@ export function AdminSidebar({ mobileOpen, onClose }: AdminSidebarProps) {
         }}
         open
       >
-        <DrawerContent />
+        <DrawerContent role={role} />
       </Drawer>
     </Box>
   );
