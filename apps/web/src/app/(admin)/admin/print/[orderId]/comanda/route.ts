@@ -75,7 +75,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
 <style>
   @page { size: 80mm auto; margin: 0; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Courier New', monospace; font-size:12px; width:80mm; padding:4mm; color:#000; }
+  /* Ancho 72mm (área imprimible real de la POS-80; a 80mm se recortaba el borde
+     derecho). font-weight:bold en todo para que no salga clarito en la térmica. */
+  body { font-family:'Courier New', monospace; font-size:12px; font-weight:bold; width:72mm; padding:2mm; color:#000; }
   .center { text-align:center; } .bold { font-weight:bold; } .large { font-size:16px; }
   .sep { border-top:1px dashed #000; margin:4px 0; }
   .item-row { display:flex; justify-content:space-between; margin:2px 0; }

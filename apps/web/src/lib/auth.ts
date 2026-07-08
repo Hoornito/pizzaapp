@@ -12,6 +12,8 @@ import type { Role } from '@prisma/client';
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
+  // Segundo factor solo para ADMIN (código de 4 dígitos).
+  code: z.string().optional(),
 });
 
 declare module 'next-auth' {
@@ -82,6 +84,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const isValid = await bcrypt.compare(parsed.data.password, user.password);
         if (!isValid) return null;
+
+        // Segundo factor para ADMIN: código de 4 dígitos. Solo se exige si está
+        // configurado (ADMIN_LOGIN_CODE); si no, el admin entra solo con clave.
+        if (user.role === 'ADMIN' && process.env.ADMIN_LOGIN_CODE) {
+          if (parsed.data.code !== process.env.ADMIN_LOGIN_CODE) return null;
+        }
 
         return {
           id: user.id,

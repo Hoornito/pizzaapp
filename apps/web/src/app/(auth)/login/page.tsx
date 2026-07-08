@@ -21,6 +21,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/menu';
   const [error, setError] = useState('');
+  const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [socialProviders, setSocialProviders] = useState<{ google: boolean; facebook: boolean }>({
     google: false,
@@ -45,6 +46,7 @@ function LoginForm() {
       const result = await signIn('credentials', {
         email: data.email,
         password: data.password,
+        code,
         redirect: false,
       });
 
@@ -142,6 +144,15 @@ function LoginForm() {
           {...register('password', { required: 'La contraseña es requerida' })}
           error={!!errors.password}
           helperText={errors.password?.message}
+        />
+        <TextField
+          label="Código de administrador (4 dígitos)"
+          type="text"
+          fullWidth
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          inputProps={{ inputMode: 'numeric', maxLength: 4 }}
+          helperText="Solo administradores. Si no sos admin, dejalo vacío."
         />
 
         <Button

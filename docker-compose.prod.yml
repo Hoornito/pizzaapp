@@ -35,6 +35,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       QZ_CERTIFICATE_B64: ${QZ_CERTIFICATE_B64}
       QZ_PRIVATE_KEY_B64: ${QZ_PRIVATE_KEY_B64}
+      ADMIN_LOGIN_CODE: ${ADMIN_LOGIN_CODE}
     depends_on:
       postgres:
         condition: service_healthy
