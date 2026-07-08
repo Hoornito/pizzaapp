@@ -20,7 +20,7 @@ import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useProducts, useCategories, usePromotions } from '@/hooks/useProducts';
-import { PizzaModal } from '@/components/products/PizzaModal';
+import { PizzaCounterModal } from '@/components/products/PizzaCounterModal';
 import { EmpanadaDozenModal } from '@/components/products/EmpanadaDozenModal';
 import { EmpanadaLooseModal } from '@/components/products/EmpanadaLooseModal';
 import { EmpanadaPickModal } from '@/components/products/EmpanadaPickModal';
@@ -83,7 +83,7 @@ export default function PosPage() {
 
   const [items, setItems] = useState<PosItem[]>([]);
   const [tab, setTab] = useState<string>('');
-  const [pizzaModal, setPizzaModal] = useState<{ open: boolean; size: PizzaSize }>({ open: false, size: 'MEDIUM' });
+  const [pizzaOpen, setPizzaOpen] = useState(false);
   const [dozenOpen, setDozenOpen] = useState(false);
   const [looseOpen, setLooseOpen] = useState(false);
   const [drinkCat, setDrinkCat] = useState<DrinkCat | null>(null);
@@ -95,7 +95,7 @@ export default function PosPage() {
   const [phone, setPhone] = useState('');
   const [deliveryType, setDeliveryType] = useState<'PICKUP' | 'DELIVERY'>('PICKUP');
   const [address, setAddress] = useState({ street: '', number: '', apartment: '', city: '', reference: '' });
-  const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'TRANSFERENCIA' | 'MIXTO' | 'A_DEFINIR'>('EFECTIVO');
+  const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA' | 'MIXTO' | 'A_DEFINIR'>('EFECTIVO');
   const [cashAmount, setCashAmount] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
   const [paid, setPaid] = useState(false);
@@ -275,15 +275,13 @@ export default function PosPage() {
             {regularPromos.length > 0 && <Tab value="promos" label="🏷️ Promos" />}
           </Tabs>
 
-          {/* Pizzas: 3 tamaños */}
+          {/* Pizzas: un solo botón que abre el panel con tamaños + gustos */}
           {activeTab === pizzasCategoryId && (
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
-              {PIZZA_SIZES.map((size) => (
-                <Button key={size} variant="contained" sx={{ py: 2, textTransform: 'none' }}
-                  onClick={() => setPizzaModal({ open: true, size })}>
-                  🍕 {PIZZA_SIZE_LABELS[size]}
-                </Button>
-              ))}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1.5 }}>
+              <Button variant="contained" sx={{ py: 3, textTransform: 'none', fontSize: '1.1rem' }}
+                onClick={() => setPizzaOpen(true)}>
+                🍕 Pizza
+              </Button>
             </Box>
           )}
 
@@ -408,6 +406,7 @@ export default function PosPage() {
             <RadioGroup row value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}>
               <FormControlLabel value="EFECTIVO" control={<Radio size="small" />} label="💵 Efectivo" />
               <FormControlLabel value="TRANSFERENCIA" control={<Radio size="small" />} label="🏦 Transf." />
+              <FormControlLabel value="TARJETA" control={<Radio size="small" />} label="💳 QR o Tarjeta" />
               <FormControlLabel value="MIXTO" control={<Radio size="small" />} label="🔀 Mixto" />
               <FormControlLabel value="A_DEFINIR" control={<Radio size="small" />} label="⏳ A definir" />
             </RadioGroup>
@@ -461,16 +460,15 @@ export default function PosPage() {
       </Box>
 
       {/* Modales reutilizados del menú del cliente */}
-      <PizzaModal
-        open={pizzaModal.open}
-        onClose={() => setPizzaModal((s) => ({ ...s, open: false }))}
-        size={pizzaModal.size}
-        flavors={flavorsForSize(pizzas, pizzaModal.size)}
-        onConfirm={(selected) => {
-          selected.forEach((pz) =>
-            addItem({ productId: pz.flavors[0].productId, name: formatPizzaName(pz), unitPrice: pz.price, quantity: 1, notes: formatPizzaNotes(pz) })
+      <PizzaCounterModal
+        open={pizzaOpen}
+        onClose={() => setPizzaOpen(false)}
+        pizzas={pizzas}
+        onConfirm={(lines) => {
+          lines.forEach((l) =>
+            addItem({ productId: l.productId, name: l.name, unitPrice: l.unitPrice, quantity: l.quantity, notes: l.notes })
           );
-          setPizzaModal((s) => ({ ...s, open: false }));
+          setPizzaOpen(false);
         }}
       />
       {dozenPromo && (

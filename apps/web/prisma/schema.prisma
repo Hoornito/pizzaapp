@@ -30,6 +30,8 @@ enum PaymentMethod {
   EFECTIVO
   MIXTO
   TRANSFERENCIA
+  // Pago con QR o tarjeta (débito/crédito). Cuenta como "virtual".
+  TARJETA
   // Paga al retirar/recibir; el tipo real (efectivo/transferencia/mixto) se
   // define al registrar el cobro.
   A_DEFINIR

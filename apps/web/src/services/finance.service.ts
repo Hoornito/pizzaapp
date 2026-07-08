@@ -207,15 +207,19 @@ export async function getFinanceTotals(from: Date, to: Date) {
     const cash = orderCashPortion(o); // EFECTIVO=total, MIXTO=cashAmount, MP=0
     orderCashSales += cash;
     orderVirtualSales += amt - cash;
-    // un pedido mixto se cuenta como operación con efectivo (toca caja)
-    if (o.paymentMethod === 'MERCADO_PAGO') cantVirtual++;
-    else cantEfectivo++;
+    // Cliente en efectivo: pagó en efectivo o mixto (tocan la caja). Cualquier
+    // otro método (transferencia, tarjeta/QR, Mercado Pago) cuenta como virtual.
+    if (o.paymentMethod === 'EFECTIVO' || o.paymentMethod === 'MIXTO') cantEfectivo++;
+    else cantVirtual++;
   }
 
   let manualCashIncome = 0;
   let manualVirtualIncome = 0;
   let cashExpense = 0;
   let virtualExpense = 0;
+  // "Otros gastos" = egresos SIN sueldos (los sueldos se muestran aparte).
+  let otrosGastosEfectivo = 0;
+  let otrosGastosVirtual = 0;
   let sueldosEfectivo = 0;
   let sueldosVirtual = 0;
   let adelantosEfectivo = 0;
@@ -230,6 +234,12 @@ export async function getFinanceTotals(from: Date, to: Date) {
     } else {
       if (t.paymentMethod === 'EFECTIVO') cashExpense += amt;
       else if (virtual) virtualExpense += amt;
+
+      // Otros gastos = todo egreso menos sueldos.
+      if (t.category !== FINANCE_CATEGORY_SUELDOS) {
+        if (t.paymentMethod === 'EFECTIVO') otrosGastosEfectivo += amt;
+        else if (virtual) otrosGastosVirtual += amt;
+      }
 
       if (t.category === FINANCE_CATEGORY_SUELDOS) {
         if (t.paymentMethod === 'EFECTIVO') sueldosEfectivo += amt;
@@ -284,6 +294,8 @@ export async function getFinanceTotals(from: Date, to: Date) {
     totalVirtualIngresado,
     cashExpense,
     virtualExpense,
+    otrosGastosEfectivo,
+    otrosGastosVirtual,
     sueldosEfectivo,
     sueldosVirtual,
     adelantosEfectivo,

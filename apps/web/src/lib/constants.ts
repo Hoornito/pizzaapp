@@ -127,6 +127,7 @@ export const ORDER_PAYMENT_METHOD_LABELS: Record<string, string> = {
   MERCADO_PAGO: 'Mercado Pago',
   MIXTO: 'Mixto',
   TRANSFERENCIA: 'Transferencia',
+  TARJETA: 'QR o Tarjeta',
   A_DEFINIR: 'Paga al retirar',
 };
 
@@ -135,6 +136,7 @@ export const ORDER_PAYMENT_METHOD_EMOJI: Record<string, string> = {
   MERCADO_PAGO: '💳',
   MIXTO: '🔀',
   TRANSFERENCIA: '🏦',
+  TARJETA: '💳',
   A_DEFINIR: '⏳',
 };
 
