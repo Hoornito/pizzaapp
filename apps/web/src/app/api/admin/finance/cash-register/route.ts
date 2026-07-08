@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { isStaff } from '@/lib/roles';
 import { prisma } from '@/lib/prisma';
 import { openCashRegisterSchema } from '@/lib/validators';
 import { getOpenCashRegister, openCashRegister, computeExpectedCash } from '@/services/finance.service';
 
 export async function GET() {
   const session = await auth();
-  if (!session || session.user.role !== 'ADMIN') {
+  if (!session || !isStaff(session.user.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
@@ -25,7 +26,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session || session.user.role !== 'ADMIN') {
+  if (!session || !isStaff(session.user.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 

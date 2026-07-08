@@ -6,31 +6,30 @@ export interface StorageProvider {
   delete(url: string): Promise<void>;
 }
 
+/**
+ * Guarda las imágenes en disco (directorio configurable por UPLOAD_DIR, que en
+ * producción es un volumen persistente) y las sirve por `/api/uploads/<archivo>`
+ * (una ruta propia, en vez de depender de que Next sirva archivos escritos en
+ * runtime dentro de /public).
+ */
+export const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'public', 'uploads');
+const PUBLIC_PATH = '/api/uploads';
+
 class LocalStorageProvider implements StorageProvider {
-  private uploadDir: string;
-  private publicPath: string;
-
-  constructor() {
-    this.uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    this.publicPath = '/uploads';
-  }
-
   async upload(file: Buffer, filename: string, _mimeType: string): Promise<string> {
-    await fs.mkdir(this.uploadDir, { recursive: true });
+    await fs.mkdir(UPLOAD_DIR, { recursive: true });
     const uniqueName = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-    const filePath = path.join(this.uploadDir, uniqueName);
-    await fs.writeFile(filePath, file);
-    return `${this.publicPath}/${uniqueName}`;
+    await fs.writeFile(path.join(UPLOAD_DIR, uniqueName), file);
+    return `${PUBLIC_PATH}/${uniqueName}`;
   }
 
   async delete(url: string): Promise<void> {
-    const filename = url.replace(this.publicPath + '/', '');
-    const filePath = path.join(this.uploadDir, filename);
+    // Soporta URLs viejas (/uploads/...) y nuevas (/api/uploads/...).
+    const filename = path.basename(url);
     try {
-      await fs.unlink(filePath);
+      await fs.unlink(path.join(UPLOAD_DIR, filename));
     } catch {}
   }
 }
 
-// Swap this with S3Provider in production
 export const storage: StorageProvider = new LocalStorageProvider();

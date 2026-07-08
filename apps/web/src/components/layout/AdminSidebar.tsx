@@ -40,7 +40,7 @@ const navItems = [
   { label: 'Categorías', icon: <CategoryIcon />, href: '/admin/categories' },
   { label: 'Promociones', icon: <LocalOfferIcon />, href: '/admin/promotions' },
   { label: 'Usuarios', icon: <PeopleIcon />, href: '/admin/users', adminOnly: true },
-  { label: 'Finanzas', icon: <AccountBalanceWalletIcon />, href: '/admin/finance', adminOnly: true },
+  { label: 'Finanzas', icon: <AccountBalanceWalletIcon />, href: '/admin/finance' },
   { label: 'Empleados', icon: <BadgeIcon />, href: '/admin/employees', adminOnly: true },
   { label: 'Impresión', icon: <PrintIcon />, href: '/admin/print-station' },
   { label: 'Reportes', icon: <BarChartIcon />, href: '/admin/reports', adminOnly: true },

@@ -36,6 +36,10 @@ services:
       QZ_CERTIFICATE_B64: ${QZ_CERTIFICATE_B64}
       QZ_PRIVATE_KEY_B64: ${QZ_PRIVATE_KEY_B64}
       ADMIN_LOGIN_CODE: ${ADMIN_LOGIN_CODE}
+      # Imágenes subidas: directorio en un volumen persistente (sobrevive deploys).
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads_data:/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -99,6 +103,7 @@ volumes:
   redis_data:
   caddy_data:
   caddy_config:
+  uploads_data:
 
 networks:
   pizzaapp_network:

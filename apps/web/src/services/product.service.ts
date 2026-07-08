@@ -66,7 +66,11 @@ export async function updateProduct(id: string, data: Partial<ProductInput>) {
 
 export async function deleteProduct(id: string) {
   const product = await prisma.product.findUnique({ where: { id } });
-  if (product?.image?.startsWith('/uploads/')) {
+  // PromotionItem.productId es obligatorio (bloquea el borrado): sacamos el
+  // producto de las promos primero. Los ítems de pedidos/carrito tienen
+  // productId opcional, así que quedan con SetNull y el historial se conserva.
+  await prisma.promotionItem.deleteMany({ where: { productId: id } });
+  if (product?.image?.startsWith('/api/uploads/') || product?.image?.startsWith('/uploads/')) {
     await storage.delete(product.image).catch(() => {});
   }
   return prisma.product.delete({ where: { id } });

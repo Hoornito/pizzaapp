@@ -68,9 +68,12 @@ export default function AdminProductsPage() {
     if (!confirm('¿Eliminar este producto?')) return;
     try {
       const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+      const json = await res.json().catch(() => ({}));
       if (res.ok) {
         setProducts((prev) => prev.filter((p) => p.id !== id));
         showSuccess('Producto eliminado');
+      } else {
+        showError(json.error || 'No se pudo eliminar el producto');
       }
     } catch {
       showError('Error al eliminar');

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { isStaff } from '@/lib/roles';
 import { getProductById, updateProduct, deleteProduct } from '@/services/product.service';
 import { productSchema } from '@/lib/validators';
 
@@ -12,7 +13,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session || session.user.role !== 'ADMIN') {
+  if (!session || !isStaff(session.user.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
@@ -29,7 +30,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session || session.user.role !== 'ADMIN') {
+  if (!session || !isStaff(session.user.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
@@ -51,6 +52,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   }
 
   const { id } = await params;
-  await deleteProduct(id);
-  return NextResponse.json({ success: true });
+  try {
+    await deleteProduct(id);
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json(
+      { error: 'No se pudo eliminar el producto. Si está en pedidos, desactivalo en su lugar.' },
+      { status: 400 }
+    );
+  }
 }
