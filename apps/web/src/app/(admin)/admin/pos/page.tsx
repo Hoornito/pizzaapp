@@ -9,6 +9,7 @@ import IconButton from '@mui/material/IconButton';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import TextField from '@mui/material/TextField';
+import InputAdornment from '@mui/material/InputAdornment';
 import RadioGroup from '@mui/material/RadioGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Radio from '@mui/material/Radio';
@@ -16,6 +17,10 @@ import Checkbox from '@mui/material/Checkbox';
 import Divider from '@mui/material/Divider';
 import Alert from '@mui/material/Alert';
 import Chip from '@mui/material/Chip';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -65,6 +70,11 @@ function drinkCategory(name: string): DrinkCat {
   return 'CHICA';
 }
 
+interface PosExtra {
+  description: string;
+  amount: number;
+}
+
 interface PosItem {
   key: string;
   productId?: string;
@@ -73,7 +83,13 @@ interface PosItem {
   unitPrice: number;
   quantity: number;
   notes?: string;
+  // Solo pizzas (y promos) admiten "extra" (p. ej. extra de huevo).
+  extraEligible?: boolean;
+  extra?: PosExtra;
 }
+
+/** Precio de una línea = (precio + extra) × cantidad. */
+const lineTotal = (i: PosItem) => (i.unitPrice + (i.extra?.amount ?? 0)) * i.quantity;
 
 export default function PosPage() {
   const { products, loading } = useProducts({ available: true });
@@ -132,7 +148,7 @@ export default function PosPage() {
   // Tab inicial: la primera categoría disponible.
   const activeTab = tab || categories[0]?.id || 'promos';
 
-  const subtotal = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+  const subtotal = items.reduce((s, i) => s + lineTotal(i), 0);
   const deliveryFee = deliveryType === 'DELIVERY' ? DELIVERY_FEE : 0;
   const total = subtotal + deliveryFee;
 
@@ -162,6 +178,50 @@ export default function PosPage() {
   };
 
   const removeItem = (key: string) => setItems((prev) => prev.filter((i) => i.key !== key));
+
+  // Extra por línea (solo pizzas/promos). Cada pizza entra como línea de 1, así
+  // se le puede poner un extra distinto a cada una.
+  const [extraCtx, setExtraCtx] = useState<PosItem | null>(null);
+  const [extraForm, setExtraForm] = useState({ description: '', amount: '' });
+
+  const openExtra = (item: PosItem) => {
+    setExtraForm({ description: item.extra?.description ?? '', amount: item.extra ? String(item.extra.amount) : '' });
+    setExtraCtx(item);
+  };
+
+  const saveExtra = () => {
+    if (!extraCtx) return;
+    const amount = Number(extraForm.amount) || 0;
+    const description = extraForm.description.trim();
+    setItems((prev) =>
+      prev.map((i) =>
+        i.key === extraCtx.key
+          ? { ...i, extra: amount > 0 || description ? { description: description || 'Extra', amount } : undefined }
+          : i
+      )
+    );
+    setExtraCtx(null);
+  };
+
+  const clearExtra = (key: string) =>
+    setItems((prev) => prev.map((i) => (i.key === key ? { ...i, extra: undefined } : i)));
+
+  /** Agrega una pizza como N líneas de 1 (cada una con su posible extra). */
+  const addPizzaLines = (item: Omit<PosItem, 'key' | 'quantity'> & { quantity: number }) => {
+    const copies = Math.max(1, item.quantity);
+    setItems((prev) => {
+      const extras: PosItem[] = [];
+      for (let n = 0; n < copies; n++) {
+        extras.push({
+          ...item,
+          quantity: 1,
+          extraEligible: true,
+          key: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${n}`,
+        });
+      }
+      return [...prev, ...extras];
+    });
+  };
 
   const resetCart = () => {
     setItems([]);
@@ -218,13 +278,20 @@ export default function PosPage() {
         : {}),
       notes: composedNotes || undefined,
       phone: phone || undefined,
-      items: items.map((i) => ({
-        productId: i.productId,
-        promotionId: i.promotionId,
-        quantity: i.quantity,
-        unitPrice: i.unitPrice,
-        notes: i.notes,
-      })),
+      items: items.map((i) => {
+        const extraAmt = i.extra?.amount ?? 0;
+        // Línea "EXTRA: ..." (en mayúsculas) que los tickets separan y muestran
+        // pegada al ítem. El costo del extra va sumado al precio unitario.
+        const extraNote = i.extra ? `EXTRA: ${i.extra.description.toUpperCase()}` : '';
+        const composed = [i.notes, extraNote].filter(Boolean).join('\n');
+        return {
+          productId: i.productId,
+          promotionId: i.promotionId,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice + extraAmt,
+          notes: composed || undefined,
+        };
+      }),
     };
 
     setSubmitting(true);
@@ -270,8 +337,10 @@ export default function PosPage() {
       <Typography variant="h4" fontWeight={700} sx={{ mb: 2 }}>Mostrador · Nuevo pedido</Typography>
 
       <Box sx={{ display: 'flex', gap: 2, flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-start' }}>
+        {/* Columna izquierda: catálogo + detalle del pedido */}
+        <Box sx={{ flex: 2, display: 'flex', flexDirection: 'column', gap: 2, width: '100%', minWidth: 0 }}>
         {/* Catálogo */}
-        <Paper sx={{ flex: 2, p: 2, width: '100%' }}>
+        <Paper sx={{ p: 2 }}>
           <Tabs value={activeTab} onChange={(_, v) => setTab(v)} variant="scrollable" scrollButtons="auto" sx={{ mb: 2 }}>
             {categories.map((c) => <Tab key={c.id} value={c.id} label={`${c.icon || ''} ${c.name}`} />)}
             {regularPromos.length > 0 && <Tab value="promos" label="🏷️ Promos" />}
@@ -322,7 +391,7 @@ export default function PosPage() {
                   if (count > 0) {
                     setPromoPick({ id: p.id, name: p.name, price: Number(p.promotionalPrice), count });
                   } else {
-                    addItem({ promotionId: p.id, name: p.name, unitPrice: Number(p.promotionalPrice), quantity: 1, notes: formatPromoNotes(p.id) || undefined });
+                    addItem({ promotionId: p.id, name: p.name, unitPrice: Number(p.promotionalPrice), quantity: 1, notes: formatPromoNotes(p.id) || undefined, extraEligible: true });
                   }
                 }, p.id))}
             </Box>
@@ -358,23 +427,53 @@ export default function PosPage() {
           )}
         </Paper>
 
-        {/* Pedido */}
-        <Paper sx={{ flex: 1, p: 2, width: '100%', minWidth: { md: 320 }, position: { md: 'sticky' }, top: { md: 80 } }}>
-          <Typography variant="h6" fontWeight={700} gutterBottom>Pedido</Typography>
-
+        {/* Detalle del pedido — armado legible; extra por pizza (o promo) */}
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="h6" fontWeight={700} gutterBottom>Detalle del pedido</Typography>
           {items.length === 0 ? (
-            <Typography color="text.secondary" sx={{ py: 2 }}>Tocá productos para agregarlos.</Typography>
+            <Typography color="text.secondary" sx={{ py: 1 }}>
+              Tocá productos arriba para irlos sumando. Las pizzas se listan una por línea y podés agregarles un extra.
+            </Typography>
           ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 1 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {items.map((i) => (
-                <Box key={i.key} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                <Box
+                  key={i.key}
+                  sx={{
+                    display: 'flex', alignItems: 'center', gap: 1, p: 1,
+                    border: '1px solid', borderColor: 'divider', borderRadius: 1.5,
+                    flexWrap: { xs: 'wrap', sm: 'nowrap' },
+                  }}
+                >
                   <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography variant="body2" fontWeight={600}>{i.name}</Typography>
+                    <Typography variant="body1" fontWeight={600} sx={{ lineHeight: 1.2 }}>
+                      {i.quantity > 1 ? `${i.quantity}× ` : ''}{i.name}
+                    </Typography>
                     {i.notes && (
-                      <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'pre-line', display: 'block' }}>{i.notes}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'pre-line', display: 'block' }}>
+                        {i.notes}
+                      </Typography>
                     )}
-                    <Typography variant="caption" color="text.secondary">{formatCurrency(i.unitPrice * i.quantity)}</Typography>
+                    {i.extra && (
+                      <Chip
+                        size="small"
+                        color="secondary"
+                        variant="outlined"
+                        onDelete={() => clearExtra(i.key)}
+                        label={`Extra: ${i.extra.description}${i.extra.amount > 0 ? ` +${formatCurrency(i.extra.amount)}` : ''}`}
+                        sx={{ mt: 0.5 }}
+                      />
+                    )}
+                    <Typography variant="body2" color="primary.main" fontWeight={700} sx={{ mt: 0.3 }}>
+                      {formatCurrency(lineTotal(i))}
+                    </Typography>
                   </Box>
+
+                  {i.extraEligible && (
+                    <Button size="small" variant="text" color="secondary" onClick={() => openExtra(i)} sx={{ textTransform: 'none' }}>
+                      {i.extra ? 'Editar extra' : '＋ Extra'}
+                    </Button>
+                  )}
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
                     <IconButton size="small" onClick={() => setQty(i.key, -1)}><RemoveIcon fontSize="small" /></IconButton>
                     <Typography variant="body2" sx={{ minWidth: 20, textAlign: 'center' }}>{i.quantity}</Typography>
@@ -385,6 +484,18 @@ export default function PosPage() {
               ))}
             </Box>
           )}
+        </Paper>
+        </Box>
+
+        {/* Pedido */}
+        <Paper sx={{ flex: 1, p: 2, width: '100%', minWidth: { md: 320 }, position: { md: 'sticky' }, top: { md: 80 } }}>
+          <Typography variant="h6" fontWeight={700} gutterBottom>Pedido</Typography>
+
+          <Typography color="text.secondary" variant="body2" sx={{ mb: 1 }}>
+            {items.length === 0
+              ? 'Tocá productos para agregarlos. Los ítems y sus extras se editan en «Detalle del pedido».'
+              : `${items.reduce((n, i) => n + i.quantity, 0)} ítem(s) en el pedido · editalos en «Detalle del pedido».`}
+          </Typography>
 
           <Divider sx={{ my: 1.5 }} />
 
@@ -472,7 +583,7 @@ export default function PosPage() {
         pizzas={pizzas}
         onConfirm={(lines) => {
           lines.forEach((l) =>
-            addItem({ productId: l.productId, name: l.name, unitPrice: l.unitPrice, quantity: l.quantity, notes: l.notes })
+            addPizzaLines({ productId: l.productId, name: l.name, unitPrice: l.unitPrice, quantity: l.quantity, notes: l.notes })
           );
           setPizzaOpen(false);
         }}
@@ -531,6 +642,7 @@ export default function PosPage() {
               unitPrice: promoPick.price,
               quantity: 1,
               notes: formatPromoNotes(promoPick.id, chosen) || undefined,
+              extraEligible: true,
             });
           }
           setPromoPick(null);
@@ -547,6 +659,43 @@ export default function PosPage() {
           }}
         />
       )}
+
+      {/* Diálogo de extra (pizzas / promos) */}
+      <Dialog open={extraCtx !== null} onClose={() => setExtraCtx(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Extra · {extraCtx?.name}</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            <TextField
+              label="Descripción del extra"
+              placeholder="Ej: extra de huevo"
+              value={extraForm.description}
+              onChange={(e) => setExtraForm((p) => ({ ...p, description: e.target.value }))}
+              fullWidth
+              autoFocus
+            />
+            <TextField
+              label="Monto del extra"
+              type="number"
+              inputProps={{ min: 0, step: 0.01 }}
+              value={extraForm.amount}
+              onChange={(e) => setExtraForm((p) => ({ ...p, amount: e.target.value }))}
+              fullWidth
+              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          {extraCtx?.extra && (
+            <Button color="error" onClick={() => { clearExtra(extraCtx.key); setExtraCtx(null); }}>
+              Quitar
+            </Button>
+          )}
+          <Button onClick={() => setExtraCtx(null)}>Cancelar</Button>
+          <Button variant="contained" onClick={saveExtra} disabled={!extraForm.description.trim() && !(Number(extraForm.amount) > 0)}>
+            Guardar
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

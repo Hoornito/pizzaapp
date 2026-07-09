@@ -22,6 +22,7 @@ import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import BadgeIcon from '@mui/icons-material/Badge';
 import PrintIcon from '@mui/icons-material/Print';
 import PointOfSaleIcon from '@mui/icons-material/PointOfSale';
+import CakeIcon from '@mui/icons-material/Cake';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import type { Role } from '@prisma/client';
@@ -37,6 +38,7 @@ const navItems = [
   { label: 'Mostrador', icon: <PointOfSaleIcon />, href: '/admin/pos' },
   { label: 'Pedidos', icon: <ShoppingBagIcon />, href: '/admin/orders' },
   { label: 'Productos', icon: <LocalPizzaIcon />, href: '/admin/products' },
+  { label: 'Postres', icon: <CakeIcon />, href: '/admin/postres' },
   { label: 'Categorías', icon: <CategoryIcon />, href: '/admin/categories' },
   { label: 'Promociones', icon: <LocalOfferIcon />, href: '/admin/promotions' },
   { label: 'Usuarios', icon: <PeopleIcon />, href: '/admin/users', adminOnly: true },

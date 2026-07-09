@@ -56,16 +56,8 @@ const emptyForm: TxnForm = { amount: '', category: '', description: '', paymentM
 const needsEmployee = (category: string) =>
   category === FINANCE_CATEGORY_SUELDOS || category === FINANCE_CATEGORY_ADELANTOS;
 
-/** Fecha de hoy en formato YYYY-MM-DD según la hora local del navegador (evita el corrimiento de UTC). */
-function localToday(): string {
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().split('T')[0];
-}
-
 export default function FinancePage() {
   const { showSuccess, showError } = useSnackbar();
-  const [date, setDate] = useState(localToday);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -83,11 +75,11 @@ export default function FinancePage() {
 
   const loadSummary = useCallback(() => {
     setLoading(true);
-    fetch(`/api/admin/finance/summary?date=${date}`)
+    fetch('/api/admin/finance/summary')
       .then((r) => r.json())
       .then((d) => setSummary(d.data))
       .finally(() => setLoading(false));
-  }, [date]);
+  }, []);
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
 
@@ -282,17 +274,14 @@ export default function FinancePage() {
         </Box>
       </Paper>
 
-      {/* Filtro de fecha */}
+      {/* Aviso de turno */}
       <Paper sx={{ p: 2, mb: 3 }}>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <TextField
-            type="date"
-            size="small"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            label="Día"
-            InputLabelProps={{ shrink: true }}
-          />
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <Typography variant="body2" color="text.secondary">
+            {register
+              ? '📊 Estás viendo el movimiento del turno actual (desde que abriste la caja). El total del día está en Reportes.'
+              : 'No hay caja abierta. Abrí la caja para empezar a registrar el turno. El historial del día está en Reportes.'}
+          </Typography>
           <Button variant="text" onClick={loadSummary} disabled={loading}>Actualizar</Button>
         </Box>
       </Paper>
@@ -301,13 +290,13 @@ export default function FinancePage() {
       {totals && (
         <Grid container spacing={3} sx={{ mb: 4 }}>
           <Grid item xs={12} sm={6} md={3}>
-            <StatCard title="Ingresos totales (día)" value={formatCurrency(totals.totalIncome)} icon="💰" color="#2E7D32" />
+            <StatCard title="Ingresos del turno" value={formatCurrency(totals.totalIncome)} icon="💰" color="#2E7D32" />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
-            <StatCard title="Egresos totales (día)" value={formatCurrency(totals.totalExpense)} icon="📉" color="#C62828" />
+            <StatCard title="Egresos del turno" value={formatCurrency(totals.totalExpense)} icon="📉" color="#C62828" />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
-            <StatCard title="Resultado neto (día)" value={formatCurrency(totals.net)} icon="⚖️" color="#1565C0" />
+            <StatCard title="Resultado neto del turno" value={formatCurrency(totals.net)} icon="⚖️" color="#1565C0" />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <StatCard
@@ -324,7 +313,7 @@ export default function FinancePage() {
         {/* Libro de movimientos */}
         <Grid item xs={12} md={7}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" fontWeight={600} gutterBottom>Libro de movimientos del día</Typography>
+            <Typography variant="h6" fontWeight={600} gutterBottom>Libro de movimientos del turno</Typography>
             <TableContainer>
               <Table size="small">
                 <TableHead>
@@ -340,7 +329,7 @@ export default function FinancePage() {
                   {ledger.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                        Sin movimientos para este día
+                        {register ? 'Sin movimientos en el turno' : 'Abrí la caja para registrar el turno'}
                       </TableCell>
                     </TableRow>
                   )}
@@ -396,7 +385,7 @@ export default function FinancePage() {
         <Grid item xs={12} md={5}>
           {totals && (
             <Paper sx={{ p: 3, mb: 3 }}>
-              <Typography variant="h6" fontWeight={600} gutterBottom>Desglose del día</Typography>
+              <Typography variant="h6" fontWeight={600} gutterBottom>Desglose del turno</Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Row label="Ventas de pedidos" value={formatCurrency(totals.orderTotalSales)} />
                 <Row label="  · de las cuales en efectivo" value={formatCurrency(totals.orderCashSales)} muted />

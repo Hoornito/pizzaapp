@@ -56,7 +56,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
 
   const itemsHtml = groupTicketItems(order.items, isPizzaItemNotes)
     .map((g) => {
-      const name = g.isPizza ? g.notes : g.title;
+      const base = g.isPizza ? g.notes : g.title;
+      const name = g.extra ? `${base} ${g.extra}` : base;
       return `<div class="item-row"><span class="item-name">${esc(g.quantity)}x ${esc(name)}</span><span class="item-price">${esc(fmtMoney(g.unitPrice * g.quantity))}</span></div>`;
     })
     .join('');

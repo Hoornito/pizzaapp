@@ -339,14 +339,38 @@ export function parseLocalDate(dateStr?: string): Date {
   return new Date(y, m - 1, d);
 }
 
-export async function getFinanceSummary(dateStr?: string) {
-  const date = parseLocalDate(dateStr);
-  const from = startOfDay(date);
-  const to = endOfDay(date);
+/**
+ * Resumen de Finanzas del TURNO ACTUAL (la caja abierta). Se reinicia por turno:
+ * al cerrar la caja no queda ninguna abierta, así que devuelve todo en 0 hasta
+ * que se abra la próxima. El registro completo del día vive en Reportes.
+ */
+export async function getFinanceSummary() {
+  const [openRegister, history] = await Promise.all([
+    getOpenCashRegister(),
+    prisma.cashRegister.findMany({ orderBy: { openedAt: 'desc' }, take: 10 }),
+  ]);
 
-  const [ordersDay, manualTxns, openRegister, history] = await Promise.all([
+  const emptyTotals = {
+    totalIncome: 0,
+    totalExpense: 0,
+    net: 0,
+    orderTotalSales: 0,
+    orderCashSales: 0,
+    manualIncome: 0,
+    manualExpense: 0,
+  };
+
+  // Sin caja abierta → nada que mostrar (el día completo está en Reportes).
+  if (!openRegister) {
+    return { date: new Date().toISOString(), totals: emptyTotals, register: null, expectedCash: null, ledger: [], history };
+  }
+
+  const from = openRegister.openedAt;
+  const to = new Date();
+
+  const [ordersSession, manualTxns] = await Promise.all([
     prisma.order.findMany({
-      // ventas cobradas en el día (por fecha de pago)
+      // ventas cobradas durante esta sesión de caja (por fecha de pago)
       where: {
         status: { not: 'CANCELADO' },
         payment: { status: 'APPROVED', paidAt: { gte: from, lte: to } },
@@ -362,18 +386,17 @@ export async function getFinanceSummary(dateStr?: string) {
       },
       orderBy: { createdAt: 'asc' },
     }),
+    // movimientos manuales asociados a esta caja
     prisma.financeTransaction.findMany({
-      where: { createdAt: { gte: from, lte: to } },
+      where: { cashRegisterId: openRegister.id },
       orderBy: { createdAt: 'asc' },
       include: { employee: { select: { firstName: true, lastName: true } } },
     }),
-    getOpenCashRegister(),
-    prisma.cashRegister.findMany({ orderBy: { openedAt: 'desc' }, take: 10 }),
   ]);
 
-  const orderTotalSales = ordersDay.reduce((s, o) => s + toNumber(o.total), 0);
-  // efectivo del día = efectivo puro + porción en efectivo de los mixtos
-  const orderCashSales = ordersDay.reduce((s, o) => s + orderCashPortion(o), 0);
+  const orderTotalSales = ordersSession.reduce((s, o) => s + toNumber(o.total), 0);
+  // efectivo del turno = efectivo puro + porción en efectivo de los mixtos
+  const orderCashSales = ordersSession.reduce((s, o) => s + orderCashPortion(o), 0);
 
   let manualIncome = 0;
   let manualExpense = 0;
@@ -386,7 +409,7 @@ export async function getFinanceSummary(dateStr?: string) {
   const totalExpense = manualExpense;
 
   const ledger: LedgerRow[] = [
-    ...ordersDay.map((o) => ({
+    ...ordersSession.map((o) => ({
       id: `order-${o.id}`,
       time: o.payment?.paidAt ?? o.createdAt,
       type: 'INCOME' as const,
@@ -409,7 +432,7 @@ export async function getFinanceSummary(dateStr?: string) {
     })),
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
-  const expectedCash = openRegister ? await computeExpectedCash(openRegister) : null;
+  const expectedCash = await computeExpectedCash(openRegister);
 
   return {
     date: from.toISOString(),
@@ -422,7 +445,7 @@ export async function getFinanceSummary(dateStr?: string) {
       manualIncome,
       manualExpense,
     },
-    register: openRegister ? { ...openRegister, expectedCash } : null,
+    register: { ...openRegister, expectedCash },
     expectedCash,
     ledger,
     history,

@@ -1,17 +1,24 @@
 import type { OrderWithRelations } from '@/types/order.types';
-import { toNumber, formatDate, formatOrderPayment } from '@/lib/utils';
+import { toNumber, formatDate, formatOrderPayment, groupTicketItems } from '@/lib/utils';
+import { isPizzaItemNotes } from '@/lib/pizza';
 
 export function generateKitchenTicketHtml(order: OrderWithRelations): string {
-  const items = order.items
-    .map(
-      (item) => `
+  const items = groupTicketItems(order.items, isPizzaItemNotes)
+    .map((g) => {
+      // Para pizzas el título es la nota (tamaño + gustos); el extra va pegado.
+      const base = g.isPizza ? g.notes : g.title || 'Producto';
+      const name = g.extra ? `${base} ${g.extra}` : base;
+      // Composición de no-pizzas (docena, doble cambalache) debajo, para la cocina.
+      const sub = !g.isPizza && g.notes
+        ? `<tr><td></td><td colspan="2" class="notes">⚠️ ${g.notes}</td></tr>`
+        : '';
+      return `
     <tr>
-      <td class="qty">${item.quantity}x</td>
-      <td class="name">${item.product?.name || item.promotion?.name || 'Producto'}</td>
-      <td class="price">$${toNumber(item.subtotal).toLocaleString('es-AR')}</td>
-    </tr>
-    ${item.notes ? `<tr><td></td><td colspan="2" class="notes">⚠️ ${item.notes}</td></tr>` : ''}`
-    )
+      <td class="qty">${g.quantity}x</td>
+      <td class="name">${name}</td>
+      <td class="price">$${(g.unitPrice * g.quantity).toLocaleString('es-AR')}</td>
+    </tr>${sub}`;
+    })
     .join('');
 
   return `<!DOCTYPE html>

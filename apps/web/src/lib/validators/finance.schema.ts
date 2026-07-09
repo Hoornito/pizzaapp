@@ -50,7 +50,16 @@ export const employeeSchema = z.object({
   address: z.string().max(300).optional().nullable(),
   role: z.enum(['COCINERO', 'REPARTIDOR', 'OTRO']).default('OTRO'),
   dailyWage: z.coerce.number().min(0, 'El sueldo no puede ser negativo'),
-  hireDate: z.coerce.date({ required_error: 'Ingresá la fecha de ingreso' }),
+  // La fecha llega como "YYYY-MM-DD". La interpretamos como medianoche LOCAL
+  // (no UTC) para que no retroceda un día al mostrarla en la zona horaria del
+  // negocio (Argentina, UTC-3).
+  hireDate: z.preprocess((val) => {
+    if (typeof val === 'string') {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(val);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    }
+    return val;
+  }, z.date({ required_error: 'Ingresá la fecha de ingreso' })),
   active: z.boolean().default(true),
 });
 

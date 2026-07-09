@@ -64,13 +64,23 @@ export interface TicketGroup {
   /** Texto principal a mostrar. Para pizzas es la nota (tamaño + gustos). */
   title: string;
   notes: string;
+  /** Extra de la línea (solo pizzas/promos), ya en mayúsculas. Ej: "EXTRA: HUEVO". */
+  extra: string;
   unitPrice: number;
+}
+
+/** Separa las líneas "EXTRA: ..." del resto de las notas. */
+function splitExtra(rawNotes: string): { base: string; extra: string } {
+  const lines = rawNotes.split('\n');
+  const extraLines = lines.filter((l) => /^\s*EXTRA:/i.test(l));
+  const baseLines = lines.filter((l) => !/^\s*EXTRA:/i.test(l));
+  return { base: baseLines.join('\n').trim(), extra: extraLines.map((l) => l.trim()).join(' ') };
 }
 
 /**
  * Agrupa los ítems de un pedido para los tickets: junta los idénticos y suma la
- * cantidad. Así 2 pizzas iguales salen como "2x ...". La clave incluye las notas,
- * así que una pizza entera y una mitad-y-mitad (o distinto tamaño) NO se mezclan.
+ * cantidad. Así 2 pizzas iguales salen como "2x ...". La clave incluye las notas
+ * y el extra, así que una pizza con extra y otra sin extra NO se mezclan.
  * `isPizzaNotes` se recibe por parámetro para no acoplar utils con lib/pizza.
  */
 export function groupTicketItems(
@@ -80,13 +90,13 @@ export function groupTicketItems(
   const map = new Map<string, TicketGroup>();
   for (const it of items) {
     const isDozen = /docena/i.test(it.promotion?.name || '');
-    const isPizza = isPizzaNotes(it.notes);
-    const notes = it.notes ?? '';
-    const title = isPizza ? notes : it.product?.name || it.promotion?.name || '';
-    const key = `${isDozen ? 'D' : isPizza ? 'P' : 'O'}|${it.productId ?? ''}|${it.promotionId ?? ''}|${title}|${notes}`;
+    const { base, extra } = splitExtra(it.notes ?? '');
+    const isPizza = isPizzaNotes(base);
+    const title = isPizza ? base : it.product?.name || it.promotion?.name || '';
+    const key = `${isDozen ? 'D' : isPizza ? 'P' : 'O'}|${it.productId ?? ''}|${it.promotionId ?? ''}|${title}|${base}|${extra}`;
     const g = map.get(key);
     if (g) g.quantity += it.quantity;
-    else map.set(key, { quantity: it.quantity, isDozen, isPizza, title, notes, unitPrice: toNumber(it.unitPrice) });
+    else map.set(key, { quantity: it.quantity, isDozen, isPizza, title, notes: base, extra, unitPrice: toNumber(it.unitPrice) });
   }
   return [...map.values()];
 }

@@ -102,6 +102,8 @@ export const FINANCE_EXPENSE_CATEGORIES = [
 export const FINANCE_CATEGORY_SUELDOS = 'Sueldos';
 export const FINANCE_CATEGORY_ADELANTOS = 'Adelantos';
 export const FINANCE_CATEGORY_SOBRES = 'Retiro en sobre';
+// Retiro del "dinero a favor" generado por la venta de postres (egreso en Finanzas).
+export const FINANCE_CATEGORY_POSTRES = 'Retiro de postres';
 
 export const FINANCE_PAYMENT_METHODS = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA'] as const;
 

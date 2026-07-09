@@ -198,6 +198,20 @@ model StockMovement {
   @@index([createdAt])
 }
 
+// Retiro del "dinero a favor" generado por la venta de postres. NO impacta en
+// Finanzas: solo descuenta del disponible a favor de postres. El egreso real (si
+// corresponde) se carga a mano en Finanzas, porque a veces el retiro no es dinero
+// (p. ej. se cambia por mercadería).
+model PostreWithdrawal {
+  id          String   @id @default(cuid())
+  amount      Decimal  @db.Decimal(10, 2)
+  reason      String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 // ─── Promotions ───────────────────────────────────────────────────────────────
 
 model Promotion {
