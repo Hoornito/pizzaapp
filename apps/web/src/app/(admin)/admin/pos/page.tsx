@@ -105,6 +105,7 @@ export default function PosPage() {
   const pizzasCategoryId = useMemo(() => categories.find((c) => c.slug === 'pizzas')?.id, [categories]);
   const empanadasCategoryId = useMemo(() => categories.find((c) => c.slug === 'empanadas')?.id, [categories]);
   const bebidasCategoryId = useMemo(() => categories.find((c) => c.slug === 'bebidas')?.id, [categories]);
+  const postresCategoryId = useMemo(() => categories.find((c) => c.slug === 'postres')?.id, [categories]);
   const pizzas = useMemo(() => products.filter((p) => p.categoryId === pizzasCategoryId), [products, pizzasCategoryId]);
   const empanadas = useMemo(
     () => products.filter((p) => p.categoryId === empanadasCategoryId && p.available && !isDobleCambalache(p.name)),
@@ -246,19 +247,20 @@ export default function PosPage() {
 
   if (loading) return <LoadingSpinner message="Cargando productos..." />;
 
-  const tile = (label: string, price: number | string, onClick: () => void, key: string) => (
+  const tile = (label: string, price: number | string, onClick: () => void, key: string, disabled = false) => (
     <Button
       key={key}
       variant="outlined"
       onClick={onClick}
+      disabled={disabled}
       sx={{
         flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', p: 1.5,
         height: '100%', textTransform: 'none', borderColor: 'divider',
       }}
     >
       <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.2 }}>{label}</Typography>
-      <Typography variant="caption" color="primary.main" fontWeight={700}>
-        {typeof price === 'number' ? formatCurrency(price) : price}
+      <Typography variant="caption" color={disabled ? 'text.disabled' : 'primary.main'} fontWeight={700}>
+        {disabled ? 'Sin stock' : typeof price === 'number' ? formatCurrency(price) : price}
       </Typography>
     </Button>
   );
@@ -346,8 +348,12 @@ export default function PosPage() {
           {/* Otras categorías: productos sueltos */}
           {activeTab !== pizzasCategoryId && activeTab !== empanadasCategoryId && activeTab !== bebidasCategoryId && activeTab !== 'promos' && (
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
-              {products.filter((p) => p.categoryId === activeTab).map((p) => tile(p.name, Number(p.price),
-                () => addItem({ productId: p.id, name: p.name, unitPrice: Number(p.price), quantity: 1 }), p.id))}
+              {products.filter((p) => p.categoryId === activeTab).map((p) => {
+                // Solo los postres controlan stock: sin stock → deshabilitado.
+                const outOfStock = p.categoryId === postresCategoryId && (p.stock ?? 0) <= 0;
+                return tile(p.name, Number(p.price),
+                  () => addItem({ productId: p.id, name: p.name, unitPrice: Number(p.price), quantity: 1 }), p.id, outOfStock);
+              })}
             </Box>
           )}
         </Paper>

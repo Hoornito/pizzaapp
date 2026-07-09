@@ -88,9 +88,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const order = await createOrder(session.user.id, parsed.data, {
-    confirmImmediately: true,
-    printOnCreate: true,
-  });
-  return NextResponse.json({ success: true, data: order });
+  try {
+    const order = await createOrder(session.user.id, parsed.data, {
+      confirmImmediately: true,
+      printOnCreate: true,
+    });
+    return NextResponse.json({ success: true, data: order });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'No se pudo cargar el pedido' },
+      { status: 400 }
+    );
+  }
 }

@@ -35,6 +35,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Datos inválidos', details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const order = await createOrder(session.user.id, parsed.data);
-  return NextResponse.json({ success: true, data: order }, { status: 201 });
+  try {
+    const order = await createOrder(session.user.id, parsed.data);
+    return NextResponse.json({ success: true, data: order }, { status: 201 });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'No se pudo crear el pedido' },
+      { status: 400 }
+    );
+  }
 }

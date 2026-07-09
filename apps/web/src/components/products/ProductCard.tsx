@@ -27,6 +27,10 @@ export function ProductCard({ product }: ProductCardProps) {
   const isDoble = /doble cambalache/i.test(product.name);
   const [dobleOpen, setDobleOpen] = useState(false);
 
+  // Solo los postres controlan stock: sin stock → no se puede agregar.
+  const outOfStock = product.category?.slug === 'postres' && (product.stock ?? 0) <= 0;
+  const canAdd = product.available && !outOfStock;
+
   const addToCart = (notes?: string) => {
     addItemAndOpen({
       type: 'product',
@@ -52,6 +56,8 @@ export function ProductCard({ product }: ProductCardProps) {
         display: 'flex',
         flexDirection: 'column',
         transition: 'transform 0.2s, box-shadow 0.2s',
+        opacity: outOfStock ? 0.55 : 1,
+        filter: outOfStock ? 'grayscale(1)' : 'none',
         '&:hover': {
           transform: 'translateY(-4px)',
           boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
@@ -91,10 +97,10 @@ export function ProductCard({ product }: ProductCardProps) {
           fullWidth
           startIcon={<AddShoppingCartIcon />}
           onClick={handleAddToCart}
-          disabled={!product.available}
+          disabled={!canAdd}
           sx={{ '& .MuiButton-startIcon': { display: { xs: 'none', sm: 'inherit' } } }}
         >
-          {!product.available ? 'No disponible' : 'Agregar'}
+          {outOfStock ? 'Sin stock' : !product.available ? 'No disponible' : 'Agregar'}
         </Button>
       </CardActions>
       {isDoble && (

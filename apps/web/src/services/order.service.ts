@@ -20,6 +20,55 @@ const ORDER_INCLUDE = {
   payment: true,
 } satisfies Prisma.OrderInclude;
 
+/**
+ * Ajusta el stock de los POSTRES de un pedido. Solo la categoría "postres" lleva
+ * control de stock; el resto (pizzas/empanadas/bebidas) se habilita/deshabilita
+ * a mano y no descuenta.
+ *   - 'sell'    → descuenta (venta), sin bajar de 0.
+ *   - 'restore' → devuelve al stock (cancelación de un pedido ya vendido).
+ */
+async function adjustPostresStockForOrder(orderId: string, direction: 'sell' | 'restore') {
+  const items = await prisma.orderItem.findMany({
+    where: { orderId, productId: { not: null } },
+    include: { product: { include: { category: true } } },
+  });
+  for (const it of items) {
+    if (!it.productId || it.product?.category?.slug !== 'postres') continue;
+    if (direction === 'sell') {
+      const newStock = Math.max(0, it.product.stock - it.quantity);
+      await prisma.product.update({ where: { id: it.productId }, data: { stock: newStock } });
+    } else {
+      await prisma.product.update({
+        where: { id: it.productId },
+        data: { stock: { increment: it.quantity } },
+      });
+    }
+  }
+}
+
+/**
+ * Valida que haya stock suficiente de los POSTRES pedidos. Lanza si algún postre
+ * no alcanza. No afecta a las demás categorías.
+ */
+async function assertPostresStock(items: CreateOrderInput['items']) {
+  const reqQty = new Map<string, number>();
+  for (const i of items) {
+    if (i.productId) reqQty.set(i.productId, (reqQty.get(i.productId) ?? 0) + i.quantity);
+  }
+  if (reqQty.size === 0) return;
+  const products = await prisma.product.findMany({
+    where: { id: { in: [...reqQty.keys()] } },
+    include: { category: true },
+  });
+  for (const p of products) {
+    if (p.category?.slug !== 'postres') continue;
+    const qty = reqQty.get(p.id) ?? 0;
+    if (qty > 0 && p.stock < qty) {
+      throw new Error(`Sin stock suficiente de ${p.name} (quedan ${p.stock})`);
+    }
+  }
+}
+
 async function generateOrderNumber(): Promise<string> {
   const today = new Date();
   const dateStr = format(today, 'yyyyMMdd');
@@ -82,6 +131,9 @@ export async function createOrder(
   // imprimen (cocina + comanda) apenas se cargan.
   options?: { printOnCreate?: boolean; confirmImmediately?: boolean }
 ) {
+  // No permitir vender postres sin stock suficiente (las demás categorías no controlan stock).
+  await assertPostresStock(data.items);
+
   const orderNumber = await generateOrderNumber();
 
   // Para delivery sin addressId, creamos la dirección a partir de los datos inline.
@@ -151,9 +203,11 @@ export async function createOrder(
     include: ORDER_INCLUDE,
   });
 
-  // Si está esperando pago (MercadoPago), no avisamos a la cocina todavía: el
-  // aviso se dispara al acreditarse el pago (ver notifyOrderReceived).
+  // Si está esperando pago (MercadoPago), no avisamos a la cocina todavía ni
+  // descontamos stock: ambas cosas se disparan al acreditarse el pago
+  // (ver promoteOrderAfterPayment).
   if (initialStatus !== 'PENDIENTE_PAGO') {
+    await adjustPostresStockForOrder(order.id, 'sell');
     notifyOrderReceived(order);
     // Pedidos de mostrador: imprimir cocina + comanda al crearlos.
     if (options?.printOnCreate) {
@@ -200,6 +254,8 @@ export async function promoteOrderAfterPayment(orderId: string) {
     include: ORDER_INCLUDE,
   });
 
+  // Recién ahora (pago acreditado) descontamos el stock de postres.
+  await adjustPostresStockForOrder(orderId, 'sell');
   await notifyOrderReceived(order);
   emitOrderStatusChanged(orderId, 'RECIBIDO', order);
   eventBus.emit('order:status_changed', order as never);
@@ -222,6 +278,16 @@ export async function updateOrderStatus(
     },
     include: ORDER_INCLUDE,
   });
+
+  // Al cancelar un pedido que ya había descontado stock (todo menos los que
+  // seguían en PENDIENTE_PAGO, que nunca descontaron), devolvemos los postres.
+  if (
+    data.status === 'CANCELADO' &&
+    existing.status !== 'CANCELADO' &&
+    existing.status !== 'PENDIENTE_PAGO'
+  ) {
+    await adjustPostresStockForOrder(orderId, 'restore');
+  }
 
   if (actorId) {
     await prisma.auditLog.create({
