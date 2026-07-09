@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   // build normal de `.next`. El modo standalone rompía los clientReferenceManifest
   // de las páginas al correr con server custom.
   // Renombrado en Next 15: antes vivía en experimental.serverComponentsExternalPackages.
-  serverExternalPackages: ['@prisma/client', 'prisma'],
+  serverExternalPackages: ['@prisma/client', 'prisma', 'sharp'],
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**' },

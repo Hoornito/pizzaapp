@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { readFileSync } from 'fs';
 import path from 'path';
+import sharp from 'sharp';
 import { auth } from '@/lib/auth';
 import { isStaff } from '@/lib/roles';
 import { prisma } from '@/lib/prisma';
@@ -12,12 +13,20 @@ const esc = (s: unknown) =>
 
 // Logo en base64 (data URI) cacheado: así se imprime igual desde el navegador
 // y desde QZ (que recibe el HTML como string suelto, sin poder resolver /logo.png).
+// Se pre-procesa a gris + alto contraste para que la impresora térmica (POS-80)
+// no lo imprima pálido/"dithered": el linework sale con fuerza de tinta.
 let logoDataUri: string | null | undefined;
-function getLogoDataUri(): string | null {
+async function getLogoDataUri(): Promise<string | null> {
   if (logoDataUri === undefined) {
     try {
       const buf = readFileSync(path.join(process.cwd(), 'public', 'logo.png'));
-      logoDataUri = `data:image/png;base64,${buf.toString('base64')}`;
+      const processed = await sharp(buf)
+        .flatten({ background: '#ffffff' }) // transparencia → blanco (papel)
+        .grayscale() // sin color: evita el "dithering" de la térmica
+        .linear(1.6, -80) // más contraste + más oscuro (pivote ~128)
+        .png()
+        .toBuffer();
+      logoDataUri = `data:image/png;base64,${processed.toString('base64')}`;
     } catch {
       logoDataUri = null;
     }
@@ -69,7 +78,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
     order.notes,
     order.user?.role === 'ADMIN' ? null : order.user?.name
   );
-  const logo = getLogoDataUri();
+  const logo = await getLogoDataUri();
 
   const html = `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"><title>Comanda #${esc(order.orderNumber)}</title>
@@ -88,7 +97,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   @media print { body { -webkit-print-color-adjust:exact; } }
 </style></head>
 <body>
-  ${logo ? `<div class="center"><img src="${logo}" alt="Cambalache" style="width:38mm;height:auto;margin:0 auto 4px;display:block" /></div>` : ''}
+  ${logo ? `<div class="center"><img src="${logo}" alt="Cambalache" style="width:44mm;height:auto;margin:0 auto 4px;display:block;-webkit-print-color-adjust:exact;print-color-adjust:exact" /></div>` : ''}
   <div class="center bold large">PIZZERÍA CAMBALACHE</div>
   <div class="center" style="font-size:10px;margin-bottom:8px">Pizza a la piedra · San Vicente</div>
   <div class="sep"></div>
