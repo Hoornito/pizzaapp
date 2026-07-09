@@ -28,6 +28,13 @@ export interface ReportData {
   topProducts: Array<{ name: string; quantity: number; revenue: number }>;
   topPromotions: Array<{ name: string; quantity: number; revenue: number }>;
   revenueByDay: Array<{ date: string; revenue: number; orders: number }>;
+  postres?: {
+    unidadesVendidas: number;
+    ingreso: number;
+    entradas: number;
+    salidas: number;
+    stockDisponible: number;
+  };
 }
 
 export interface DashboardStats {

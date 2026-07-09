@@ -168,10 +168,34 @@ model Product {
   cartItems      CartItem[]
   orderItems     OrderItem[]
   promotionItems PromotionItem[]
+  stockMovements StockMovement[]
 
   @@index([categoryId])
   @@index([available])
   @@index([name])
+}
+
+// ─── Stock ────────────────────────────────────────────────────────────────────
+
+enum StockMovementKind {
+  ENTRADA // ingreso de mercadería (suma stock)
+  SALIDA  // merma/ajuste negativo (resta stock)
+}
+
+model StockMovement {
+  id          String            @id @default(cuid())
+  productId   String
+  kind        StockMovementKind
+  quantity    Int
+  note        String?
+  createdById String?
+  createdAt   DateTime          @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([kind])
+  @@index([createdAt])
 }
 
 // ─── Promotions ───────────────────────────────────────────────────────────────

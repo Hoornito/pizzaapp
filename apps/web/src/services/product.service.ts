@@ -76,6 +76,49 @@ export async function deleteProduct(id: string) {
   return prisma.product.delete({ where: { id } });
 }
 
+/**
+ * Ajusta el stock de un producto registrando un movimiento (entrada o salida).
+ * Todo en una transacción: crea el StockMovement y actualiza Product.stock.
+ * No permite dejar el stock en negativo.
+ */
+export async function adjustStock(
+  productId: string,
+  kind: 'ENTRADA' | 'SALIDA',
+  quantity: number,
+  note: string | null,
+  userId?: string
+) {
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    throw new Error('La cantidad debe ser un número entero positivo');
+  }
+  return prisma.$transaction(async (tx) => {
+    const product = await tx.product.findUnique({ where: { id: productId } });
+    if (!product) throw new Error('Producto no encontrado');
+    const delta = kind === 'ENTRADA' ? quantity : -quantity;
+    const newStock = product.stock + delta;
+    if (newStock < 0) {
+      throw new Error('No hay stock suficiente para descontar esa cantidad');
+    }
+    await tx.stockMovement.create({
+      data: { productId, kind, quantity, note, createdById: userId ?? null },
+    });
+    return tx.product.update({
+      where: { id: productId },
+      data: { stock: newStock },
+      include: { category: true },
+    });
+  });
+}
+
+/** Movimientos de stock de un producto (más recientes primero). */
+export async function getStockMovements(productId: string, limit = 50) {
+  return prisma.stockMovement.findMany({
+    where: { productId },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
+}
+
 export async function getCategories() {
   return prisma.category.findMany({
     orderBy: { sortOrder: 'asc' },
