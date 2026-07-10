@@ -26,6 +26,7 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useProducts, useCategories, usePromotions } from '@/hooks/useProducts';
 import { PizzaCounterModal } from '@/components/products/PizzaCounterModal';
+import { ProductCounterModal } from '@/components/products/ProductCounterModal';
 import { EmpanadaDozenModal } from '@/components/products/EmpanadaDozenModal';
 import { EmpanadaLooseModal } from '@/components/products/EmpanadaLooseModal';
 import { EmpanadaPickModal } from '@/components/products/EmpanadaPickModal';
@@ -100,6 +101,7 @@ export default function PosPage() {
   const [items, setItems] = useState<PosItem[]>([]);
   const [tab, setTab] = useState<string>('');
   const [pizzaOpen, setPizzaOpen] = useState(false);
+  const [fainaOpen, setFainaOpen] = useState(false);
   const [dozenOpen, setDozenOpen] = useState(false);
   const [looseOpen, setLooseOpen] = useState(false);
   const [drinkCat, setDrinkCat] = useState<DrinkCat | null>(null);
@@ -122,6 +124,14 @@ export default function PosPage() {
   const empanadasCategoryId = useMemo(() => categories.find((c) => c.slug === 'empanadas')?.id, [categories]);
   const bebidasCategoryId = useMemo(() => categories.find((c) => c.slug === 'bebidas')?.id, [categories]);
   const postresCategoryId = useMemo(() => categories.find((c) => c.slug === 'postres')?.id, [categories]);
+  const fainaCategoryId = useMemo(
+    () => categories.find((c) => c.slug === 'faina' || /fain/i.test(c.name))?.id,
+    [categories]
+  );
+  const fainas = useMemo(
+    () => products.filter((p) => p.categoryId === fainaCategoryId && p.available),
+    [products, fainaCategoryId]
+  );
   const pizzas = useMemo(() => products.filter((p) => p.categoryId === pizzasCategoryId), [products, pizzasCategoryId]);
   const empanadas = useMemo(
     () => products.filter((p) => p.categoryId === empanadasCategoryId && p.available && !isDobleCambalache(p.name)),
@@ -356,6 +366,16 @@ export default function PosPage() {
             </Box>
           )}
 
+          {/* Faina: un solo botón que abre el panel con contadores por producto */}
+          {activeTab === fainaCategoryId && (
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1.5 }}>
+              <Button variant="contained" sx={{ py: 3, textTransform: 'none', fontSize: '1.1rem' }}
+                disabled={fainas.length === 0} onClick={() => setFainaOpen(true)}>
+                🫓 Faina
+              </Button>
+            </Box>
+          )}
+
           {/* Empanadas: por docena o sueltas */}
           {activeTab === empanadasCategoryId && (
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(2, 1fr)' }, gap: 1.5 }}>
@@ -415,7 +435,7 @@ export default function PosPage() {
           )}
 
           {/* Otras categorías: productos sueltos */}
-          {activeTab !== pizzasCategoryId && activeTab !== empanadasCategoryId && activeTab !== bebidasCategoryId && activeTab !== 'promos' && (
+          {activeTab !== pizzasCategoryId && activeTab !== empanadasCategoryId && activeTab !== bebidasCategoryId && activeTab !== fainaCategoryId && activeTab !== 'promos' && (
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
               {products.filter((p) => p.categoryId === activeTab).map((p) => {
                 // Solo los postres controlan stock: sin stock → deshabilitado.
@@ -586,6 +606,21 @@ export default function PosPage() {
             addPizzaLines({ productId: l.productId, name: l.name, unitPrice: l.unitPrice, quantity: l.quantity, notes: l.notes })
           );
           setPizzaOpen(false);
+        }}
+      />
+      <ProductCounterModal
+        open={fainaOpen}
+        onClose={() => setFainaOpen(false)}
+        products={fainas}
+        title="Faina"
+        icon="🫓"
+        unitSingular="faina"
+        unitPlural="fainás"
+        onConfirm={(selection) => {
+          selection.forEach((s) =>
+            addItem({ productId: s.productId, name: s.name, unitPrice: s.unitPrice, quantity: s.quantity })
+          );
+          setFainaOpen(false);
         }}
       />
       {dozenPromo && (

@@ -1,0 +1,149 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import IconButton from '@mui/material/IconButton';
+import Button from '@mui/material/Button';
+import Paper from '@mui/material/Paper';
+import Avatar from '@mui/material/Avatar';
+import AddIcon from '@mui/icons-material/Add';
+import RemoveIcon from '@mui/icons-material/Remove';
+import CloseIcon from '@mui/icons-material/Close';
+import type { ProductWithCategory } from '@/types/product.types';
+import { formatCurrency, toNumber } from '@/lib/utils';
+
+export interface CounterSelection {
+  productId: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  products: ProductWithCategory[];
+  onConfirm: (selection: CounterSelection[]) => void;
+  title?: string;
+  icon?: string;
+  unitSingular?: string;
+  unitPlural?: string;
+}
+
+/**
+ * Modal genérico de conteo: lista productos con contadores +/− y los suma al
+ * precio individual. Se usa para categorías donde se elige cantidad por producto
+ * (empanadas sueltas, faina, etc.).
+ */
+export function ProductCounterModal({
+  open,
+  onClose,
+  products,
+  onConfirm,
+  title = 'Productos',
+  icon = '🍽️',
+  unitSingular = 'producto',
+  unitPlural = 'productos',
+}: Props) {
+  const [qty, setQty] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (open) setQty({});
+  }, [open]);
+
+  const change = (id: string, delta: number) =>
+    setQty((prev) => {
+      const next = Math.max(0, (prev[id] ?? 0) + delta);
+      const copy = { ...prev };
+      if (next === 0) delete copy[id];
+      else copy[id] = next;
+      return copy;
+    });
+
+  const { totalUnits, totalPrice } = useMemo(() => {
+    let units = 0;
+    let price = 0;
+    for (const p of products) {
+      const n = qty[p.id] ?? 0;
+      units += n;
+      price += n * toNumber(p.price);
+    }
+    return { totalUnits: units, totalPrice: price };
+  }, [qty, products]);
+
+  const confirm = () => {
+    const selection: CounterSelection[] = products
+      .filter((p) => (qty[p.id] ?? 0) > 0)
+      .map((p) => ({ productId: p.id, name: p.name, quantity: qty[p.id], unitPrice: toNumber(p.price) }));
+    onConfirm(selection);
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
+      <DialogTitle sx={{ pr: 6 }}>
+        {icon} {title}
+        <IconButton onClick={onClose} size="small" sx={{ position: 'absolute', right: 12, top: 12 }}>
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+
+      <DialogContent dividers>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+          Elegí la cantidad de cada uno. Se cobran por unidad.
+        </Typography>
+        <Box
+          sx={{
+            maxHeight: { xs: '45vh', sm: 360 },
+            overflowY: 'auto',
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+            gap: 1,
+            alignContent: 'start',
+          }}
+        >
+          {products.map((p) => {
+            const n = qty[p.id] ?? 0;
+            return (
+              <Paper
+                key={p.id}
+                variant="outlined"
+                sx={{
+                  p: 0.75, borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1,
+                  borderColor: n > 0 ? 'primary.main' : 'divider', bgcolor: n > 0 ? 'action.hover' : 'background.paper',
+                }}
+              >
+                <Avatar src={p.image || undefined} variant="rounded" sx={{ width: 36, height: 36, bgcolor: 'grey.100', fontSize: '1.1rem' }}>{icon}</Avatar>
+                <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                  <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.2 }}>{p.name}</Typography>
+                  <Typography variant="caption" color="text.secondary">{formatCurrency(toNumber(p.price))}</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
+                  <IconButton size="small" onClick={() => change(p.id, -1)} disabled={n === 0} sx={{ bgcolor: 'grey.100' }}><RemoveIcon fontSize="small" /></IconButton>
+                  <Typography variant="body2" sx={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{n}</Typography>
+                  <IconButton size="small" onClick={() => change(p.id, 1)} sx={{ bgcolor: 'grey.100' }}><AddIcon fontSize="small" /></IconButton>
+                </Box>
+              </Paper>
+            );
+          })}
+        </Box>
+      </DialogContent>
+
+      <DialogActions sx={{ px: 3, py: 2, justifyContent: 'space-between' }}>
+        <Box>
+          <Typography variant="caption" color="text.secondary" display="block">
+            {totalUnits} {totalUnits === 1 ? unitSingular : unitPlural}
+          </Typography>
+          <Typography variant="h6" fontWeight={700} color="primary.main">{formatCurrency(totalPrice)}</Typography>
+        </Box>
+        <Button variant="contained" size="large" disabled={totalUnits === 0} onClick={confirm}>
+          Agregar
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
