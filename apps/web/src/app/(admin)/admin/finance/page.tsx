@@ -45,13 +45,16 @@ type TxnType = 'INCOME' | 'EXPENSE';
 
 interface TxnForm {
   amount: string;
+  cashAmount: string;
+  virtualAmount: string;
   category: string;
   description: string;
   paymentMethod: string;
   employeeId: string;
+  accumulate: string;
 }
 
-const emptyForm: TxnForm = { amount: '', category: '', description: '', paymentMethod: 'EFECTIVO', employeeId: '' };
+const emptyForm: TxnForm = { amount: '', cashAmount: '', virtualAmount: '', category: '', description: '', paymentMethod: 'EFECTIVO', employeeId: '', accumulate: '' };
 
 const needsEmployee = (category: string) =>
   category === FINANCE_CATEGORY_SUELDOS || category === FINANCE_CATEGORY_ADELANTOS;
@@ -107,16 +110,24 @@ export default function FinancePage() {
     if (!txnDialog) return;
     setSaving(true);
     try {
+      const isSueldo = txnForm.category === FINANCE_CATEGORY_SUELDOS;
+      const isMixto = txnForm.paymentMethod === 'MIXTO';
+      // En mixto el total = efectivo + virtual (ambos a mano).
+      const amount = isMixto
+        ? Number(txnForm.cashAmount || 0) + Number(txnForm.virtualAmount || 0)
+        : Number(txnForm.amount);
       const res = await fetch('/api/admin/finance/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: txnDialog,
-          amount: Number(txnForm.amount),
+          amount,
+          cashAmount: isMixto ? Number(txnForm.cashAmount || 0) : null,
           category: txnForm.category,
           description: txnForm.description || null,
           paymentMethod: txnForm.paymentMethod,
           employeeId: needsEmployee(txnForm.category) ? txnForm.employeeId || null : null,
+          accumulate: isSueldo && txnForm.accumulate ? Number(txnForm.accumulate) : null,
         }),
       });
       const json = await res.json();
@@ -460,14 +471,7 @@ export default function FinancePage() {
         <DialogTitle>{txnDialog === 'INCOME' ? 'Nuevo ingreso manual' : 'Nuevo egreso'}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-            <TextField
-              label="Monto *"
-              type="number"
-              inputProps={{ min: 0, step: 0.01 }}
-              value={txnForm.amount}
-              onChange={(e) => setTxnForm((p) => ({ ...p, amount: e.target.value }))}
-              fullWidth
-            />
+            {/* 1. Categoría del egreso/ingreso */}
             <FormControl fullWidth>
               <InputLabel>Categoría *</InputLabel>
               <Select
@@ -480,6 +484,8 @@ export default function FinancePage() {
                 ))}
               </Select>
             </FormControl>
+
+            {/* 2. Empleado (sueldos / adelantos) */}
             {needsEmployee(txnForm.category) && (
               <FormControl fullWidth>
                 <InputLabel>Empleado *</InputLabel>
@@ -497,6 +503,8 @@ export default function FinancePage() {
                 </Select>
               </FormControl>
             )}
+
+            {/* 3. Método de pago */}
             <FormControl fullWidth>
               <InputLabel>Método de pago *</InputLabel>
               <Select
@@ -504,11 +512,58 @@ export default function FinancePage() {
                 value={txnForm.paymentMethod}
                 onChange={(e) => setTxnForm((p) => ({ ...p, paymentMethod: e.target.value }))}
               >
-                {FINANCE_PAYMENT_METHODS.map((m) => (
-                  <MenuItem key={m} value={m}>{FINANCE_PAYMENT_METHOD_LABELS[m]}</MenuItem>
-                ))}
+                {FINANCE_PAYMENT_METHODS
+                  // "Mixto" solo tiene sentido en egresos.
+                  .filter((m) => m !== 'MIXTO' || txnDialog === 'EXPENSE')
+                  .map((m) => (
+                    <MenuItem key={m} value={m}>{FINANCE_PAYMENT_METHOD_LABELS[m]}</MenuItem>
+                  ))}
               </Select>
             </FormControl>
+
+            {/* 4. Monto (debajo del método). En mixto: efectivo + virtual, ambos a mano. */}
+            {txnForm.paymentMethod === 'MIXTO' ? (
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                <TextField
+                  label="En efectivo *"
+                  type="number"
+                  inputProps={{ min: 0, step: 0.01 }}
+                  value={txnForm.cashAmount}
+                  onChange={(e) => setTxnForm((p) => ({ ...p, cashAmount: e.target.value }))}
+                />
+                <TextField
+                  label="Virtual *"
+                  type="number"
+                  inputProps={{ min: 0, step: 0.01 }}
+                  value={txnForm.virtualAmount}
+                  onChange={(e) => setTxnForm((p) => ({ ...p, virtualAmount: e.target.value }))}
+                />
+              </Box>
+            ) : (
+              <TextField
+                label="Monto *"
+                type="number"
+                inputProps={{ min: 0, step: 0.01 }}
+                value={txnForm.amount}
+                onChange={(e) => setTxnForm((p) => ({ ...p, amount: e.target.value }))}
+                fullWidth
+              />
+            )}
+
+            {/* 5. Acumula a favor (solo sueldos) */}
+            {txnForm.category === FINANCE_CATEGORY_SUELDOS && (
+              <TextField
+                label="Acumula a favor (opcional)"
+                type="number"
+                inputProps={{ min: 0, step: 0.01 }}
+                value={txnForm.accumulate}
+                onChange={(e) => setTxnForm((p) => ({ ...p, accumulate: e.target.value }))}
+                fullWidth
+                helperText="Monto que el empleado deja a favor (no sale de caja). Lo de arriba es lo que retira. Se suma a su acumulado en Empleados."
+              />
+            )}
+
+            {/* 6. Descripción */}
             <TextField
               label="Descripción"
               value={txnForm.description}
@@ -524,13 +579,14 @@ export default function FinancePage() {
           <Button
             variant="contained"
             onClick={handleSaveTxn}
-            disabled={
-              saving ||
-              !txnForm.amount ||
-              Number(txnForm.amount) <= 0 ||
-              !txnForm.category ||
-              (needsEmployee(txnForm.category) && !txnForm.employeeId)
-            }
+            disabled={(() => {
+              if (saving || !txnForm.category) return true;
+              if (needsEmployee(txnForm.category) && !txnForm.employeeId) return true;
+              if (txnForm.paymentMethod === 'MIXTO') {
+                return !(Number(txnForm.cashAmount) > 0) || !(Number(txnForm.virtualAmount) > 0);
+              }
+              return !(Number(txnForm.amount) > 0);
+            })()}
           >
             Guardar
           </Button>

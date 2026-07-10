@@ -470,6 +470,8 @@ enum FinancePaymentMethod {
   EFECTIVO
   TRANSFERENCIA
   TARJETA
+  // Egreso mixto: parte en efectivo (cashAmount) y el resto virtual.
+  MIXTO
 }
 
 enum CashRegisterStatus {
@@ -515,6 +517,8 @@ model FinanceTransaction {
   cashRegisterId String?
   type           FinanceTransactionType
   amount         Decimal                @db.Decimal(10, 2)
+  // Solo para paymentMethod = MIXTO: porción en efectivo (el resto es virtual).
+  cashAmount     Decimal?               @db.Decimal(10, 2)
   category       String
   description    String?
   paymentMethod  FinancePaymentMethod

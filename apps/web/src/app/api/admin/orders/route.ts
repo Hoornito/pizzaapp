@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { startOfDay, endOfDay } from 'date-fns';
 import { parseLocalDate } from '@/services/finance.service';
 import { createOrder } from '@/services/order.service';
+import { getOpenCashRegister } from '@/services/finance.service';
 import { createOrderSchema } from '@/lib/validators';
 import { isStaff } from '@/lib/roles';
 import type { OrderStatus, Prisma } from '@prisma/client';
@@ -85,6 +86,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: 'Mercado Pago no está disponible para pedidos de mostrador' },
       { status: 400 }
+    );
+  }
+
+  // No se pueden tomar pedidos con la caja cerrada.
+  const openRegister = await getOpenCashRegister();
+  if (!openRegister) {
+    return NextResponse.json(
+      { error: 'La caja está cerrada. Abrí la caja en Finanzas para tomar pedidos.' },
+      { status: 409 }
     );
   }
 

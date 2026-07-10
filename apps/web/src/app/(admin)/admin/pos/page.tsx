@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
@@ -100,6 +100,8 @@ export default function PosPage() {
 
   const [items, setItems] = useState<PosItem[]>([]);
   const [tab, setTab] = useState<string>('');
+  // Estado de la caja: no se pueden tomar pedidos si está cerrada.
+  const [cajaAbierta, setCajaAbierta] = useState<boolean | null>(null);
   const [pizzaOpen, setPizzaOpen] = useState(false);
   const [fainaOpen, setFainaOpen] = useState(false);
   const [dozenOpen, setDozenOpen] = useState(false);
@@ -161,6 +163,15 @@ export default function PosPage() {
   const subtotal = items.reduce((s, i) => s + lineTotal(i), 0);
   const deliveryFee = deliveryType === 'DELIVERY' ? DELIVERY_FEE : 0;
   const total = subtotal + deliveryFee;
+
+  // Consultamos el estado de la caja al entrar (y se puede refrescar).
+  const loadCajaStatus = () => {
+    fetch('/api/admin/finance/summary')
+      .then((r) => r.json())
+      .then((d) => setCajaAbierta(!!d.data?.register))
+      .catch(() => setCajaAbierta(null));
+  };
+  useEffect(() => { loadCajaStatus(); }, []);
 
   const addItem = (item: Omit<PosItem, 'key'>) => {
     setItems((prev) => {
@@ -255,6 +266,10 @@ export default function PosPage() {
   };
 
   const finalize = async () => {
+    if (cajaAbierta === false) {
+      showError('La caja está cerrada. Abrí la caja en Finanzas para tomar pedidos.');
+      return;
+    }
     if (items.length === 0) { showError('Agregá al menos un producto'); return; }
     if (deliveryType === 'DELIVERY' && (!address.street || !address.number || !address.city)) {
       showError('Completá la dirección de entrega'); return;
@@ -345,6 +360,12 @@ export default function PosPage() {
   return (
     <Box>
       <Typography variant="h4" fontWeight={700} sx={{ mb: 2 }}>Mostrador · Nuevo pedido</Typography>
+
+      {cajaAbierta === false && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          La caja está <strong>cerrada</strong>. Tenés que <strong>abrir la caja en Finanzas</strong> para poder tomar pedidos.
+        </Alert>
+      )}
 
       <Box sx={{ display: 'flex', gap: 2, flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-start' }}>
         {/* Columna izquierda: catálogo + detalle del pedido */}
@@ -585,8 +606,8 @@ export default function PosPage() {
             <Typography variant="caption">Al finalizar se confirma e imprime en la estación (cocina + comanda).</Typography>
           </Alert>
 
-          <Button variant="contained" size="large" fullWidth sx={{ mt: 1.5, py: 1.5 }} disabled={submitting || items.length === 0} onClick={finalize}>
-            {submitting ? 'Cargando…' : `Finalizar · ${formatCurrency(total)}`}
+          <Button variant="contained" size="large" fullWidth sx={{ mt: 1.5, py: 1.5 }} disabled={submitting || items.length === 0 || cajaAbierta === false} onClick={finalize}>
+            {cajaAbierta === false ? 'Caja cerrada' : submitting ? 'Cargando…' : `Finalizar · ${formatCurrency(total)}`}
           </Button>
           {items.length > 0 && (
             <Button fullWidth size="small" color="inherit" sx={{ mt: 0.5 }} onClick={resetCart} disabled={submitting}>

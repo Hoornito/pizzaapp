@@ -17,10 +17,14 @@ export const financeTransactionSchema = z
   .object({
     type: z.enum(['INCOME', 'EXPENSE']),
     amount: z.coerce.number().positive('El monto debe ser mayor a 0'),
+    // Solo para MIXTO: porción en efectivo (el resto se toma como virtual).
+    cashAmount: z.coerce.number().min(0).optional().nullable(),
     category: z.string().min(1, 'Seleccioná una categoría'),
     description: z.string().max(500).optional().nullable(),
     paymentMethod: z.enum(FINANCE_PAYMENT_METHODS),
     employeeId: z.string().cuid().optional().nullable(),
+    // Solo para Sueldos: cuánto acumula a favor el empleado (además de lo que retira).
+    accumulate: z.coerce.number().min(0).optional().nullable(),
   })
   .superRefine((data, ctx) => {
     const allowed: readonly string[] =
@@ -39,6 +43,17 @@ export const financeTransactionSchema = z
         path: ['employeeId'],
         message: 'Seleccioná el empleado',
       });
+    }
+    // MIXTO: el efectivo no puede superar el total.
+    if (data.paymentMethod === 'MIXTO') {
+      const cash = data.cashAmount ?? 0;
+      if (cash <= 0 || cash >= data.amount) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['cashAmount'],
+          message: 'En mixto, el efectivo debe ser mayor a 0 y menor al total',
+        });
+      }
     }
   });
 

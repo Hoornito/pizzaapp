@@ -59,7 +59,9 @@ export function formatPizzaNotes(sel: PizzaSelection): string {
   return `${size} · ${flavors}`;
 }
 
-const SIZE_LABELS = Object.values(PIZZA_SIZE_LABELS);
+// Incluye "Pizza Chica" (etiqueta vieja) para que los pedidos anteriores al
+// renombre a "Pizza Individual" sigan reconociéndose como pizza en los tickets.
+const SIZE_LABELS = [...Object.values(PIZZA_SIZE_LABELS), 'Pizza Chica'];
 
 /**
  * Si las notas de un ítem describen una pizza (empiezan con un tamaño), las

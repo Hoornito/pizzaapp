@@ -31,7 +31,7 @@ export type PizzaSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 export const PIZZA_SIZES: PizzaSize[] = ['SMALL', 'MEDIUM', 'LARGE'];
 
 export const PIZZA_SIZE_LABELS: Record<PizzaSize, string> = {
-  SMALL: 'Pizza Chica',
+  SMALL: 'Pizza Individual',
   MEDIUM: 'Pizza Mediana',
   LARGE: 'Pizza Grande',
 };

@@ -29,7 +29,7 @@ export interface PizzaCartLine {
 
 type Mode = PizzaSize | 'HALF';
 
-const SHORT_LABEL: Record<PizzaSize, string> = { SMALL: 'Chica', MEDIUM: 'Mediana', LARGE: 'Grande' };
+const SHORT_LABEL: Record<PizzaSize, string> = { SMALL: 'Individual', MEDIUM: 'Mediana', LARGE: 'Grande' };
 const emptyBySize = (): Record<PizzaSize, Record<string, number>> => ({ SMALL: {}, MEDIUM: {}, LARGE: {} });
 
 interface Props {
@@ -47,7 +47,7 @@ interface Props {
  * su propio sub-selector de tamaño y cuenta MITADES (el total debe ser par).
  */
 export function PizzaCounterModal({ open, onClose, pizzas, onConfirm }: Props) {
-  const [mode, setMode] = useState<Mode>('MEDIUM');
+  const [mode, setMode] = useState<Mode>('LARGE');
   const [halfSize, setHalfSize] = useState<PizzaSize>('LARGE');
   // Enteras: pizzas completas por tamaño. Mitades: mitades por tamaño.
   const [wholeQty, setWholeQty] = useState<Record<PizzaSize, Record<string, number>>>(emptyBySize);
@@ -55,7 +55,7 @@ export function PizzaCounterModal({ open, onClose, pizzas, onConfirm }: Props) {
 
   useEffect(() => {
     if (open) {
-      setMode('MEDIUM');
+      setMode('LARGE');
       setHalfSize('LARGE');
       setWholeQty(emptyBySize());
       setHalfQty(emptyBySize());
@@ -191,7 +191,7 @@ export function PizzaCounterModal({ open, onClose, pizzas, onConfirm }: Props) {
       <DialogContent dividers>
         {/* Selector de tamaño */}
         <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-          {sizeBtn('SMALL', 'Chica')}
+          {sizeBtn('SMALL', 'Individual')}
           {sizeBtn('MEDIUM', 'Mediana')}
           {sizeBtn('LARGE', 'Grande')}
           {sizeBtn('HALF', 'Mitad y mitad')}

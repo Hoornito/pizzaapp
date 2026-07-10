@@ -46,8 +46,8 @@ export async function computeExpectedCash(register: CashRegister): Promise<numbe
       select: { total: true, paymentMethod: true, cashAmount: true },
     }),
     prisma.financeTransaction.findMany({
-      where: { cashRegisterId: register.id, paymentMethod: 'EFECTIVO' },
-      select: { type: true, amount: true },
+      where: { cashRegisterId: register.id },
+      select: { type: true, amount: true, paymentMethod: true, cashAmount: true },
     }),
   ]);
 
@@ -55,8 +55,16 @@ export async function computeExpectedCash(register: CashRegister): Promise<numbe
   let manualIn = 0;
   let manualOut = 0;
   for (const t of cashTxns) {
-    if (t.type === 'INCOME') manualIn += toNumber(t.amount);
-    else manualOut += toNumber(t.amount);
+    // Porción en efectivo: EFECTIVO = total; MIXTO = cashAmount; resto = 0.
+    const cash =
+      t.paymentMethod === 'EFECTIVO'
+        ? toNumber(t.amount)
+        : t.paymentMethod === 'MIXTO'
+          ? toNumber(t.cashAmount ?? 0)
+          : 0;
+    if (cash === 0) continue;
+    if (t.type === 'INCOME') manualIn += cash;
+    else manualOut += cash;
   }
 
   return toNumber(register.openingBalance) + cashSales + manualIn - manualOut;
@@ -113,6 +121,8 @@ export async function createFinanceTransaction(
       cashRegisterId: register.id,
       type: input.type,
       amount: input.amount,
+      // La porción en efectivo solo aplica al método MIXTO.
+      cashAmount: input.paymentMethod === 'MIXTO' ? input.cashAmount ?? 0 : null,
       category: input.category,
       description: input.description ?? null,
       paymentMethod: input.paymentMethod,
@@ -128,6 +138,25 @@ export async function createFinanceTransaction(
         employeeId: input.employeeId,
         kind: 'ADELANTO',
         amount: input.amount,
+        financeTransactionId: txn.id,
+        createdById: userId ?? null,
+      },
+    });
+  }
+
+  // Sueldo con "acumula a favor": suma al acumulado del empleado (sin tocar caja).
+  if (
+    input.category === FINANCE_CATEGORY_SUELDOS &&
+    input.employeeId &&
+    input.accumulate &&
+    input.accumulate > 0
+  ) {
+    await prisma.employeeMovement.create({
+      data: {
+        employeeId: input.employeeId,
+        kind: 'ACUMULADO_APORTE',
+        amount: input.accumulate,
+        // Vinculado al egreso: si se borra el sueldo, se revierte el acumulado.
         financeTransactionId: txn.id,
         createdById: userId ?? null,
       },
@@ -164,16 +193,15 @@ export async function getFinanceTotals(from: Date, to: Date) {
       select: {
         type: true,
         amount: true,
+        cashAmount: true,
         category: true,
         paymentMethod: true,
         employeeId: true,
         employee: { select: { firstName: true, lastName: true } },
       },
     }),
-    prisma.cashRegister.findMany({
-      where: { openedAt: { gte: from, lte: to } },
-      select: { openingBalance: true, countedCash: true },
-    }),
+    // Cajas del período (completas: necesitamos expectedCash/countedCash por turno).
+    prisma.cashRegister.findMany({ where: { openedAt: { gte: from, lte: to } } }),
     prisma.employeeMovement.findMany({
       where: { kind: 'ADELANTO_DESCUENTO', createdAt: { gte: from, lte: to } },
       select: { employeeId: true, amount: true, employee: { select: { firstName: true, lastName: true } } },
@@ -227,26 +255,37 @@ export async function getFinanceTotals(from: Date, to: Date) {
   let sobres = 0;
   for (const t of txns) {
     const amt = toNumber(t.amount);
-    const virtual = isVirtualMethod(t.paymentMethod);
+    // Porciones efectivo / virtual (MIXTO se reparte; el resto va entero a una).
+    const cashPart =
+      t.paymentMethod === 'EFECTIVO'
+        ? amt
+        : t.paymentMethod === 'MIXTO'
+          ? toNumber(t.cashAmount ?? 0)
+          : 0;
+    const virtualPart = isVirtualMethod(t.paymentMethod)
+      ? amt
+      : t.paymentMethod === 'MIXTO'
+        ? amt - cashPart
+        : 0;
     if (t.type === 'INCOME') {
-      if (t.paymentMethod === 'EFECTIVO') manualCashIncome += amt;
-      else if (virtual) manualVirtualIncome += amt;
+      manualCashIncome += cashPart;
+      manualVirtualIncome += virtualPart;
     } else {
-      if (t.paymentMethod === 'EFECTIVO') cashExpense += amt;
-      else if (virtual) virtualExpense += amt;
+      cashExpense += cashPart;
+      virtualExpense += virtualPart;
 
       // Otros gastos = todo egreso menos sueldos.
       if (t.category !== FINANCE_CATEGORY_SUELDOS) {
-        if (t.paymentMethod === 'EFECTIVO') otrosGastosEfectivo += amt;
-        else if (virtual) otrosGastosVirtual += amt;
+        otrosGastosEfectivo += cashPart;
+        otrosGastosVirtual += virtualPart;
       }
 
       if (t.category === FINANCE_CATEGORY_SUELDOS) {
-        if (t.paymentMethod === 'EFECTIVO') sueldosEfectivo += amt;
-        else if (virtual) sueldosVirtual += amt;
+        sueldosEfectivo += cashPart;
+        sueldosVirtual += virtualPart;
       } else if (t.category === FINANCE_CATEGORY_ADELANTOS) {
-        if (t.paymentMethod === 'EFECTIVO') adelantosEfectivo += amt;
-        else if (virtual) adelantosVirtual += amt;
+        adelantosEfectivo += cashPart;
+        adelantosVirtual += virtualPart;
       } else if (t.category === FINANCE_CATEGORY_SOBRES) {
         sobres += amt;
       }
@@ -285,6 +324,17 @@ export async function getFinanceTotals(from: Date, to: Date) {
     0
   );
 
+  // Total caja ESPERADO = suma del esperado por turno (mismo criterio que el
+  // arqueo de cada cierre en Finanzas). Antes se calculaba como aperturas +
+  // ventas del período − gastos, lo que mezclaba turnos y no cuadraba contra el
+  // "real en caja". Recordá que la apertura es el efectivo YA existente contado
+  // al abrir (no se suma dinero nuevo), así que el esperado por turno ya lo toma.
+  let totalCajaEsperado = 0;
+  for (const r of registers) {
+    if (r.status === 'OPEN') totalCajaEsperado += await computeExpectedCash(r);
+    else totalCajaEsperado += toNumber(r.expectedCash ?? 0);
+  }
+
   const totalEfectivoIngresado = orderCashSales + manualCashIncome;
   const totalVirtualIngresado = orderVirtualSales + manualVirtualIncome;
 
@@ -302,7 +352,7 @@ export async function getFinanceTotals(from: Date, to: Date) {
     adelantosVirtual,
     sobres,
     totalVirtualNeto: totalVirtualIngresado - virtualExpense,
-    totalCaja: cajaIngresada + totalEfectivoIngresado - cashExpense,
+    totalCaja: totalCajaEsperado,
     realEnCaja,
     cantEfectivo,
     cantVirtual,
