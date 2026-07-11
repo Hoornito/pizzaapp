@@ -6,7 +6,7 @@ import { markOrderPaid } from '@/services/order.service';
 
 const bodySchema = z
   .object({
-    method: z.enum(['EFECTIVO', 'TRANSFERENCIA', 'MIXTO']).optional(),
+    method: z.enum(['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'MIXTO']).optional(),
     cashAmount: z.coerce.number().min(0).optional(),
     transferAmount: z.coerce.number().min(0).optional(),
   })

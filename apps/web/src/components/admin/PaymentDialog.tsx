@@ -15,7 +15,7 @@ import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import { formatCurrency } from '@/lib/utils';
 
-export type PaymentKind = 'EFECTIVO' | 'TRANSFERENCIA' | 'MIXTO';
+export type PaymentKind = 'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA' | 'MIXTO';
 
 interface Props {
   open: boolean;
@@ -35,7 +35,9 @@ export function PaymentDialog({ open, total, initialMethod, busy, onClose, onCon
   useEffect(() => {
     if (!open) return;
     const start: PaymentKind =
-      initialMethod === 'TRANSFERENCIA' || initialMethod === 'MIXTO' ? initialMethod : 'EFECTIVO';
+      initialMethod === 'TRANSFERENCIA' || initialMethod === 'TARJETA' || initialMethod === 'MIXTO'
+        ? initialMethod
+        : 'EFECTIVO';
     setMethod(start);
     setCash(String(total));
     setTransfer('0');
@@ -68,6 +70,7 @@ export function PaymentDialog({ open, total, initialMethod, busy, onClose, onCon
         <RadioGroup value={method} onChange={(e) => setMethod(e.target.value as PaymentKind)}>
           <FormControlLabel value="EFECTIVO" control={<Radio />} label="💵 Efectivo" />
           <FormControlLabel value="TRANSFERENCIA" control={<Radio />} label="🏦 Transferencia" />
+          <FormControlLabel value="TARJETA" control={<Radio />} label="💳 QR o Tarjeta" />
           <FormControlLabel value="MIXTO" control={<Radio />} label="🔀 Mixto (efectivo + transferencia)" />
         </RadioGroup>
 

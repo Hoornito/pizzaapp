@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { eventBus } from '@/lib/event-bus';
 import { emitOrderCreated, emitOrderStatusChanged, emitNotification, emitPrintOrder } from '@/lib/socket-server';
+import { getOpenCashRegister } from '@/services/finance.service';
 import { sendText } from '@/lib/whatsapp';
 import { sanitizePhone } from '@/lib/utils';
 import type { CreateOrderInput, UpdateOrderStatusInput } from '@/lib/validators';
@@ -69,17 +70,31 @@ async function assertPostresStock(items: CreateOrderInput['items']) {
   }
 }
 
+/**
+ * Número de pedido. Con caja abierta lleva el prefijo del turno y se reinicia por
+ * turno: cuenta los pedidos desde que se abrió la caja (TM = mañana, TN = noche).
+ *   Ej: 20260710-TM001, 20260710-TN001
+ * Sin caja abierta (p. ej. pedido online fuera de turno) cae al formato por día.
+ */
 async function generateOrderNumber(): Promise<string> {
   const today = new Date();
   const dateStr = format(today, 'yyyyMMdd');
 
+  const register = await getOpenCashRegister();
+  if (register?.shift) {
+    const prefix = register.shift === 'MANANA' ? 'TM' : 'TN';
+    // Pedidos creados durante esta sesión de caja (se reinicia cada turno).
+    const count = await prisma.order.count({
+      where: { createdAt: { gte: register.openedAt } },
+    });
+    return `${dateStr}-${prefix}${String(count + 1).padStart(3, '0')}`;
+  }
+
   const startOfDay = new Date(today);
   startOfDay.setHours(0, 0, 0, 0);
-
   const count = await prisma.order.count({
     where: { createdAt: { gte: startOfDay } },
   });
-
   return `${dateStr}-${String(count + 1).padStart(4, '0')}`;
 }
 
@@ -341,7 +356,7 @@ export async function updateOrderStatus(
 export async function markOrderPaid(
   orderId: string,
   actorId?: string,
-  details?: { method?: 'EFECTIVO' | 'TRANSFERENCIA' | 'MIXTO'; cashAmount?: number; transferAmount?: number }
+  details?: { method?: 'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA' | 'MIXTO'; cashAmount?: number; transferAmount?: number }
 ) {
   const existing = await prisma.order.findUnique({
     where: { id: orderId },

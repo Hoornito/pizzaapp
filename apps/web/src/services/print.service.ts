@@ -62,6 +62,10 @@ export function generateKitchenTicketHtml(order: OrderWithRelations): string {
   <h1>🍕 PIZZERÍA</h1>
   <div class="divider"></div>
 
+  <div style="text-align:center;font-weight:bold;font-size:22px;border:2px solid #000;padding:3px 0;margin-bottom:4px;">
+    ${order.deliveryType === 'DELIVERY' ? 'DELIVERY' : 'MOSTRADOR'}
+  </div>
+
   <div class="center">
     <div class="bold" style="font-size:15px;">PEDIDO #${order.orderNumber}</div>
     <div>${formatDate(order.createdAt)}</div>
@@ -75,10 +79,6 @@ export function generateKitchenTicketHtml(order: OrderWithRelations): string {
       <td>${order.user.name || 'Sin nombre'}</td>
     </tr>
     ${order.phone || order.user.phone ? `<tr><td><strong>Teléfono:</strong></td><td>${order.phone || order.user.phone}</td></tr>` : ''}
-    <tr>
-      <td><strong>Tipo:</strong></td>
-      <td>${order.deliveryType === 'DELIVERY' ? '🛵 DELIVERY' : '🏪 RETIRO EN LOCAL'}</td>
-    </tr>
     ${
       order.address
         ? `<tr>
