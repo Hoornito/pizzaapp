@@ -24,21 +24,24 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 export default function AdminReportsPage() {
   const [period, setPeriod] = useState('week');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [shift, setShift] = useState<'BOTH' | 'MANANA' | 'NOCHE'>('BOTH');
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
+  const shiftQS = `&shift=${shift}`;
+
   const loadReport = () => {
     setLoading(true);
-    fetch(`/api/admin/reports?period=${period}&date=${date}`)
+    fetch(`/api/admin/reports?period=${period}&date=${date}${shiftQS}`)
       .then((r) => r.json())
       .then((d) => setReport(d.data))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadReport(); }, [period, date]);
+  useEffect(() => { loadReport(); }, [period, date, shift]);
 
   const handleExportExcel = async () => {
-    const res = await fetch(`/api/admin/reports/export?period=${period}&date=${date}&format=xlsx`);
+    const res = await fetch(`/api/admin/reports/export?period=${period}&date=${date}${shiftQS}&format=xlsx`);
     if (res.ok) {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -50,7 +53,7 @@ export default function AdminReportsPage() {
   };
 
   const handleExportCSV = async () => {
-    const res = await fetch(`/api/admin/reports/export?period=${period}&date=${date}&format=csv`);
+    const res = await fetch(`/api/admin/reports/export?period=${period}&date=${date}${shiftQS}&format=csv`);
     if (res.ok) {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -93,6 +96,25 @@ export default function AdminReportsPage() {
           <Button variant="contained" onClick={loadReport} disabled={loading}>
             Actualizar
           </Button>
+        </Box>
+
+        {/* Filtro por turno (usa los horarios reales de las cajas de cada turno) */}
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 2, flexWrap: 'wrap' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>Turno:</Typography>
+          {([
+            { key: 'BOTH', label: 'Ambos turnos' },
+            { key: 'MANANA', label: '🌅 Turno mañana' },
+            { key: 'NOCHE', label: '🌙 Turno noche' },
+          ] as const).map((s) => (
+            <Button
+              key={s.key}
+              size="small"
+              variant={shift === s.key ? 'contained' : 'outlined'}
+              onClick={() => setShift(s.key)}
+            >
+              {s.label}
+            </Button>
+          ))}
         </Box>
       </Paper>
 

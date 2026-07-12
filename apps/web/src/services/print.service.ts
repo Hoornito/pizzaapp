@@ -105,6 +105,7 @@ export function generateKitchenTicketHtml(order: OrderWithRelations): string {
       <td style="text-align:right;">$${toNumber(order.subtotal).toLocaleString('es-AR')}</td>
     </tr>
     ${toNumber(order.deliveryFee) > 0 ? `<tr><td>Envío:</td><td style="text-align:right;">$${toNumber(order.deliveryFee).toLocaleString('es-AR')}</td></tr>` : ''}
+    ${toNumber(order.discount) > 0 ? `<tr><td>Descuento:</td><td style="text-align:right;">- $${toNumber(order.discount).toLocaleString('es-AR')}</td></tr>` : ''}
     <tr class="total-row">
       <td>TOTAL:</td>
       <td style="text-align:right;">$${toNumber(order.total).toLocaleString('es-AR')}</td>

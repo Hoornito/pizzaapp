@@ -119,6 +119,7 @@ export default function PosPage() {
   const [cashAmount, setCashAmount] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
   const [paid, setPaid] = useState(false);
+  const [discount, setDiscount] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -162,7 +163,9 @@ export default function PosPage() {
 
   const subtotal = items.reduce((s, i) => s + lineTotal(i), 0);
   const deliveryFee = deliveryType === 'DELIVERY' ? DELIVERY_FEE : 0;
-  const total = subtotal + deliveryFee;
+  // Descuento acotado: 0 ≤ descuento ≤ subtotal + envío.
+  const discountNum = Math.min(Math.max(parseFloat(discount) || 0, 0), subtotal + deliveryFee);
+  const total = subtotal + deliveryFee - discountNum;
 
   // Consultamos el estado de la caja al entrar (y se puede refrescar).
   const loadCajaStatus = () => {
@@ -253,6 +256,7 @@ export default function PosPage() {
     setCashAmount('');
     setTransferAmount('');
     setPaid(false);
+    setDiscount('');
     setPaymentMethod('EFECTIVO');
     setDeliveryType('PICKUP');
   };
@@ -287,6 +291,7 @@ export default function PosPage() {
       paymentMethod,
       subtotal,
       deliveryFee,
+      discount: discountNum,
       total,
       paid,
       ...(paymentMethod === 'MIXTO' ? { cashAmount: cash, transferAmount: transfer } : {}),
@@ -576,11 +581,23 @@ export default function PosPage() {
               </Box>
             )}
 
-            <FormControlLabel
-              sx={{ ml: 0 }}
-              control={<Checkbox size="small" checked={paid} onChange={(e) => setPaid(e.target.checked)} />}
-              label={paid ? '✅ Pagó (el ticket sale sin «FALTA COBRAR»)' : '💰 Pagó'}
-            />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+              <FormControlLabel
+                sx={{ ml: 0 }}
+                control={<Checkbox size="small" checked={paid} onChange={(e) => setPaid(e.target.checked)} />}
+                label={paid ? '✅ Pagó (el ticket sale sin «FALTA COBRAR»)' : '💰 Pagó'}
+              />
+              <TextField
+                label="Descuento"
+                size="small"
+                type="number"
+                inputProps={{ min: 0, step: 0.01 }}
+                value={discount}
+                onChange={(e) => setDiscount(e.target.value)}
+                sx={{ width: 130 }}
+                InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+              />
+            </Box>
 
             <TextField label="Observaciones" size="small" multiline value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Box>
@@ -595,6 +612,12 @@ export default function PosPage() {
             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
               <Typography color="text.secondary">Envío</Typography>
               <Typography>{formatCurrency(deliveryFee)}</Typography>
+            </Box>
+          )}
+          {discountNum > 0 && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography color="error.main">Descuento</Typography>
+              <Typography color="error.main">− {formatCurrency(discountNum)}</Typography>
             </Box>
           )}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>

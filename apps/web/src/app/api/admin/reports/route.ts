@@ -11,7 +11,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const period = (searchParams.get('period') || 'week') as 'day' | 'week' | 'month';
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
+  const shiftParam = searchParams.get('shift');
+  const shift =
+    shiftParam === 'MANANA' || shiftParam === 'NOCHE' || shiftParam === 'BOTH' ? shiftParam : undefined;
 
-  const data = await getReportData(period, date);
+  const data = await getReportData(period, date, shift);
   return NextResponse.json({ success: true, data });
 }

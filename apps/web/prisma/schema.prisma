@@ -289,6 +289,8 @@ model Order {
   paymentMethod  PaymentMethod
   subtotal       Decimal       @db.Decimal(10, 2)
   deliveryFee    Decimal       @db.Decimal(10, 2) @default(0)
+  // Descuento aplicado al pedido (mostrador). total = subtotal + envío − descuento.
+  discount       Decimal       @db.Decimal(10, 2) @default(0)
   total          Decimal       @db.Decimal(10, 2)
   // Sólo para paymentMethod = MIXTO: cuánto paga en efectivo y cuánto por transferencia.
   cashAmount     Decimal?      @db.Decimal(10, 2)

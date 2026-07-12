@@ -23,6 +23,7 @@ import { useSocket } from '@/hooks/useSocket';
 import { useCart } from '@/hooks/useCart';
 import { useSnackbar } from '@/app/snackbar-context';
 import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, orderStatusSteps, TRANSFER_INFO } from '@/lib/constants';
+import { CopyButton } from '@/components/ui/CopyButton';
 import { isPizzaItemNotes } from '@/lib/pizza';
 import { formatCurrency, formatDate, formatOrderPayment } from '@/lib/utils';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -358,8 +359,16 @@ function OrderDetailContent({ params }: Props) {
 
             {order.paymentMethod === 'TRANSFERENCIA' && order.payment?.status !== 'APPROVED' && (
               <Alert severity="info" sx={{ mt: 1 }}>
-                <Typography variant="body2">Alias: <strong>{TRANSFER_INFO.alias}</strong></Typography>
-                {TRANSFER_INFO.cbu && <Typography variant="body2">CBU: <strong>{TRANSFER_INFO.cbu}</strong></Typography>}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <Typography variant="body2">Alias: <strong>{TRANSFER_INFO.alias}</strong></Typography>
+                  <CopyButton text={TRANSFER_INFO.alias} label="Copiar alias" />
+                </Box>
+                {TRANSFER_INFO.cbu && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mt: 0.5 }}>
+                    <Typography variant="body2">CBU: <strong>{TRANSFER_INFO.cbu}</strong></Typography>
+                    <CopyButton text={TRANSFER_INFO.cbu} label="Copiar CBU" />
+                  </Box>
+                )}
                 <Typography variant="body2">Titular: {TRANSFER_INFO.holder}</Typography>
                 <Typography variant="body2" sx={{ mt: 0.5 }}>
                   Enviá el comprobante por WhatsApp al{' '}

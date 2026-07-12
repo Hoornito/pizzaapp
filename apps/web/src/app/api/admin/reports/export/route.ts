@@ -14,8 +14,11 @@ export async function GET(req: NextRequest) {
   const format = (searchParams.get('format') || 'xlsx') as 'xlsx' | 'csv';
   const period = (searchParams.get('period') || 'week') as 'day' | 'week' | 'month';
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
+  const shiftParam = searchParams.get('shift');
+  const shift =
+    shiftParam === 'MANANA' || shiftParam === 'NOCHE' || shiftParam === 'BOTH' ? shiftParam : undefined;
 
-  const report = await getReportData(period, date);
+  const report = await getReportData(period, date, shift);
 
   if (format === 'xlsx') {
     const wb = XLSX.utils.book_new();

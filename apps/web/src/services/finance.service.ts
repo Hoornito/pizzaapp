@@ -6,7 +6,7 @@ import {
   FINANCE_CATEGORY_ADELANTOS,
   FINANCE_CATEGORY_SOBRES,
 } from '@/lib/constants';
-import type { CashRegister } from '@prisma/client';
+import type { CashRegister, CashShift, Prisma } from '@prisma/client';
 import type {
   FinanceTransactionInput,
   OpenCashRegisterInput,
@@ -177,19 +177,44 @@ const isVirtualMethod = (m: string) => m === 'TRANSFERENCIA' || m === 'TARJETA';
 /**
  * Totales financieros de un período [from, to] para el panel de reportes.
  * "virtual" = transferencias + tarjeta (movimientos manuales) + Mercado Pago (pedidos).
+ *
+ * Si se pasa `shift`, filtra por ese turno usando las SESIONES DE CAJA de ese
+ * turno (por sus horarios reales de apertura/cierre). Así, p. ej., un pedido
+ * cobrado a la 1 AM entra en el turno noche del día anterior (que cerró a esa
+ * hora) y no en el turno mañana del día siguiente.
  */
-export async function getFinanceTotals(from: Date, to: Date) {
-  const [orders, txns, registers, descuentos] = await Promise.all([
-    prisma.order.findMany({
-      // ingreso recién cuando el pedido fue cobrado (paidAt dentro del período)
-      where: {
-        status: { not: 'CANCELADO' },
-        payment: { status: 'APPROVED', paidAt: { gte: from, lte: to } },
-      },
-      select: { total: true, paymentMethod: true, cashAmount: true },
-    }),
+export async function getFinanceTotals(from: Date, to: Date, shift?: CashShift | 'BOTH') {
+  // Filtro de turno: 'BOTH' = ambos turnos (por sesión de caja); MANANA/NOCHE = ese turno.
+  const shiftWhere: Prisma.EnumCashShiftNullableFilter | undefined =
+    shift === 'BOTH' ? { in: ['MANANA', 'NOCHE'] } : shift ? { equals: shift } : undefined;
+
+  // Cajas del período (opcionalmente filtradas por turno).
+  const registers = await prisma.cashRegister.findMany({
+    where: { openedAt: { gte: from, lte: to }, ...(shiftWhere ? { shift: shiftWhere } : {}) },
+  });
+
+  // Ventanas de tiempo: con turno = las sesiones de esas cajas; sin turno = todo el período.
+  const windows = shift
+    ? registers.map((r) => ({ from: r.openedAt, to: r.closedAt ?? new Date() }))
+    : [{ from, to }];
+  const registerIds = registers.map((r) => r.id);
+  const noRows: Prisma.OrderWhereInput = { id: { in: [] } };
+
+  // Pedidos cobrados dentro de las ventanas del turno (o del período).
+  const paidOrderWhere: Prisma.OrderWhereInput = shift
+    ? windows.length === 0
+      ? noRows
+      : {
+          status: { not: 'CANCELADO' },
+          OR: windows.map((w) => ({ payment: { status: 'APPROVED', paidAt: { gte: w.from, lte: w.to } } })),
+        }
+    : { status: { not: 'CANCELADO' }, payment: { status: 'APPROVED', paidAt: { gte: from, lte: to } } };
+
+  const [orders, txns, descuentos] = await Promise.all([
+    prisma.order.findMany({ where: paidOrderWhere, select: { total: true, paymentMethod: true, cashAmount: true } }),
     prisma.financeTransaction.findMany({
-      where: { createdAt: { gte: from, lte: to } },
+      // Con turno: solo los movimientos manuales de esas cajas.
+      where: shift ? { cashRegisterId: { in: registerIds } } : { createdAt: { gte: from, lte: to } },
       select: {
         type: true,
         amount: true,
@@ -200,10 +225,15 @@ export async function getFinanceTotals(from: Date, to: Date) {
         employee: { select: { firstName: true, lastName: true } },
       },
     }),
-    // Cajas del período (completas: necesitamos expectedCash/countedCash por turno).
-    prisma.cashRegister.findMany({ where: { openedAt: { gte: from, lte: to } } }),
     prisma.employeeMovement.findMany({
-      where: { kind: 'ADELANTO_DESCUENTO', createdAt: { gte: from, lte: to } },
+      where: {
+        kind: 'ADELANTO_DESCUENTO',
+        ...(shift
+          ? windows.length === 0
+            ? { id: { in: [] } }
+            : { OR: windows.map((w) => ({ createdAt: { gte: w.from, lte: w.to } })) }
+          : { createdAt: { gte: from, lte: to } }),
+      },
       select: { employeeId: true, amount: true, employee: { select: { firstName: true, lastName: true } } },
     }),
   ]);

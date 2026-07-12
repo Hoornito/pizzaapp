@@ -29,6 +29,8 @@ export const createOrderSchema = z
     paymentMethod: z.nativeEnum(PaymentMethod),
     subtotal: z.coerce.number().positive(),
     deliveryFee: z.coerce.number().min(0),
+    // Descuento aplicado (mostrador). Opcional; 0 por defecto.
+    discount: z.coerce.number().min(0).optional(),
     total: z.coerce.number().positive(),
     // Sólo para pago MIXTO: reparto entre efectivo y transferencia.
     cashAmount: z.coerce.number().min(0).optional(),

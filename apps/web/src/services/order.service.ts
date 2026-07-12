@@ -188,6 +188,7 @@ export async function createOrder(
       paymentMethod: data.paymentMethod,
       subtotal: data.subtotal,
       deliveryFee: data.deliveryFee,
+      discount: data.discount ?? 0,
       total: data.total,
       cashAmount: data.paymentMethod === 'MIXTO' ? data.cashAmount : null,
       transferAmount: data.paymentMethod === 'MIXTO' ? data.transferAmount : null,

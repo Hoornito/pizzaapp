@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, format, eachDayOfInterval } from 'date-fns';
 import type { ReportData, DashboardStats } from '@/types/api.types';
+import type { CashShift, Prisma } from '@prisma/client';
 import { toNumber } from '@/lib/utils';
 import { getFinanceTotals, parseLocalDate } from './finance.service';
 
@@ -22,16 +23,35 @@ function getPeriodRange(period: Period, date: Date = new Date()) {
   }
 }
 
-export async function getReportData(period: Period, date?: Date | string) {
+export async function getReportData(period: Period, date?: Date | string, shift?: CashShift | 'BOTH') {
   const dateObj = date ? (typeof date === 'string' ? parseLocalDate(date) : date) : new Date();
   const { from, to } = getPeriodRange(period, dateObj);
 
+  // Con turno, acotamos a las SESIONES DE CAJA de ese turno (por sus horarios
+  // reales), así el cierre de la 1 AM queda en el turno noche del día anterior.
+  // 'BOTH' = ambos turnos (mañana + noche) por sesión de caja.
+  const shiftWhere: Prisma.EnumCashShiftNullableFilter | undefined =
+    shift === 'BOTH' ? { in: ['MANANA', 'NOCHE'] } : shift ? { equals: shift } : undefined;
+
+  let orderWhere: Prisma.OrderWhereInput = {
+    status: { notIn: ['CANCELADO'] },
+    payment: { status: 'APPROVED', paidAt: { gte: from, lte: to } },
+  };
+  if (shiftWhere) {
+    const regs = await prisma.cashRegister.findMany({ where: { shift: shiftWhere, openedAt: { gte: from, lte: to } } });
+    orderWhere =
+      regs.length === 0
+        ? { id: { in: [] } }
+        : {
+            status: { notIn: ['CANCELADO'] },
+            OR: regs.map((r) => ({
+              payment: { status: 'APPROVED' as const, paidAt: { gte: r.openedAt, lte: r.closedAt ?? new Date() } },
+            })),
+          };
+  }
+
   const orders = await prisma.order.findMany({
-    where: {
-      status: { notIn: ['CANCELADO'] },
-      // solo ventas cobradas, imputadas por fecha de pago
-      payment: { status: 'APPROVED', paidAt: { gte: from, lte: to } },
-    },
+    where: orderWhere,
     include: {
       items: {
         include: { product: { include: { category: true } }, promotion: true },
@@ -103,7 +123,7 @@ export async function getReportData(period: Period, date?: Date | string) {
     };
   });
 
-  const finance = await getFinanceTotals(from, to);
+  const finance = await getFinanceTotals(from, to, shift);
 
   // Postres: entradas/salidas del período + stock disponible actual
   const postresFilter = { product: { category: { slug: 'postres' } } };
