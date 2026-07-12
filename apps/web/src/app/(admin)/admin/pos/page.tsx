@@ -92,6 +92,9 @@ interface PosItem {
 /** Precio de una línea = (precio + extra) × cantidad. */
 const lineTotal = (i: PosItem) => (i.unitPrice + (i.extra?.amount ?? 0)) * i.quantity;
 
+/** Borrador del pedido en curso: sobrevive a un refresco de la página. */
+const DRAFT_KEY = 'pos-draft-v1';
+
 export default function PosPage() {
   const { products, loading } = useProducts({ available: true });
   const { categories } = useCategories();
@@ -99,6 +102,8 @@ export default function PosPage() {
   const { showError, showSuccess } = useSnackbar();
 
   const [items, setItems] = useState<PosItem[]>([]);
+  // Borrador restaurado desde localStorage: evita pisar el guardado antes de hidratar.
+  const [hydrated, setHydrated] = useState(false);
   const [tab, setTab] = useState<string>('');
   // Estado de la caja: no se pueden tomar pedidos si está cerrada.
   const [cajaAbierta, setCajaAbierta] = useState<boolean | null>(null);
@@ -175,6 +180,48 @@ export default function PosPage() {
       .catch(() => setCajaAbierta(null));
   };
   useEffect(() => { loadCajaStatus(); }, []);
+
+  // Restauramos el borrador (si lo hay) al entrar, una sola vez.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (Array.isArray(d.items)) setItems(d.items);
+        if (typeof d.customerName === 'string') setCustomerName(d.customerName);
+        if (typeof d.phone === 'string') setPhone(d.phone);
+        if (d.deliveryType === 'PICKUP' || d.deliveryType === 'DELIVERY') setDeliveryType(d.deliveryType);
+        if (d.address && typeof d.address === 'object') setAddress((prev) => ({ ...prev, ...d.address }));
+        if (typeof d.paymentMethod === 'string') setPaymentMethod(d.paymentMethod);
+        if (typeof d.cashAmount === 'string') setCashAmount(d.cashAmount);
+        if (typeof d.transferAmount === 'string') setTransferAmount(d.transferAmount);
+        if (typeof d.paid === 'boolean') setPaid(d.paid);
+        if (typeof d.discount === 'string') setDiscount(d.discount);
+        if (typeof d.notes === 'string') setNotes(d.notes);
+      }
+    } catch { /* borrador corrupto: lo ignoramos */ }
+    setHydrated(true);
+  }, []);
+
+  // Guardamos el borrador ante cualquier cambio (una vez hidratado).
+  useEffect(() => {
+    if (!hydrated) return;
+    const isEmpty =
+      items.length === 0 && !customerName && !phone && !notes && !discount && !address.street;
+    try {
+      if (isEmpty) {
+        localStorage.removeItem(DRAFT_KEY);
+      } else {
+        localStorage.setItem(
+          DRAFT_KEY,
+          JSON.stringify({
+            items, customerName, phone, deliveryType, address,
+            paymentMethod, cashAmount, transferAmount, paid, discount, notes,
+          })
+        );
+      }
+    } catch { /* almacenamiento no disponible / lleno: seguimos sin persistir */ }
+  }, [hydrated, items, customerName, phone, deliveryType, address, paymentMethod, cashAmount, transferAmount, paid, discount, notes]);
 
   const addItem = (item: Omit<PosItem, 'key'>) => {
     setItems((prev) => {
@@ -259,6 +306,13 @@ export default function PosPage() {
     setDiscount('');
     setPaymentMethod('EFECTIVO');
     setDeliveryType('PICKUP');
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ }
+  };
+
+  // "Vaciar" a mano: pedimos confirmación para no borrar el pedido por accidente.
+  const clearCart = () => {
+    if (items.length > 0 && !window.confirm('¿Vaciar el pedido cargado? Se va a perder todo lo ingresado.')) return;
+    resetCart();
   };
 
   const handleSplit = (field: 'cash' | 'transfer', value: string) => {
@@ -633,7 +687,7 @@ export default function PosPage() {
             {cajaAbierta === false ? 'Caja cerrada' : submitting ? 'Cargando…' : `Finalizar · ${formatCurrency(total)}`}
           </Button>
           {items.length > 0 && (
-            <Button fullWidth size="small" color="inherit" sx={{ mt: 0.5 }} onClick={resetCart} disabled={submitting}>
+            <Button fullWidth size="small" color="inherit" sx={{ mt: 0.5 }} onClick={clearCart} disabled={submitting}>
               Vaciar
             </Button>
           )}
