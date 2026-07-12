@@ -53,6 +53,22 @@ function localToday(): string {
   return d.toISOString().split('T')[0];
 }
 
+/**
+ * Separa el nombre del cliente (guardado en las notas del pedido de mostrador
+ * como "Cliente: Juan · resto") del resto de las observaciones, para mostrarlo
+ * destacado y no como una nota gris más.
+ */
+function splitClientNote(notes?: string | null): { client?: string; rest?: string } {
+  if (!notes) return {};
+  const parts = notes.split(' · ');
+  const client = parts
+    .find((p) => /^cliente:\s*/i.test(p))
+    ?.replace(/^cliente:\s*/i, '')
+    .trim();
+  const rest = parts.filter((p) => !/^cliente:\s*/i.test(p)).join(' · ').trim();
+  return { client: client || undefined, rest: rest || undefined };
+}
+
 /** Botón principal de avance según el estado actual. */
 function primaryNext(order: any): { status: string; label: string } | null {
   switch (order.status) {
@@ -342,6 +358,7 @@ export default function AdminOrdersPage() {
             const busy = busyId === order.id;
             // No se puede enviar a reparto sin un repartidor asignado.
             const needsDriver = next?.status === 'EN_REPARTO' && !order.deliveryEmployee;
+            const { client, rest: restNotes } = splitClientNote(order.notes);
             return (
               <Grid item xs={12} sm={6} md={4} key={order.id}>
                 <Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -360,6 +377,11 @@ export default function AdminOrdersPage() {
                       {order.user?.name || order.user?.email || 'Cliente'}
                       {order.phone ? ` · ${order.phone}` : ''}
                     </Typography>
+                    {client && (
+                      <Typography variant="body2" fontWeight={700}>
+                        👤 {client}
+                      </Typography>
+                    )}
 
                     <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
                       <Chip label={order.deliveryType === 'DELIVERY' ? '🛵 Delivery' : '🏪 Retiro'} size="small" variant="outlined" />
@@ -422,9 +444,9 @@ export default function AdminOrdersPage() {
                         </Select>
                       </FormControl>
                     )}
-                    {order.notes && (
+                    {restNotes && (
                       <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, fontStyle: 'italic' }}>
-                        📝 {order.notes}
+                        📝 {restNotes}
                       </Typography>
                     )}
 
@@ -485,7 +507,7 @@ export default function AdminOrdersPage() {
                 <TableRow key={order.id} hover>
                   <TableCell><Typography fontWeight={600}>#{order.orderNumber}</Typography></TableCell>
                   <TableCell>{formatDate(order.createdAt)}</TableCell>
-                  <TableCell>{order.user?.name || order.user?.email || 'Cliente'}</TableCell>
+                  <TableCell>{splitClientNote(order.notes).client || order.user?.name || order.user?.email || 'Cliente'}</TableCell>
                   <TableCell align="center">{order.deliveryType === 'DELIVERY' ? '🛵' : '🏪'}</TableCell>
                   <TableCell>
                     {ORDER_PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}{' '}
