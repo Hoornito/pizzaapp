@@ -71,31 +71,47 @@ async function assertPostresStock(items: CreateOrderInput['items']) {
 }
 
 /**
- * Número de pedido. Con caja abierta lleva el prefijo del turno y se reinicia por
- * turno: cuenta los pedidos desde que se abrió la caja (TM = mañana, TN = noche).
- *   Ej: 20260710-TM001, 20260710-TN001
- * Sin caja abierta (p. ej. pedido online fuera de turno) cae al formato por día.
+ * Número de pedido. Con caja abierta lleva el prefijo del turno (TM = mañana,
+ * TN = noche) y se reinicia por turno; sin caja abierta (p. ej. pedido online
+ * fuera de turno) cae al formato por día.
+ *   Ej: 20260710-TM001, 20260710-TN001, 20260710-0001
+ *
+ * El próximo número se deriva del MÁXIMO sufijo ya usado para esa fecha+prefijo
+ * (no de un count()): así no colisiona ante cancelaciones, huecos o sesiones
+ * repetidas del mismo turno. Como igual no es atómico contra el insert, quien
+ * llama debe reintentar ante una colisión por concurrencia (ver createOrder).
  */
 async function generateOrderNumber(): Promise<string> {
   const today = new Date();
   const dateStr = format(today, 'yyyyMMdd');
 
   const register = await getOpenCashRegister();
-  if (register?.shift) {
-    const prefix = register.shift === 'MANANA' ? 'TM' : 'TN';
-    // Pedidos creados durante esta sesión de caja (se reinicia cada turno).
-    const count = await prisma.order.count({
-      where: { createdAt: { gte: register.openedAt } },
-    });
-    return `${dateStr}-${prefix}${String(count + 1).padStart(3, '0')}`;
-  }
+  const prefix = register?.shift ? (register.shift === 'MANANA' ? 'TM' : 'TN') : '';
+  const pad = prefix ? 3 : 4;
+  const startsWith = `${dateStr}-${prefix}`;
 
-  const startOfDay = new Date(today);
-  startOfDay.setHours(0, 0, 0, 0);
-  const count = await prisma.order.count({
-    where: { createdAt: { gte: startOfDay } },
+  // Último número usado con esta fecha+prefijo. Como el sufijo va con ceros a la
+  // izquierda, el orden lexicográfico descendente da el máximo real.
+  const last = await prisma.order.findFirst({
+    where: prefix
+      ? { orderNumber: { startsWith } }
+      : // formato por día: excluir los de turno (que tienen "-T…").
+        { orderNumber: { startsWith: `${dateStr}-` }, NOT: { orderNumber: { startsWith: `${dateStr}-T` } } },
+    orderBy: { orderNumber: 'desc' },
+    select: { orderNumber: true },
   });
-  return `${dateStr}-${String(count + 1).padStart(4, '0')}`;
+
+  const lastNum = last ? parseInt(last.orderNumber.slice(-pad), 10) || 0 : 0;
+  return `${startsWith}${String(lastNum + 1).padStart(pad, '0')}`;
+}
+
+/** ¿El error es una colisión de la restricción única de `orderNumber`? */
+function isDuplicateOrderNumber(e: unknown): boolean {
+  if (typeof e !== 'object' || e === null || (e as { code?: string }).code !== 'P2002') return false;
+  // meta.target puede ser ['orderNumber'] o el nombre del índice ("Order_orderNumber_key").
+  return JSON.stringify((e as { meta?: { target?: unknown } }).meta?.target ?? '')
+    .toLowerCase()
+    .includes('ordernumber');
 }
 
 export async function getOrders(params?: {
@@ -149,8 +165,6 @@ export async function createOrder(
   // No permitir vender postres sin stock suficiente (las demás categorías no controlan stock).
   await assertPostresStock(data.items);
 
-  const orderNumber = await generateOrderNumber();
-
   // Para delivery sin addressId, creamos la dirección a partir de los datos inline.
   let addressId = data.addressId;
   if (!addressId && data.deliveryType === 'DELIVERY' && data.address) {
@@ -178,46 +192,60 @@ export async function createOrder(
         ? 'CONFIRMADO'
         : 'RECIBIDO';
 
-  const order = await prisma.order.create({
-    data: {
-      orderNumber,
-      userId,
-      addressId,
-      status: initialStatus,
-      deliveryType: data.deliveryType,
-      paymentMethod: data.paymentMethod,
-      subtotal: data.subtotal,
-      deliveryFee: data.deliveryFee,
-      discount: data.discount ?? 0,
-      total: data.total,
-      cashAmount: data.paymentMethod === 'MIXTO' ? data.cashAmount : null,
-      transferAmount: data.paymentMethod === 'MIXTO' ? data.transferAmount : null,
-      notes: data.notes,
-      phone: data.phone,
-      whatsappToken: data.whatsappToken,
-      items: {
-        create: data.items.map((item) => ({
-          productId: item.productId,
-          promotionId: item.promotionId,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          subtotal: item.quantity * item.unitPrice,
-          notes: item.notes,
-        })),
-      },
-      payment: {
-        // Mostrador con "Pagó" marcado: el pago entra ya aprobado, así el ticket
-        // de cocina imprime "PAGADO ✓" en vez de "FALTA COBRAR".
-        create: {
-          method: data.paymentMethod,
-          status: data.paid ? 'APPROVED' : 'PENDING',
-          amount: data.total,
-          paidAt: data.paid ? new Date() : null,
-        },
+  const orderData = (orderNumber: string) => ({
+    orderNumber,
+    userId,
+    addressId,
+    status: initialStatus,
+    deliveryType: data.deliveryType,
+    paymentMethod: data.paymentMethod,
+    subtotal: data.subtotal,
+    deliveryFee: data.deliveryFee,
+    discount: data.discount ?? 0,
+    total: data.total,
+    cashAmount: data.paymentMethod === 'MIXTO' ? data.cashAmount : null,
+    transferAmount: data.paymentMethod === 'MIXTO' ? data.transferAmount : null,
+    notes: data.notes,
+    phone: data.phone,
+    whatsappToken: data.whatsappToken,
+    items: {
+      create: data.items.map((item) => ({
+        productId: item.productId,
+        promotionId: item.promotionId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        subtotal: item.quantity * item.unitPrice,
+        notes: item.notes,
+      })),
+    },
+    payment: {
+      // Mostrador con "Pagó" marcado: el pago entra ya aprobado, así el ticket
+      // de cocina imprime "PAGADO ✓" en vez de "FALTA COBRAR".
+      create: {
+        method: data.paymentMethod,
+        status: (data.paid ? 'APPROVED' : 'PENDING') as 'APPROVED' | 'PENDING',
+        amount: data.total,
+        paidAt: data.paid ? new Date() : null,
       },
     },
-    include: ORDER_INCLUDE,
   });
+
+  // El número de pedido se calcula por fuera de una transacción, así que dos
+  // altas casi simultáneas (doble click, dos cargas a la vez) podrían generar el
+  // mismo número. Si el insert choca con la restricción única, regeneramos el
+  // número y reintentamos, en vez de fallar con "Unique constraint failed".
+  const createWithRetry = async () => {
+    for (let attempt = 1; ; attempt++) {
+      const orderNumber = await generateOrderNumber();
+      try {
+        return await prisma.order.create({ data: orderData(orderNumber), include: ORDER_INCLUDE });
+      } catch (e) {
+        if (isDuplicateOrderNumber(e) && attempt < 8) continue;
+        throw e;
+      }
+    }
+  };
+  const order = await createWithRetry();
 
   // Si está esperando pago (MercadoPago), no avisamos a la cocina todavía ni
   // descontamos stock: ambas cosas se disparan al acreditarse el pago
