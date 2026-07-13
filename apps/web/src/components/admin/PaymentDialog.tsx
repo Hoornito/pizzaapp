@@ -22,12 +22,14 @@ interface Props {
   total: number;
   /** Medio actual del pedido (para precargar). */
   initialMethod?: string;
+  /** Título del diálogo (por defecto "Registrar cobro"). */
+  title?: string;
   busy?: boolean;
   onClose: () => void;
   onConfirm: (data: { method: PaymentKind; cashAmount?: number; transferAmount?: number }) => void;
 }
 
-export function PaymentDialog({ open, total, initialMethod, busy, onClose, onConfirm }: Props) {
+export function PaymentDialog({ open, total, initialMethod, title, busy, onClose, onConfirm }: Props) {
   const [method, setMethod] = useState<PaymentKind>('EFECTIVO');
   const [cash, setCash] = useState('');
   const [transfer, setTransfer] = useState('');
@@ -62,7 +64,7 @@ export function PaymentDialog({ open, total, initialMethod, busy, onClose, onCon
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Registrar cobro</DialogTitle>
+      <DialogTitle>{title ?? 'Registrar cobro'}</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Total: <strong>{formatCurrency(total)}</strong>. ¿Cómo pagó?

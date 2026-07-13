@@ -198,6 +198,13 @@ export default function AdminOrdersPage() {
   // impresión (QZ Tray) para imprimir cocina + comanda en sus impresoras. Si no
   // hay estación, se puede usar el botón manual "Imprimir".
   const advanceOrder = (order: any, next: { status: string; label: string }) => {
+    const paid = order.payment?.status === 'APPROVED';
+    // Al marcar ENTREGADO sin pago registrado, primero preguntamos cómo se abonó
+    // (mismas opciones que "Pagó") y recién ahí lo damos por entregado.
+    if (next.status === 'ENTREGADO' && !paid) {
+      setPayTarget({ orderId: order.id, total: Number(order.total), method: order.paymentMethod, thenDeliver: true });
+      return;
+    }
     changeStatus(order.id, next.status, `${next.label} ✓`);
   };
 
@@ -213,26 +220,33 @@ export default function AdminOrdersPage() {
     }
   };
 
-  // Cobro: abre el diálogo para indicar/corregir el tipo de ingreso.
-  const [payTarget, setPayTarget] = useState<{ orderId: string; total: number; method?: string } | null>(null);
+  // Cobro: abre el diálogo para indicar/corregir el tipo de ingreso. `thenDeliver`
+  // marca el flujo "entregar cobrando": tras registrar el pago, se da por entregado.
+  const [payTarget, setPayTarget] = useState<{ orderId: string; total: number; method?: string; thenDeliver?: boolean } | null>(null);
 
   const openPay = (order: any) =>
     setPayTarget({ orderId: order.id, total: Number(order.total), method: order.paymentMethod });
 
   const submitPayment = async (data: { method: PaymentKind; cashAmount?: number; transferAmount?: number }) => {
     if (!payTarget) return;
-    setBusyId(payTarget.orderId);
+    const { orderId, thenDeliver } = payTarget;
+    setBusyId(orderId);
     try {
-      const res = await fetch(`/api/admin/orders/${payTarget.orderId}/pay`, {
+      const res = await fetch(`/api/admin/orders/${orderId}/pay`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       const json = await res.json();
       if (!res.ok) { showError(json.error || 'Error al registrar el cobro'); return; }
-      showSuccess('Cobro registrado');
       setPayTarget(null);
-      loadOrders();
+      // Si veníamos de "marcar entregado", cerramos el círculo dándolo por entregado.
+      if (thenDeliver) {
+        await changeStatus(orderId, 'ENTREGADO', 'Pedido entregado y cobrado ✓');
+      } else {
+        showSuccess('Cobro registrado');
+        loadOrders();
+      }
     } catch {
       showError('Error de conexión');
     } finally {
@@ -548,6 +562,7 @@ export default function AdminOrdersPage() {
         open={!!payTarget}
         total={payTarget?.total || 0}
         initialMethod={payTarget?.method}
+        title={payTarget?.thenDeliver ? '¿Cómo se abonó?' : 'Registrar cobro'}
         busy={!!payTarget && busyId === payTarget.orderId}
         onClose={() => setPayTarget(null)}
         onConfirm={submitPayment}
