@@ -300,6 +300,8 @@ model Order {
   whatsappToken  String?
   estimatedTime  Int?
   deliveryEmployeeId String?
+  // Pedido de SIMULACIÓN (caja de entrenamiento): se borra al cerrar la caja test.
+  isTest         Boolean       @default(false)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -496,6 +498,9 @@ model CashRegister {
   id             String             @id @default(cuid())
   status         CashRegisterStatus @default(OPEN)
   shift          CashShift?
+  // Caja de SIMULACIÓN (entrenamiento): sus pedidos/movimientos no impactan en
+  // reportes y se borran al cerrarla.
+  isTest         Boolean            @default(false)
   openingBalance Decimal            @db.Decimal(10, 2)
   expectedCash   Decimal?           @db.Decimal(10, 2)
   countedCash    Decimal?           @db.Decimal(10, 2)
@@ -575,6 +580,8 @@ model EmployeeMovement {
   amount               Decimal              @db.Decimal(10, 2)
   note                 String?
   financeTransactionId String?              @unique
+  // Movimiento de SIMULACIÓN (caja test): se borra al cerrar la caja.
+  isTest               Boolean              @default(false)
   createdById          String?
   createdAt            DateTime             @default(now())
 

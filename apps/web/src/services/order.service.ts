@@ -81,12 +81,13 @@ async function assertPostresStock(items: CreateOrderInput['items']) {
  * repetidas del mismo turno. Como igual no es atómico contra el insert, quien
  * llama debe reintentar ante una colisión por concurrencia (ver createOrder).
  */
-async function generateOrderNumber(): Promise<string> {
+async function generateOrderNumber(isTest: boolean): Promise<string> {
   const today = new Date();
   const dateStr = format(today, 'yyyyMMdd');
 
   const register = await getOpenCashRegister();
-  const prefix = register?.shift ? (register.shift === 'MANANA' ? 'TM' : 'TN') : '';
+  // Simulación: prefijo TT, así se distingue del real y no pisa su numeración.
+  const prefix = isTest ? 'TT' : register?.shift ? (register.shift === 'MANANA' ? 'TM' : 'TN') : '';
   const pad = prefix ? 3 : 4;
   const startsWith = `${dateStr}-${prefix}`;
 
@@ -160,10 +161,13 @@ export async function createOrder(
   data: CreateOrderInput,
   // Pedidos tomados desde el mostrador/admin: se confirman al instante y se
   // imprimen (cocina + comanda) apenas se cargan.
-  options?: { printOnCreate?: boolean; confirmImmediately?: boolean }
+  options?: { printOnCreate?: boolean; confirmImmediately?: boolean; isTest?: boolean }
 ) {
+  // Pedido de simulación (caja test): no controla ni descuenta stock real.
+  const isTest = !!options?.isTest;
+
   // No permitir vender postres sin stock suficiente (las demás categorías no controlan stock).
-  await assertPostresStock(data.items);
+  if (!isTest) await assertPostresStock(data.items);
 
   // Para delivery sin addressId, creamos la dirección a partir de los datos inline.
   let addressId = data.addressId;
@@ -196,6 +200,7 @@ export async function createOrder(
     orderNumber,
     userId,
     addressId,
+    isTest,
     status: initialStatus,
     deliveryType: data.deliveryType,
     paymentMethod: data.paymentMethod,
@@ -236,7 +241,7 @@ export async function createOrder(
   // número y reintentamos, en vez de fallar con "Unique constraint failed".
   const createWithRetry = async () => {
     for (let attempt = 1; ; attempt++) {
-      const orderNumber = await generateOrderNumber();
+      const orderNumber = await generateOrderNumber(isTest);
       try {
         return await prisma.order.create({ data: orderData(orderNumber), include: ORDER_INCLUDE });
       } catch (e) {
@@ -251,7 +256,8 @@ export async function createOrder(
   // descontamos stock: ambas cosas se disparan al acreditarse el pago
   // (ver promoteOrderAfterPayment).
   if (initialStatus !== 'PENDIENTE_PAGO') {
-    await adjustPostresStockForOrder(order.id, 'sell');
+    // La simulación no toca el stock real.
+    if (!isTest) await adjustPostresStockForOrder(order.id, 'sell');
     notifyOrderReceived(order);
     // Pedidos de mostrador: imprimir cocina + comanda al crearlos.
     if (options?.printOnCreate) {

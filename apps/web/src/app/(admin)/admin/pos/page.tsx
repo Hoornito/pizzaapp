@@ -107,6 +107,8 @@ export default function PosPage() {
   const [tab, setTab] = useState<string>('');
   // Estado de la caja: no se pueden tomar pedidos si está cerrada.
   const [cajaAbierta, setCajaAbierta] = useState<boolean | null>(null);
+  // Caja de simulación (entrenamiento): los pedidos son de prueba.
+  const [cajaTest, setCajaTest] = useState(false);
   const [pizzaOpen, setPizzaOpen] = useState(false);
   const [fainaOpen, setFainaOpen] = useState(false);
   const [dozenOpen, setDozenOpen] = useState(false);
@@ -176,7 +178,7 @@ export default function PosPage() {
   const loadCajaStatus = () => {
     fetch('/api/admin/finance/summary')
       .then((r) => r.json())
-      .then((d) => setCajaAbierta(!!d.data?.register))
+      .then((d) => { setCajaAbierta(!!d.data?.register); setCajaTest(!!d.data?.register?.isTest); })
       .catch(() => setCajaAbierta(null));
   };
   useEffect(() => { loadCajaStatus(); }, []);
@@ -423,6 +425,12 @@ export default function PosPage() {
       {cajaAbierta === false && (
         <Alert severity="warning" sx={{ mb: 2 }}>
           La caja está <strong>cerrada</strong>. Tenés que <strong>abrir la caja en Finanzas</strong> para poder tomar pedidos.
+        </Alert>
+      )}
+
+      {cajaTest && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          🧪 <strong>MODO SIMULACIÓN</strong> — Los pedidos que cargues son de <strong>prueba</strong> y se borran al cerrar la caja de entrenamiento. No impactan en reportes ni en el stock.
         </Alert>
       )}
 

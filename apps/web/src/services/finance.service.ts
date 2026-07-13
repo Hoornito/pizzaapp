@@ -78,7 +78,8 @@ export async function openCashRegister(input: OpenCashRegisterInput, userId?: st
   return prisma.cashRegister.create({
     data: {
       status: 'OPEN',
-      shift: input.shift,
+      shift: input.shift ?? null,
+      isTest: input.isTest ?? false,
       openingBalance: input.openingBalance,
       notes: input.notes ?? null,
       openedById: userId ?? null,
@@ -86,10 +87,42 @@ export async function openCashRegister(input: OpenCashRegisterInput, userId?: st
   });
 }
 
+/**
+ * Cierra una caja de SIMULACIÓN: borra todo lo generado en el entrenamiento
+ * (pedidos test, movimientos manuales de esa caja y movimientos de empleados de
+ * la simulación) y elimina la caja, de modo que nada quede en reportes.
+ */
+async function closeTestRegister(register: CashRegister) {
+  const openedAt = register.openedAt;
+  // Egresos/ingresos manuales de esta caja test (y los movimientos de empleado
+  // que hayan generado, p. ej. adelantos/acumulados).
+  const testTxns = await prisma.financeTransaction.findMany({
+    where: { cashRegisterId: register.id },
+    select: { id: true },
+  });
+  const txnIds = testTxns.map((t) => t.id);
+
+  await prisma.$transaction([
+    prisma.employeeMovement.deleteMany({
+      where: { OR: [{ isTest: true }, { financeTransactionId: { in: txnIds } }] },
+    }),
+    prisma.financeTransaction.deleteMany({ where: { cashRegisterId: register.id } }),
+    // Los OrderItem y Payment se borran en cascada al borrar el pedido.
+    prisma.order.deleteMany({ where: { isTest: true, createdAt: { gte: openedAt } } }),
+    prisma.cashRegister.delete({ where: { id: register.id } }),
+  ]);
+
+  return { id: register.id, isTest: true as const };
+}
+
 export async function closeCashRegister(input: CloseCashRegisterInput, userId?: string) {
   const register = await getOpenCashRegister();
   if (!register) {
     throw new Error('No hay una caja abierta para cerrar.');
+  }
+  // Caja de simulación: no hay arqueo; se descarta todo lo del entrenamiento.
+  if (register.isTest) {
+    return closeTestRegister(register);
   }
   const expected = await computeExpectedCash(register);
   const difference = input.countedCash - expected;

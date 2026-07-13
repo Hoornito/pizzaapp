@@ -100,11 +100,18 @@ export const employeeMovementSchema = z.object({
 
 export type EmployeeMovementInput = z.infer<typeof employeeMovementSchema>;
 
-export const openCashRegisterSchema = z.object({
-  shift: z.enum(CASH_SHIFTS, { required_error: 'Seleccioná el turno' }),
-  openingBalance: z.coerce.number().min(0, 'El saldo inicial no puede ser negativo'),
-  notes: z.string().max(500).optional().nullable(),
-});
+export const openCashRegisterSchema = z
+  .object({
+    // En una caja de simulación (isTest) el turno es opcional.
+    shift: z.enum(CASH_SHIFTS).optional().nullable(),
+    openingBalance: z.coerce.number().min(0, 'El saldo inicial no puede ser negativo'),
+    notes: z.string().max(500).optional().nullable(),
+    isTest: z.boolean().optional(),
+  })
+  .refine((d) => d.isTest || !!d.shift, {
+    message: 'Seleccioná el turno',
+    path: ['shift'],
+  });
 
 export const closeCashRegisterSchema = z.object({
   countedCash: z.coerce.number().min(0, 'El efectivo contado no puede ser negativo'),

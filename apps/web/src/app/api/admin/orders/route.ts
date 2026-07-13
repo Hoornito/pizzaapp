@@ -102,6 +102,8 @@ export async function POST(req: NextRequest) {
     const order = await createOrder(session.user.id, parsed.data, {
       confirmImmediately: true,
       printOnCreate: true,
+      // Caja de simulación → pedido de prueba (se borra al cerrar la caja).
+      isTest: !!openRegister.isTest,
     });
     return NextResponse.json({ success: true, data: order });
   } catch (e) {

@@ -23,6 +23,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Divider from '@mui/material/Divider';
+import Alert from '@mui/material/Alert';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -164,13 +165,26 @@ export default function FinancePage() {
 
   // ─── Caja ──────────────────────────────────────────────────────────────
   const handleOpenRegister = async () => {
+    const isTest = openForm.shift === 'TEST';
+    if (
+      isTest &&
+      !window.confirm(
+        'USTED ESTÁ POR INICIAR UNA SIMULACIÓN DE CAJA !!\n' +
+          'NO ESTÁ POR ABRIR CAJA NORMALMENTE !!\n' +
+          'NADA QUEDARÁ REGISTRADO !!\n\n' +
+          '¿Desea continuar?'
+      )
+    ) {
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch('/api/admin/finance/cash-register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          shift: openForm.shift,
+          shift: isTest ? null : openForm.shift,
+          isTest,
           openingBalance: Number(openForm.openingBalance || 0),
           notes: openForm.notes || null,
         }),
@@ -180,9 +194,39 @@ export default function FinancePage() {
         showError(json.error || 'Error al abrir la caja');
         return;
       }
-      showSuccess('Caja abierta');
+      showSuccess(isTest ? 'Simulación iniciada' : 'Caja abierta');
       setOpenDialog(false);
       setOpenForm({ shift: '', openingBalance: '', notes: '' });
+      loadSummary();
+    } catch {
+      showError('Error de conexión');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Cierre de una caja de simulación: borra los datos de prueba (sin arqueo).
+  const handleCloseTest = async () => {
+    if (
+      !window.confirm(
+        'Vas a cerrar la SIMULACIÓN. Se borrarán todos los pedidos y movimientos de prueba cargados. ¿Continuar?'
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/admin/finance/cash-register/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ countedCash: 0 }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        showError(json.error || 'Error al cerrar la simulación');
+        return;
+      }
+      showSuccess('Simulación finalizada. Se borraron los datos de prueba.');
       loadSummary();
     } catch {
       showError('Error de conexión');
@@ -255,16 +299,24 @@ export default function FinancePage() {
         </Box>
       </Box>
 
+      {register?.isTest && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          🧪 <strong>MODO SIMULACIÓN</strong> — Estás en una caja de entrenamiento. Los pedidos y
+          movimientos que cargues <strong>no quedan registrados</strong> y se borran al cerrar la simulación.
+        </Alert>
+      )}
+
       {/* Estado de caja */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
             <Typography variant="h6" fontWeight={600}>Estado de caja</Typography>
             <Chip
-              label={register ? 'ABIERTA' : 'CERRADA'}
-              color={register ? 'success' : 'default'}
+              label={register ? (register.isTest ? 'SIMULACIÓN' : 'ABIERTA') : 'CERRADA'}
+              color={register ? (register.isTest ? 'warning' : 'success') : 'default'}
               size="small"
             />
+            {register?.isTest && <Chip label="=== TEST ===" color="warning" size="small" variant="outlined" />}
             {register?.shift && (
               <Chip label={CASH_SHIFT_LABELS[register.shift] || register.shift} color="info" size="small" variant="outlined" />
             )}
@@ -275,9 +327,15 @@ export default function FinancePage() {
             )}
           </Box>
           {register ? (
-            <Button variant="outlined" color="error" onClick={() => setCloseDialog(true)}>
-              Cerrar caja (arqueo)
-            </Button>
+            register.isTest ? (
+              <Button variant="outlined" color="warning" onClick={handleCloseTest} disabled={saving}>
+                Cerrar simulación
+              </Button>
+            ) : (
+              <Button variant="outlined" color="error" onClick={() => setCloseDialog(true)}>
+                Cerrar caja (arqueo)
+              </Button>
+            )
           ) : (
             <Button variant="contained" onClick={() => setOpenDialog(true)}>
               Abrir caja
@@ -630,17 +688,26 @@ export default function FinancePage() {
                 {CASH_SHIFTS.map((s) => (
                   <MenuItem key={s} value={s}>{CASH_SHIFT_LABELS[s]}</MenuItem>
                 ))}
+                <MenuItem value="TEST">=== TEST === (simulación para entrenar)</MenuItem>
               </Select>
             </FormControl>
-            <TextField
-              label="Saldo inicial en efectivo *"
-              type="number"
-              inputProps={{ min: 0, step: 0.01 }}
-              value={openForm.openingBalance}
-              onChange={(e) => setOpenForm((p) => ({ ...p, openingBalance: e.target.value }))}
-              fullWidth
-              helperText="Efectivo con el que arranca la caja"
-            />
+            {openForm.shift !== 'TEST' && (
+              <TextField
+                label="Saldo inicial en efectivo *"
+                type="number"
+                inputProps={{ min: 0, step: 0.01 }}
+                value={openForm.openingBalance}
+                onChange={(e) => setOpenForm((p) => ({ ...p, openingBalance: e.target.value }))}
+                fullWidth
+                helperText="Efectivo con el que arranca la caja"
+              />
+            )}
+            {openForm.shift === 'TEST' && (
+              <Alert severity="warning">
+                Vas a abrir una <strong>caja de simulación</strong> para practicar/enseñar. Nada de lo
+                que cargues acá queda registrado ni impacta en los reportes.
+              </Alert>
+            )}
             <TextField
               label="Notas"
               value={openForm.notes}
@@ -653,8 +720,12 @@ export default function FinancePage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>
-          <Button variant="contained" onClick={handleOpenRegister} disabled={saving || !openForm.shift || openForm.openingBalance === ''}>
-            Abrir
+          <Button
+            variant="contained"
+            onClick={handleOpenRegister}
+            disabled={saving || !openForm.shift || (openForm.shift !== 'TEST' && openForm.openingBalance === '')}
+          >
+            {openForm.shift === 'TEST' ? 'Iniciar simulación' : 'Abrir'}
           </Button>
         </DialogActions>
       </Dialog>

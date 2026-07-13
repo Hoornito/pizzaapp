@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { toNumber } from '@/lib/utils';
+import { getOpenCashRegister } from '@/services/finance.service';
 import type { EmployeeInput, EmployeeMovementInput } from '@/lib/validators';
 
 /**
@@ -46,12 +47,16 @@ export async function addEmployeeMovement(
 ) {
   const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
   if (!employee) throw new Error('Empleado no encontrado');
+  // Si hay una caja de simulación abierta, el movimiento es de prueba (se borra
+  // al cerrarla y no impacta en los saldos definitivos).
+  const register = await getOpenCashRegister();
   return prisma.employeeMovement.create({
     data: {
       employeeId,
       kind: input.kind,
       amount: input.amount,
       note: input.note ?? null,
+      isTest: !!register?.isTest,
       createdById: userId ?? null,
     },
   });
