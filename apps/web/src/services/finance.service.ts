@@ -401,6 +401,8 @@ export interface LedgerRow {
   paymentMethod: string;
   amount: number;
   employeeName?: string | null;
+  // Solo sueldos: monto que quedó "a favor" del empleado (no sale de caja).
+  accumulate?: number;
 }
 
 /**
@@ -474,6 +476,14 @@ export async function getFinanceSummary() {
     }),
   ]);
 
+  // Aportes "a favor" vinculados a los sueldos del turno: los mostramos en el
+  // libro (aunque no salgan de caja) para que el sueldo no aparezca en $0.
+  const aportes = await prisma.employeeMovement.findMany({
+    where: { kind: 'ACUMULADO_APORTE', financeTransactionId: { in: manualTxns.map((t) => t.id) } },
+    select: { financeTransactionId: true, amount: true },
+  });
+  const accByTxn = new Map(aportes.map((a) => [a.financeTransactionId, toNumber(a.amount)]));
+
   const orderTotalSales = ordersSession.reduce((s, o) => s + toNumber(o.total), 0);
   // efectivo del turno = efectivo puro + porción en efectivo de los mixtos
   const orderCashSales = ordersSession.reduce((s, o) => s + orderCashPortion(o), 0);
@@ -509,6 +519,7 @@ export async function getFinanceSummary() {
       paymentMethod: t.paymentMethod,
       amount: toNumber(t.amount),
       employeeName: t.employee ? `${t.employee.firstName} ${t.employee.lastName}` : null,
+      accumulate: accByTxn.get(t.id) ?? 0,
     })),
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 

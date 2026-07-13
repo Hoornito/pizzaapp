@@ -113,9 +113,10 @@ export default function FinancePage() {
       const isSueldo = txnForm.category === FINANCE_CATEGORY_SUELDOS;
       const isMixto = txnForm.paymentMethod === 'MIXTO';
       // En mixto el total = efectivo + virtual (ambos a mano).
+      // En Sueldos, el monto (retiro de caja) puede quedar en 0 si todo va "a favor".
       const amount = isMixto
         ? Number(txnForm.cashAmount || 0) + Number(txnForm.virtualAmount || 0)
-        : Number(txnForm.amount);
+        : Number(txnForm.amount || 0);
       const res = await fetch('/api/admin/finance/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -356,7 +357,12 @@ export default function FinancePage() {
                             {row.category}{row.employeeName ? ` — ${row.employeeName}` : ''}
                           </Typography>
                           {row.description && (
-                            <Typography variant="caption" color="text.secondary">{row.description}</Typography>
+                            <Typography variant="caption" color="text.secondary" display="block">{row.description}</Typography>
+                          )}
+                          {(row.accumulate ?? 0) > 0 && (
+                            <Typography variant="caption" color="info.main" display="block">
+                              ↳ Acumula a favor: {formatCurrency(row.accumulate)} (no sale de caja)
+                            </Typography>
                           )}
                           {row.source === 'ORDER' && (
                             <Chip label="Venta" size="small" sx={{ ml: 1, height: 18 }} />
@@ -366,13 +372,20 @@ export default function FinancePage() {
                           {FINANCE_PAYMENT_METHOD_LABELS[row.paymentMethod] || row.paymentMethod}
                         </TableCell>
                         <TableCell align="right">
-                          <Typography
-                            variant="body2"
-                            fontWeight={600}
-                            color={isIncome ? 'success.main' : 'error.main'}
-                          >
-                            {isIncome ? '+' : '−'} {formatCurrency(row.amount)}
-                          </Typography>
+                          {row.amount > 0 || (row.accumulate ?? 0) <= 0 ? (
+                            <Typography
+                              variant="body2"
+                              fontWeight={600}
+                              color={isIncome ? 'success.main' : 'error.main'}
+                            >
+                              {isIncome ? '+' : '−'} {formatCurrency(row.amount)}
+                            </Typography>
+                          ) : (
+                            // Sueldo que quedó todo a favor: no sale de caja.
+                            <Typography variant="body2" fontWeight={600} color="info.main">
+                              {formatCurrency(row.accumulate)}
+                            </Typography>
+                          )}
                         </TableCell>
                         <TableCell align="center" sx={{ p: 0.5 }}>
                           {row.source === 'MANUAL' ? (
@@ -541,12 +554,17 @@ export default function FinancePage() {
               </Box>
             ) : (
               <TextField
-                label="Monto *"
+                label={txnForm.category === FINANCE_CATEGORY_SUELDOS ? 'Retira de caja (opcional)' : 'Monto *'}
                 type="number"
                 inputProps={{ min: 0, step: 0.01 }}
                 value={txnForm.amount}
                 onChange={(e) => setTxnForm((p) => ({ ...p, amount: e.target.value }))}
                 fullWidth
+                helperText={
+                  txnForm.category === FINANCE_CATEGORY_SUELDOS
+                    ? 'Lo que el empleado se lleva ahora (sale de caja). Si todo queda a favor, dejalo vacío.'
+                    : undefined
+                }
               />
             )}
 
@@ -559,7 +577,7 @@ export default function FinancePage() {
                 value={txnForm.accumulate}
                 onChange={(e) => setTxnForm((p) => ({ ...p, accumulate: e.target.value }))}
                 fullWidth
-                helperText="Monto que el empleado deja a favor (no sale de caja). Lo de arriba es lo que retira. Se suma a su acumulado en Empleados."
+                helperText="Monto que el empleado deja a favor (no sale de caja). Se suma a su acumulado en Empleados. Podés cargar solo esto y dejar el retiro vacío."
               />
             )}
 
@@ -584,6 +602,10 @@ export default function FinancePage() {
               if (needsEmployee(txnForm.category) && !txnForm.employeeId) return true;
               if (txnForm.paymentMethod === 'MIXTO') {
                 return !(Number(txnForm.cashAmount) > 0) || !(Number(txnForm.virtualAmount) > 0);
+              }
+              // Sueldos: alcanza con el retiro O con lo que acumula a favor.
+              if (txnForm.category === FINANCE_CATEGORY_SUELDOS) {
+                return !(Number(txnForm.amount) > 0 || Number(txnForm.accumulate) > 0);
               }
               return !(Number(txnForm.amount) > 0);
             })()}

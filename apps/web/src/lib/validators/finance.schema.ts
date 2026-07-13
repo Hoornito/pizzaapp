@@ -16,7 +16,8 @@ const EMPLOYEE_CATEGORIES: readonly string[] = [
 export const financeTransactionSchema = z
   .object({
     type: z.enum(['INCOME', 'EXPENSE']),
-    amount: z.coerce.number().positive('El monto debe ser mayor a 0'),
+    // Puede ser 0 solo en Sueldos cuando todo queda "a favor" (ver superRefine).
+    amount: z.coerce.number().min(0, 'El monto no puede ser negativo'),
     // Solo para MIXTO: porción en efectivo (el resto se toma como virtual).
     cashAmount: z.coerce.number().min(0).optional().nullable(),
     category: z.string().min(1, 'Seleccioná una categoría'),
@@ -34,6 +35,17 @@ export const financeTransactionSchema = z
         code: z.ZodIssueCode.custom,
         path: ['category'],
         message: 'Categoría inválida para este tipo de movimiento',
+      });
+    }
+    // El monto solo puede ser 0 en Sueldos cuando todo queda "a favor"
+    // (acumulado > 0). En cualquier otro caso, el monto debe ser mayor a 0.
+    const acumulado = data.accumulate ?? 0;
+    const soloAcumulado = data.category === FINANCE_CATEGORY_SUELDOS && acumulado > 0;
+    if (data.amount <= 0 && !soloAcumulado) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['amount'],
+        message: 'El monto debe ser mayor a 0',
       });
     }
     // Sueldos y Adelantos requieren empleado asociado
