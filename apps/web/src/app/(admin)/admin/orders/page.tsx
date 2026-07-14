@@ -151,7 +151,9 @@ export default function AdminOrdersPage() {
       if (deliveredMode === 'session') params.set('session', 'current');
       else params.set('date', date);
     }
-    fetch(`/api/admin/orders?${params}`)
+    // no-store: evita que el navegador sirva una respuesta cacheada y muestre
+    // datos viejos (p. ej. el método de pago anterior tras cobrar).
+    fetch(`/api/admin/orders?${params}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((d) => {
         setOrders(d.data || []);

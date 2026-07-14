@@ -73,11 +73,14 @@ export async function GET(req: NextRequest) {
     prisma.order.count({ where }),
   ]);
 
-  return NextResponse.json({
-    success: true,
-    data: orders,
-    pagination: { total, page, limit, pages: Math.ceil(total / limit) },
-  });
+  return NextResponse.json(
+    {
+      success: true,
+      data: orders,
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+    },
+    { headers: { 'Cache-Control': 'no-store' } }
+  );
 }
 
 // Carga de un pedido desde el mostrador / admin: se confirma e imprime al instante.
