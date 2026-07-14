@@ -14,13 +14,21 @@ import { CartSummary } from './CartSummary';
 import { useCart } from '@/hooks/useCart';
 import { useUIStore } from '@/store/uiStore';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { useSnackbar } from '@/app/snackbar-context';
+import { fetchStoreOpen, STORE_CLOSED_MSG } from '@/lib/store-status';
 
 export function CartDrawer() {
   const { items, clearCart } = useCart();
   const { cartOpen, closeCart } = useUIStore();
+  const { showError } = useSnackbar();
   const router = useRouter();
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
+    // Si la tienda está cerrada, avisamos y no dejamos avanzar al checkout.
+    if (!(await fetchStoreOpen())) {
+      showError(STORE_CLOSED_MSG);
+      return;
+    }
     closeCart();
     router.push('/checkout');
   };

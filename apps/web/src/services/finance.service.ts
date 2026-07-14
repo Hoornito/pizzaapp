@@ -70,6 +70,15 @@ export async function computeExpectedCash(register: CashRegister): Promise<numbe
   return toNumber(register.openingBalance) + cashSales + manualIn - manualOut;
 }
 
+/**
+ * ¿La tienda está operativa para clientes? Sólo si hay una caja abierta y NO es
+ * de simulación (durante un entrenamiento no se toman pedidos reales).
+ */
+export async function isStoreOpen(): Promise<boolean> {
+  const register = await getOpenCashRegister();
+  return !!register && !register.isTest;
+}
+
 export async function openCashRegister(input: OpenCashRegisterInput, userId?: string) {
   const existing = await getOpenCashRegister();
   if (existing) {

@@ -11,10 +11,22 @@ import { useCart } from '@/hooks/useCart';
 import { CartItem } from '@/components/cart/CartItem';
 import { CartSummary } from '@/components/cart/CartSummary';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { useSnackbar } from '@/app/snackbar-context';
+import { fetchStoreOpen, STORE_CLOSED_MSG } from '@/lib/store-status';
 
 export default function CartPage() {
   const router = useRouter();
   const { items, clearCart } = useCart();
+  const { showError } = useSnackbar();
+
+  // Si la tienda está cerrada, avisamos y no avanzamos al checkout.
+  const goToCheckout = async () => {
+    if (!(await fetchStoreOpen())) {
+      showError(STORE_CLOSED_MSG);
+      return;
+    }
+    router.push('/checkout');
+  };
 
   if (items.length === 0) {
     return (
@@ -66,7 +78,7 @@ export default function CartPage() {
               variant="contained"
               fullWidth
               size="large"
-              onClick={() => router.push('/checkout')}
+              onClick={goToCheckout}
               sx={{ mt: 2, py: 1.5 }}
             >
               Confirmar pedido →

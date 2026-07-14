@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getOrders, createOrder } from '@/services/order.service';
+import { isStoreOpen } from '@/services/finance.service';
 import { createOrderSchema } from '@/lib/validators';
 import { rateLimit } from '@/lib/rate-limiter';
 import type { OrderStatus } from '@prisma/client';
@@ -27,6 +28,11 @@ export async function POST(req: NextRequest) {
   const rl = await rateLimit(req, { windowMs: 60_000, max: 10, keyPrefix: 'rl:orders' });
   if (!rl.success) {
     return NextResponse.json({ error: 'Demasiadas solicitudes' }, { status: 429 });
+  }
+
+  // La tienda debe estar abierta (caja abierta, no simulación) para tomar pedidos.
+  if (!(await isStoreOpen())) {
+    return NextResponse.json({ error: 'Aún estamos cerrados 🕒 Volvé en un rato.' }, { status: 409 });
   }
 
   const body = await req.json();
