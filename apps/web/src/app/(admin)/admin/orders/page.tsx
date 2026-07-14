@@ -96,6 +96,8 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [date, setDate] = useState(localToday);
+  // Entregados: por turno (sesión de caja abierta) o por fecha puntual.
+  const [deliveredMode, setDeliveredMode] = useState<'session' | 'date'>('session');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(12);
   const [total, setTotal] = useState(0);
@@ -145,7 +147,9 @@ export default function AdminOrdersPage() {
       else params.set('view', 'active');
     } else {
       params.set('status', 'ENTREGADO');
-      params.set('date', date);
+      // Por turno seguimos la caja abierta; por fecha, el día calendario.
+      if (deliveredMode === 'session') params.set('session', 'current');
+      else params.set('date', date);
     }
     fetch(`/api/admin/orders?${params}`)
       .then((r) => r.json())
@@ -156,7 +160,7 @@ export default function AdminOrdersPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { setLoading(true); loadOrders(); }, [tab, page, rowsPerPage, statusFilter, date]);
+  useEffect(() => { setLoading(true); loadOrders(); }, [tab, page, rowsPerPage, statusFilter, date, deliveredMode]);
 
   useEffect(() => {
     if (!socket) return;
@@ -171,7 +175,7 @@ export default function AdminOrdersPage() {
       socket.off('order:new', onNew);
       socket.off('order:status_updated', loadOrders);
     };
-  }, [socket, tab, page, rowsPerPage, statusFilter, date]);
+  }, [socket, tab, page, rowsPerPage, statusFilter, date, deliveredMode]);
 
   const changeStatus = async (id: string, status: string, okMsg: string): Promise<boolean> => {
     setBusyId(id);
@@ -321,7 +325,7 @@ export default function AdminOrdersPage() {
         {ACTIVE_STATUSES.map((s) => (
           <Tab key={s} value={s} label={ORDER_STATUS_LABELS[s]} />
         ))}
-        <Tab value="delivered" label="Entregados (día)" />
+        <Tab value="delivered" label="Entregados (turno)" />
       </Tabs>
 
       {/* Filtros según pestaña */}
@@ -342,16 +346,32 @@ export default function AdminOrdersPage() {
           </FormControl>
         ) : tab === 'delivered' ? (
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-            <TextField
-              type="date"
+            <Button
               size="small"
-              label="Día"
-              value={date}
-              onChange={(e) => { setDate(e.target.value); setPage(0); }}
-              InputLabelProps={{ shrink: true }}
-            />
+              variant={deliveredMode === 'session' ? 'contained' : 'outlined'}
+              onClick={() => { setDeliveredMode('session'); setPage(0); }}
+            >
+              Turno actual
+            </Button>
+            <Button
+              size="small"
+              variant={deliveredMode === 'date' ? 'contained' : 'outlined'}
+              onClick={() => { setDeliveredMode('date'); setPage(0); }}
+            >
+              Por fecha
+            </Button>
+            {deliveredMode === 'date' && (
+              <TextField
+                type="date"
+                size="small"
+                label="Día"
+                value={date}
+                onChange={(e) => { setDate(e.target.value); setPage(0); }}
+                InputLabelProps={{ shrink: true }}
+              />
+            )}
             <Typography color="text.secondary">
-              {total} entregado{total === 1 ? '' : 's'} · {formatCurrency(deliveredTotal)} (página actual)
+              {deliveredMode === 'session' ? 'Entregados del turno' : 'Entregados del día'} · {total} · {formatCurrency(deliveredTotal)} (página actual)
             </Typography>
           </Box>
         ) : null}
@@ -361,7 +381,11 @@ export default function AdminOrdersPage() {
         <LoadingSpinner message="Cargando pedidos..." />
       ) : orders.length === 0 ? (
         <Typography color="text.secondary" sx={{ py: 6, textAlign: 'center' }}>
-          {tab === 'active' ? 'No hay pedidos activos' : 'No hay pedidos entregados este día'}
+          {tab === 'active'
+            ? 'No hay pedidos activos'
+            : deliveredMode === 'session'
+              ? 'No hay entregados en el turno actual (si la caja está cerrada, el historial está en Reportes).'
+              : 'No hay pedidos entregados este día'}
         </Typography>
       ) : tab === 'active' ? (
         <Grid container spacing={2}>

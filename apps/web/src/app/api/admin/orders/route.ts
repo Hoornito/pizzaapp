@@ -19,6 +19,8 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get('status') as OrderStatus | null;
   const view = searchParams.get('view'); // 'active' | 'closed'
   const date = searchParams.get('date'); // YYYY-MM-DD
+  // 'current' = acotar al turno de la caja abierta (sesión), no al día calendario.
+  const sessionScope = searchParams.get('session');
   const page = parseInt(searchParams.get('page') || '1');
   const limit = parseInt(searchParams.get('limit') || '20');
   const skip = (page - 1) * limit;
@@ -32,7 +34,18 @@ export async function GET(req: NextRequest) {
   } else if (view === 'closed') {
     where.status = { in: ['ENTREGADO', 'CANCELADO'] };
   }
-  if (date) {
+
+  if (sessionScope === 'current') {
+    // Seguimos la sesión de caja: los pedidos del turno se mantienen aunque
+    // cruce la medianoche y desaparecen recién al cerrar la caja. Sin caja
+    // abierta, la vista operativa queda vacía (el historial está en Reportes).
+    const openRegister = await getOpenCashRegister();
+    if (openRegister) {
+      where.createdAt = { gte: openRegister.openedAt };
+    } else {
+      where.id = { in: [] };
+    }
+  } else if (date) {
     const d = parseLocalDate(date);
     where.createdAt = { gte: startOfDay(d), lte: endOfDay(d) };
   }
