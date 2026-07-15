@@ -108,6 +108,24 @@ export async function getReportData(period: Period, date?: Date | string, shift?
     .sort((a, b) => b.quantity - a.quantity)
     .slice(0, 5);
 
+  // Todos los productos con lo vendido en el período (incluye los que NO se
+  // vendieron, para ver qué sale y qué no). Nota: las empanadas elegidas dentro
+  // de una promo cuentan como parte de la promo, no como producto suelto.
+  const productsCatalog = await prisma.product.findMany({
+    select: { id: true, name: true, category: { select: { name: true } } },
+  });
+  const allProducts = productsCatalog
+    .map((p) => {
+      const s = productSales[p.id];
+      return {
+        name: p.name,
+        category: p.category?.name ?? '—',
+        quantity: s?.quantity ?? 0,
+        revenue: s?.revenue ?? 0,
+      };
+    })
+    .sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name));
+
   // Revenue by day
   const days = eachDayOfInterval({ start: from, end: to });
   const revenueByDay = days.map((day) => {
@@ -159,6 +177,7 @@ export async function getReportData(period: Period, date?: Date | string, shift?
     cancelledOrders: cancelledCount,
     topProducts,
     topPromotions,
+    allProducts,
     revenueByDay,
     finance,
     postres,

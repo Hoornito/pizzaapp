@@ -146,7 +146,8 @@ export default function AdminOrdersPage() {
       if (statusFilter) params.set('status', statusFilter);
       else params.set('view', 'active');
     } else {
-      params.set('status', 'ENTREGADO');
+      // 'closed' = entregados + cancelados (los cancelados salen con su tag).
+      params.set('view', 'closed');
       // Por turno seguimos la caja abierta; por fecha, el día calendario.
       if (deliveredMode === 'session') params.set('session', 'current');
       else params.set('date', date);
@@ -303,7 +304,10 @@ export default function AdminOrdersPage() {
     }
   };
 
-  const deliveredTotal = orders.reduce((s, o) => s + Number(o.total), 0);
+  // El total cobrado excluye cancelados; los contamos aparte para el resumen.
+  const deliveredTotal = orders.filter((o) => o.status !== 'CANCELADO').reduce((s, o) => s + Number(o.total), 0);
+  const entregadosCount = orders.filter((o) => o.status !== 'CANCELADO').length;
+  const canceladosCount = orders.filter((o) => o.status === 'CANCELADO').length;
 
   return (
     <Box>
@@ -373,7 +377,8 @@ export default function AdminOrdersPage() {
               />
             )}
             <Typography color="text.secondary">
-              {deliveredMode === 'session' ? 'Entregados del turno' : 'Entregados del día'} · {total} · {formatCurrency(deliveredTotal)} (página actual)
+              {deliveredMode === 'session' ? 'Turno actual' : 'Día'} · {entregadosCount} entregados
+              {canceladosCount > 0 ? ` · ${canceladosCount} cancelados` : ''} · {formatCurrency(deliveredTotal)} cobrados (página actual)
             </Typography>
           </Box>
         ) : null}
@@ -550,18 +555,31 @@ export default function AdminOrdersPage() {
                   <TableCell>{splitClientNote(order.notes).client || order.user?.name || order.user?.email || 'Cliente'}</TableCell>
                   <TableCell align="center">{order.deliveryType === 'DELIVERY' ? '🛵' : '🏪'}</TableCell>
                   <TableCell>
-                    {ORDER_PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}{' '}
-                    <Chip
-                      label={order.payment?.status === 'APPROVED' ? 'Pagado' : 'Pend.'}
-                      size="small"
-                      color={order.payment?.status === 'APPROVED' ? 'success' : 'warning'}
-                    />
+                    {order.status === 'CANCELADO' ? (
+                      <Chip label="Cancelado" size="small" color="warning" />
+                    ) : (
+                      <>
+                        {ORDER_PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}{' '}
+                        <Chip
+                          label={order.payment?.status === 'APPROVED' ? 'Pagado' : 'Pend.'}
+                          size="small"
+                          color={order.payment?.status === 'APPROVED' ? 'success' : 'warning'}
+                        />
+                      </>
+                    )}
                   </TableCell>
-                  <TableCell align="right"><Typography fontWeight={600}>{formatCurrency(order.total)}</Typography></TableCell>
+                  <TableCell align="right">
+                    <Typography
+                      fontWeight={600}
+                      sx={order.status === 'CANCELADO' ? { textDecoration: 'line-through', color: 'text.disabled' } : undefined}
+                    >
+                      {formatCurrency(order.total)}
+                    </Typography>
+                  </TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
                       <Button size="small" onClick={() => router.push(`/admin/orders/${order.id}`)}>Ver</Button>
-                      {order.payment?.status !== 'APPROVED' && (
+                      {order.status !== 'CANCELADO' && order.payment?.status !== 'APPROVED' && (
                         <Button size="small" color="success" onClick={() => openPay(order)}>💵 Pagó</Button>
                       )}
                     </Box>

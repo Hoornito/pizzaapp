@@ -17,6 +17,11 @@ import TableCell from '@mui/material/TableCell';
 import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
+import Accordion from '@mui/material/Accordion';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import Chip from '@mui/material/Chip';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { RevenueChart } from '@/components/admin/RevenueChart';
 import { formatCurrency } from '@/lib/utils';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -315,6 +320,64 @@ export default function AdminReportsPage() {
                 </Table>
               </TableContainer>
             </Paper>
+          </Grid>
+
+          {/* Todos los productos: qué se vende y qué no */}
+          <Grid item xs={12}>
+            <Accordion>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="h6" fontWeight={600}>Todos los productos — qué se vende y qué no</Typography>
+                {report.allProducts && (
+                  <Box sx={{ display: 'flex', gap: 1, ml: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Chip size="small" color="success" variant="outlined"
+                      label={`${report.allProducts.filter((p: any) => p.quantity > 0).length} con ventas`} />
+                    <Chip size="small" color="default" variant="outlined"
+                      label={`${report.allProducts.filter((p: any) => p.quantity === 0).length} sin ventas`} />
+                  </Box>
+                )}
+              </AccordionSummary>
+              <AccordionDetails>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  Las empanadas elegidas dentro de una promo cuentan como parte de la promo, no como producto suelto.
+                </Typography>
+                <TableContainer sx={{ maxHeight: 480 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell><strong>Producto</strong></TableCell>
+                        <TableCell><strong>Categoría</strong></TableCell>
+                        <TableCell align="right"><strong>Cantidad</strong></TableCell>
+                        <TableCell align="right"><strong>Ingresos</strong></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(report.allProducts || []).map((item: any, i: number) => {
+                        const sold = item.quantity > 0;
+                        return (
+                          <TableRow
+                            key={i}
+                            sx={{ borderLeft: '3px solid', borderLeftColor: sold ? 'success.main' : 'grey.300' }}
+                          >
+                            <TableCell sx={{ color: sold ? 'text.primary' : 'text.disabled' }}>{item.name}</TableCell>
+                            <TableCell sx={{ color: 'text.secondary' }}>{item.category}</TableCell>
+                            <TableCell align="right">
+                              {sold ? (
+                                <Typography component="span" fontWeight={700} color="success.main">{item.quantity}</Typography>
+                              ) : (
+                                <Chip size="small" color="warning" variant="outlined" label="Sin ventas" />
+                              )}
+                            </TableCell>
+                            <TableCell align="right" sx={{ color: sold ? 'text.primary' : 'text.disabled' }}>
+                              {formatCurrency(item.revenue)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </AccordionDetails>
+            </Accordion>
           </Grid>
         </Grid>
       )}
