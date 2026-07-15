@@ -42,6 +42,8 @@ interface PostresData {
   totalIngresos: number;
   totalRetiros: number;
   dineroAFavor: number;
+  stockTotal: number;
+  entradas: number;
 }
 
 const fmtDate = (d: string) => d.split('-').reverse().join('/');
@@ -51,6 +53,11 @@ export default function PostresPage() {
   const [data, setData] = useState<PostresData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Filtros del período (afectan ventas/ingresos/entradas; el dinero a favor es saldo total).
+  const [period, setPeriod] = useState<'day' | 'week' | 'month'>('month');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [shift, setShift] = useState<'BOTH' | 'MANANA' | 'NOCHE'>('BOTH');
 
   // Modal cargar stock
   const [cargarOpen, setCargarOpen] = useState(false);
@@ -65,13 +72,15 @@ export default function PostresPage() {
   const [priceValue, setPriceValue] = useState('');
 
   const load = () => {
-    fetch('/api/admin/postres')
+    setLoading(true);
+    const qs = new URLSearchParams({ period, date, shift });
+    fetch(`/api/admin/postres?${qs}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((d) => setData(d.data))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [period, date, shift]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleActive = async (p: PostreRow) => {
     try {
@@ -163,13 +172,15 @@ export default function PostresPage() {
     }
   };
 
-  if (loading) return <LoadingSpinner message="Cargando postres..." />;
+  if (loading && !data) return <LoadingSpinner message="Cargando postres..." />;
   if (!data) return <Typography color="error">No se pudieron cargar los datos.</Typography>;
 
+  // Métricas del período seleccionado (+ "Total retirado" que es saldo histórico).
   const metrics = [
-    { label: 'Total vendidos (unidades)', value: String(data.totalVendidos), color: 'text.primary' },
-    { label: 'Ingresos por postres', value: formatCurrency(data.totalIngresos), color: 'success.main' },
-    { label: 'Total retirado', value: formatCurrency(data.totalRetiros), color: 'error.main' },
+    { label: 'Vendidos del período (unidades)', value: String(data.totalVendidos), color: 'text.primary' },
+    { label: 'Ingresos del período', value: formatCurrency(data.totalIngresos), color: 'success.main' },
+    { label: 'Entradas del período (carga)', value: String(data.entradas), color: 'info.main' },
+    { label: 'Total retirado (histórico)', value: formatCurrency(data.totalRetiros), color: 'error.main' },
   ];
 
   return (
@@ -185,6 +196,32 @@ export default function PostresPage() {
         </Box>
       </Box>
 
+      {/* Filtros de período/turno (afectan las métricas del período, no el saldo) */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {(['day', 'week', 'month'] as const).map((p) => (
+              <Button key={p} size="small" variant={period === p ? 'contained' : 'outlined'} onClick={() => setPeriod(p)}>
+                {p === 'day' ? 'Día' : p === 'week' ? 'Semana' : 'Mes'}
+              </Button>
+            ))}
+          </Box>
+          <TextField
+            type="date"
+            size="small"
+            label="Fecha"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+          />
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button size="small" variant={shift === 'BOTH' ? 'contained' : 'outlined'} onClick={() => setShift('BOTH')}>Ambos turnos</Button>
+            <Button size="small" variant={shift === 'MANANA' ? 'contained' : 'outlined'} onClick={() => setShift('MANANA')}>🌅 Mañana</Button>
+            <Button size="small" variant={shift === 'NOCHE' ? 'contained' : 'outlined'} onClick={() => setShift('NOCHE')}>🌙 Noche</Button>
+          </Box>
+        </Box>
+      </Paper>
+
       {/* Resumen */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={6} md={3}>
@@ -193,7 +230,16 @@ export default function PostresPage() {
             <Typography variant="h4" fontWeight={800} color={data.dineroAFavor >= 0 ? 'success.main' : 'error.main'}>
               {formatCurrency(data.dineroAFavor)}
             </Typography>
-            <Typography variant="caption" color="text.secondary">Ingresos por postres − retiros</Typography>
+            <Typography variant="caption" color="text.secondary">Saldo histórico (ingresos − retiros + ajustes)</Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper sx={{ p: 2.5, borderRadius: 2, border: '2px solid', borderColor: 'info.main', height: '100%' }}>
+            <Typography variant="subtitle2" color="text.secondary" fontWeight={700}>STOCK TOTAL DE POSTRES</Typography>
+            <Typography variant="h3" fontWeight={800} color={data.stockTotal <= 0 ? 'error.main' : 'info.main'}>
+              {data.stockTotal}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">Suma del stock actual de todos los postres</Typography>
           </Paper>
         </Grid>
         {metrics.map((m) => (

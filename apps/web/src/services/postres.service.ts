@@ -1,9 +1,33 @@
 import { prisma } from '@/lib/prisma';
 import { toNumber } from '@/lib/utils';
 import { adjustStock } from './product.service';
-import { format } from 'date-fns';
+import { parseLocalDate } from './finance.service';
+import {
+  format,
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+} from 'date-fns';
+import type { CashShift, Prisma } from '@prisma/client';
 
 const POSTRES_SLUG = 'postres';
+
+type PostresPeriod = 'day' | 'week' | 'month';
+
+function postresRange(period: PostresPeriod, date: Date) {
+  switch (period) {
+    case 'day':
+      return { from: startOfDay(date), to: endOfDay(date) };
+    case 'week':
+      return { from: startOfWeek(date, { weekStartsOn: 1 }), to: endOfWeek(date, { weekStartsOn: 1 }) };
+    case 'month':
+    default:
+      return { from: startOfMonth(date), to: endOfMonth(date) };
+  }
+}
 
 async function getPostresCategoryId(): Promise<string | null> {
   const cat = await prisma.category.findUnique({ where: { slug: POSTRES_SLUG } });
@@ -24,11 +48,21 @@ export interface PostreVentaDia {
   total: number;
 }
 
+export interface GetPostresParams {
+  period?: PostresPeriod;
+  date?: string; // YYYY-MM-DD
+  shift?: CashShift | 'BOTH';
+}
+
 /**
- * Panel de Postres: productos (stock/precio/activo), ventas diarias, totales y
- * "dinero a favor" (ingresos por postres − retiros registrados).
+ * Panel de Postres.
+ *  - Las métricas del PERÍODO (vendidos, ingresos, entradas, ventas diarias) se
+ *    acotan por fecha y, si se pide, por turno (sesión de caja, como Reportes).
+ *  - El "dinero a favor" y "total retirado" son SALDO ACUMULADO (histórico):
+ *    dineroAFavor = ingresos históricos − retiros + ajustes manuales.
+ *  - "stockTotal" = suma del stock actual de todos los postres.
  */
-export async function getPostresData() {
+export async function getPostresData(params?: GetPostresParams) {
   const catId = await getPostresCategoryId();
   if (!catId) {
     return {
@@ -38,35 +72,78 @@ export async function getPostresData() {
       totalIngresos: 0,
       totalRetiros: 0,
       dineroAFavor: 0,
+      stockTotal: 0,
+      entradas: 0,
+      period: params?.period ?? 'month',
     };
   }
 
-  const [products, orders, retiros] = await Promise.all([
-    prisma.product.findMany({ where: { categoryId: catId }, orderBy: { name: 'asc' } }),
-    // Ventas cobradas (no canceladas) que incluyen algún postre.
-    prisma.order.findMany({
-      where: {
+  const period: PostresPeriod = params?.period ?? 'month';
+  const dateObj = params?.date ? parseLocalDate(params.date) : new Date();
+  const { from, to } = postresRange(period, dateObj);
+  const shift = params?.shift;
+
+  // Ventanas de cobro: con turno = sesiones de caja de ese turno; sin turno = el período.
+  let paidWindows: { from: Date; to: Date }[] = [{ from, to }];
+  if (shift) {
+    const shiftWhere: Prisma.EnumCashShiftNullableFilter =
+      shift === 'BOTH' ? { in: ['MANANA', 'NOCHE'] } : { equals: shift };
+    const regs = await prisma.cashRegister.findMany({
+      where: { shift: shiftWhere, openedAt: { gte: from, lte: to }, isTest: false },
+    });
+    paidWindows = regs.map((r) => ({ from: r.openedAt, to: r.closedAt ?? new Date() }));
+  }
+
+  // Pedidos con postres cobrados dentro del período/turno.
+  const noRows: Prisma.OrderWhereInput = { id: { in: [] } };
+  const periodWhere: Prisma.OrderWhereInput = shift
+    ? paidWindows.length === 0
+      ? noRows
+      : {
+          status: { not: 'CANCELADO' },
+          isTest: false,
+          items: { some: { product: { categoryId: catId } } },
+          OR: paidWindows.map((w) => ({ payment: { status: 'APPROVED' as const, paidAt: { gte: w.from, lte: w.to } } })),
+        }
+    : {
         status: { not: 'CANCELADO' },
-        payment: { status: 'APPROVED' },
+        isTest: false,
+        payment: { status: 'APPROVED', paidAt: { gte: from, lte: to } },
         items: { some: { product: { categoryId: catId } } },
-      },
+      };
+
+  const [products, periodOrders, retiros, adjustAgg, allTimeIngresoAgg, entradasAgg] = await Promise.all([
+    prisma.product.findMany({ where: { categoryId: catId }, orderBy: { name: 'asc' } }),
+    prisma.order.findMany({
+      where: periodWhere,
       select: {
         createdAt: true,
         payment: { select: { paidAt: true } },
-        items: {
-          where: { product: { categoryId: catId } },
-          select: { quantity: true, subtotal: true },
-        },
+        items: { where: { product: { categoryId: catId } }, select: { quantity: true, subtotal: true } },
       },
     }),
     prisma.postreWithdrawal.findMany({ select: { amount: true } }),
+    prisma.postreAdjustment.aggregate({ _sum: { amount: true } }),
+    // Ingresos HISTÓRICOS por postres (para el saldo a favor, no depende del período).
+    prisma.orderItem.aggregate({
+      _sum: { subtotal: true },
+      where: {
+        product: { categoryId: catId },
+        order: { status: { not: 'CANCELADO' }, isTest: false, payment: { status: 'APPROVED' } },
+      },
+    }),
+    // Entradas de stock (carga) en el período.
+    prisma.stockMovement.aggregate({
+      _sum: { quantity: true },
+      where: { kind: 'ENTRADA', createdAt: { gte: from, lte: to }, product: { categoryId: catId } },
+    }),
   ]);
 
-  // Agregado por día (fecha de cobro) + totales acumulados.
+  // Agregado por día (fecha de cobro) + totales del período.
   const dayMap = new Map<string, { cantidad: number; total: number }>();
   let totalVendidos = 0;
   let totalIngresos = 0;
-  for (const o of orders) {
+  for (const o of periodOrders) {
     const day = format(o.payment?.paidAt ?? o.createdAt, 'yyyy-MM-dd');
     const entry = dayMap.get(day) ?? { cantidad: 0, total: 0 };
     for (const it of o.items) {
@@ -83,7 +160,11 @@ export async function getPostresData() {
     .sort((a, b) => (a.date < b.date ? 1 : -1)); // más reciente primero
 
   const totalRetiros = retiros.reduce((s, r) => s + toNumber(r.amount), 0);
-  const dineroAFavor = totalIngresos - totalRetiros;
+  const ajustes = toNumber(adjustAgg._sum.amount ?? 0);
+  const ingresosHistoricos = toNumber(allTimeIngresoAgg._sum.subtotal ?? 0);
+  const dineroAFavor = ingresosHistoricos - totalRetiros + ajustes;
+  const stockTotal = products.reduce((s, p) => s + (p.stock ?? 0), 0);
+  const entradas = entradasAgg._sum.quantity ?? 0;
 
   return {
     products: products.map((p) => ({
@@ -98,6 +179,9 @@ export async function getPostresData() {
     totalIngresos,
     totalRetiros,
     dineroAFavor,
+    stockTotal,
+    entradas,
+    period,
   };
 }
 

@@ -188,41 +188,6 @@ export default function AdminReportsPage() {
             </Grid>
           )}
 
-          {/* Postres */}
-          {report.postres && (
-            <Grid item xs={12}>
-              <Paper sx={{ p: 3 }}>
-                <Typography variant="h6" fontWeight={600} gutterBottom>🍰 Postres</Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6} md={3}>
-                    <Box sx={{ p: 2.5, borderRadius: 2, border: '2px solid', borderColor: 'success.main', height: '100%' }}>
-                      <Typography variant="subtitle2" color="text.secondary" fontWeight={700}>INGRESO POR POSTRES</Typography>
-                      <Typography variant="h4" fontWeight={800} color="success.main">
-                        {formatCurrency(report.postres.ingreso)}
-                      </Typography>
-                    </Box>
-                  </Grid>
-                  {[
-                    { label: 'Postres vendidos (unidades)', value: String(report.postres.unidadesVendidas), color: 'text.primary' },
-                    { label: 'Postres ingresados (entradas)', value: String(report.postres.entradas), color: 'info.main' },
-                    { label: 'Bajas / merma (salidas)', value: String(report.postres.salidas), color: 'error.main' },
-                    { label: 'Stock disponible (actual)', value: String(report.postres.stockDisponible), color: report.postres.stockDisponible <= 0 ? 'error.main' : 'text.primary' },
-                  ].map((m) => (
-                    <Grid item xs={6} sm={6} md={3} key={m.label}>
-                      <Box sx={{ p: 2, border: '1px solid', borderColor: 'grey.200', borderRadius: 2, height: '100%' }}>
-                        <Typography variant="caption" color="text.secondary" display="block">{m.label}</Typography>
-                        <Typography variant="h5" fontWeight={700} color={m.color}>{m.value}</Typography>
-                      </Box>
-                    </Grid>
-                  ))}
-                </Grid>
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, display: 'block' }}>
-                  Ventas e ingresos corresponden al período seleccionado. El stock disponible es el valor actual (no depende del período).
-                </Typography>
-              </Paper>
-            </Grid>
-          )}
-
           {/* Pagos por empleado */}
           {report.finance?.byEmployee?.length > 0 && (
             <Grid item xs={12}>

@@ -212,6 +212,18 @@ model PostreWithdrawal {
   @@index([createdAt])
 }
 
+// Ajuste manual del "dinero a favor" de postres (firmado: + suma / − resta).
+// Se usa, por ejemplo, para traer un saldo a favor de otro sistema.
+model PostreAdjustment {
+  id          String   @id @default(cuid())
+  amount      Decimal  @db.Decimal(10, 2)
+  reason      String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 // ─── Promotions ───────────────────────────────────────────────────────────────
 
 model Promotion {

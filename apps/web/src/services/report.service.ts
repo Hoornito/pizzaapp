@@ -73,10 +73,6 @@ export async function getReportData(period: Period, date?: Date | string, shift?
   const productSales: Record<string, { name: string; quantity: number; revenue: number }> = {};
   const promotionSales: Record<string, { name: string; quantity: number; revenue: number }> = {};
 
-  // Métricas específicas de Postres (ventas del período)
-  let postresUnidadesVendidas = 0;
-  let postresIngreso = 0;
-
   for (const order of orders) {
     for (const item of order.items) {
       if (item.product) {
@@ -85,10 +81,6 @@ export async function getReportData(period: Period, date?: Date | string, shift?
         }
         productSales[item.product.id].quantity += item.quantity;
         productSales[item.product.id].revenue += toNumber(item.subtotal);
-        if (item.product.category?.slug === 'postres') {
-          postresUnidadesVendidas += item.quantity;
-          postresIngreso += toNumber(item.subtotal);
-        }
       }
       if (item.promotion) {
         if (!promotionSales[item.promotion.id]) {
@@ -143,30 +135,7 @@ export async function getReportData(period: Period, date?: Date | string, shift?
 
   const finance = await getFinanceTotals(from, to, shift);
 
-  // Postres: entradas/salidas del período + stock disponible actual
-  const postresFilter = { product: { category: { slug: 'postres' } } };
-  const [postresEntradas, postresSalidas, postresStock] = await Promise.all([
-    prisma.stockMovement.aggregate({
-      _sum: { quantity: true },
-      where: { kind: 'ENTRADA', createdAt: { gte: from, lte: to }, ...postresFilter },
-    }),
-    prisma.stockMovement.aggregate({
-      _sum: { quantity: true },
-      where: { kind: 'SALIDA', createdAt: { gte: from, lte: to }, ...postresFilter },
-    }),
-    prisma.product.aggregate({
-      _sum: { stock: true },
-      where: { category: { slug: 'postres' } },
-    }),
-  ]);
-
-  const postres = {
-    unidadesVendidas: postresUnidadesVendidas,
-    ingreso: postresIngreso,
-    entradas: postresEntradas._sum.quantity ?? 0,
-    salidas: postresSalidas._sum.quantity ?? 0,
-    stockDisponible: postresStock._sum.stock ?? 0,
-  };
+  // (El detalle de Postres se muestra ahora en su propia solapa, no en Reportes.)
 
   return {
     period,
@@ -180,7 +149,6 @@ export async function getReportData(period: Period, date?: Date | string, shift?
     allProducts,
     revenueByDay,
     finance,
-    postres,
   };
 }
 

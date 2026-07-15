@@ -21,17 +21,26 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product }: ProductCardProps) {
-  const { addItemAndOpen } = useCart();
-  const { showSuccess } = useSnackbar();
+  const { addItemAndOpen, items } = useCart();
+  const { showSuccess, showError } = useSnackbar();
   // La Doble Cambalache pide los gustos antes de agregarse.
   const isDoble = /doble cambalache/i.test(product.name);
   const [dobleOpen, setDobleOpen] = useState(false);
 
-  // Solo los postres controlan stock: sin stock → no se puede agregar.
-  const outOfStock = product.category?.slug === 'postres' && (product.stock ?? 0) <= 0;
-  const canAdd = product.available && !outOfStock;
+  // Solo los postres controlan stock. No mostramos la cantidad al cliente, pero
+  // no dejamos agregar más de lo disponible (el servidor igual valida al cobrar).
+  const isPostre = product.category?.slug === 'postres';
+  const stock = product.stock ?? 0;
+  const inCart = isPostre ? items.filter((i) => i.productId === product.id).reduce((s, i) => s + i.quantity, 0) : 0;
+  const outOfStock = isPostre && stock <= 0;
+  const noMoreStock = isPostre && inCart >= stock;
+  const canAdd = product.available && !outOfStock && !noMoreStock;
 
   const addToCart = (notes?: string) => {
+    if (isPostre && inCart + 1 > stock) {
+      showError('No quedan más de este postre por ahora.');
+      return;
+    }
     addItemAndOpen({
       type: 'product',
       productId: product.id,
@@ -100,7 +109,7 @@ export function ProductCard({ product }: ProductCardProps) {
           disabled={!canAdd}
           sx={{ '& .MuiButton-startIcon': { display: { xs: 'none', sm: 'inherit' } } }}
         >
-          {outOfStock ? 'Sin stock' : !product.available ? 'No disponible' : 'Agregar'}
+          {outOfStock ? 'Sin stock' : noMoreStock ? 'Sin más por ahora' : !product.available ? 'No disponible' : 'Agregar'}
         </Button>
       </CardActions>
       {isDoble && (

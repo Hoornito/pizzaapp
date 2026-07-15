@@ -242,10 +242,30 @@ export default function PosPage() {
     });
   };
 
+  // Postres controlan stock: cuánto hay de cada uno y cuánto ya cargamos al pedido.
+  const postresStockById = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const p of products) if (p.categoryId === postresCategoryId) m[p.id] = p.stock ?? 0;
+    return m;
+  }, [products, postresCategoryId]);
+  const cartQtyByProduct = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const i of items) if (i.productId) m[i.productId] = (m[i.productId] ?? 0) + i.quantity;
+    return m;
+  }, [items]);
+
   const setQty = (key: string, delta: number) => {
     setItems((prev) =>
       prev
-        .map((i) => (i.key === key ? { ...i, quantity: i.quantity + delta } : i))
+        .map((i) => {
+          if (i.key !== key) return i;
+          let quantity = i.quantity + delta;
+          // En postres no dejamos pasar del stock disponible.
+          if (delta > 0 && i.productId && postresStockById[i.productId] != null) {
+            quantity = Math.min(quantity, postresStockById[i.productId]);
+          }
+          return { ...i, quantity };
+        })
         .filter((i) => i.quantity > 0)
     );
   };
@@ -522,15 +542,47 @@ export default function PosPage() {
             </Box>
           )}
 
-          {/* Otras categorías: productos sueltos */}
-          {activeTab !== pizzasCategoryId && activeTab !== empanadasCategoryId && activeTab !== bebidasCategoryId && activeTab !== fainaCategoryId && activeTab !== 'promos' && (
+          {/* Postres: fichas con stock en vivo; no dejan pasar del disponible */}
+          {activeTab === postresCategoryId && (
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
-              {products.filter((p) => p.categoryId === activeTab).map((p) => {
-                // Solo los postres controlan stock: sin stock → deshabilitado.
-                const outOfStock = p.categoryId === postresCategoryId && (p.stock ?? 0) <= 0;
-                return tile(p.name, Number(p.price),
-                  () => addItem({ productId: p.id, name: p.name, unitPrice: Number(p.price), quantity: 1 }), p.id, outOfStock);
+              {products.filter((p) => p.categoryId === postresCategoryId).map((p) => {
+                const remaining = (p.stock ?? 0) - (cartQtyByProduct[p.id] ?? 0);
+                const agotado = remaining <= 0;
+                return (
+                  <Button
+                    key={p.id}
+                    variant="outlined"
+                    disabled={agotado}
+                    onClick={() => addItem({ productId: p.id, name: p.name, unitPrice: Number(p.price), quantity: 1 })}
+                    sx={{
+                      flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', p: 1.5,
+                      height: '100%', textTransform: 'none', borderColor: 'divider',
+                    }}
+                  >
+                    <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.2 }}>{p.name}</Typography>
+                    <Typography variant="caption" color={agotado ? 'text.disabled' : 'primary.main'} fontWeight={700}>
+                      {formatCurrency(Number(p.price))}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      fontWeight={700}
+                      color={agotado ? 'error.main' : remaining <= 2 ? 'warning.main' : 'success.main'}
+                    >
+                      {agotado ? 'Sin stock' : `Quedan: ${remaining}`}
+                    </Typography>
+                  </Button>
+                );
               })}
+            </Box>
+          )}
+
+          {/* Otras categorías: productos sueltos */}
+          {activeTab !== pizzasCategoryId && activeTab !== empanadasCategoryId && activeTab !== bebidasCategoryId && activeTab !== fainaCategoryId && activeTab !== postresCategoryId && activeTab !== 'promos' && (
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
+              {products.filter((p) => p.categoryId === activeTab).map((p) =>
+                tile(p.name, Number(p.price),
+                  () => addItem({ productId: p.id, name: p.name, unitPrice: Number(p.price), quantity: 1 }), p.id)
+              )}
             </Box>
           )}
         </Paper>
