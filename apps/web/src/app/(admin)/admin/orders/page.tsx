@@ -505,6 +505,12 @@ export default function AdminOrdersPage() {
                       </Typography>
                     )}
 
+                    {Number(order.tip) > 0 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
+                        <Typography variant="body2" color="secondary.main" fontWeight={600}>🛵 Propina repartidor</Typography>
+                        <Typography variant="body2" color="secondary.main" fontWeight={700}>{formatCurrency(order.tip)}</Typography>
+                      </Box>
+                    )}
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1.5 }}>
                       <Typography color="text.secondary">Total</Typography>
                       <Typography variant="h6" fontWeight={700}>{formatCurrency(order.total)}</Typography>

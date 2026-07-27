@@ -53,9 +53,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
       const molde = MOLDE_RE.test(g.title) || MOLDE_RE.test(g.notes || '');
       const titleClean = (g.title || '').replace(/\n?\s*AL MOLDE\s*/i, '').trim();
       const notesClean = !g.isPizza && g.notes ? g.notes.replace(/\n?\s*AL MOLDE\s*/i, '').trim() : '';
-      const moldeHtml = molde ? `<div class="item-notes big">🟡 AL MOLDE</div>` : '';
+      const moldeHtml = molde ? `<div class="item-notes big">** AL MOLDE **</div>` : '';
       // Extra de la pizza (p. ej. "EXTRA: HUEVO").
-      const extraHtml = g.extra ? `<div class="item-notes big">➕ ${esc(g.extra)}</div>` : '';
+      const extraHtml = g.extra ? `<div class="item-notes big">+ ${esc(g.extra)}</div>` : '';
       const notesHtml = notesClean ? `<div class="item-notes">${esc(notesClean)}</div>` : '';
       return `<div class="item"><div class="item-title">${esc(g.quantity)}x ${esc(titleClean)}</div>${moldeHtml}${extraHtml}${notesHtml}</div>`;
     })
@@ -109,6 +109,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   .total { font-size:17px; font-weight:bold; display:flex; justify-content:space-between; }
   .status { margin-top:3px; text-align:center; font-weight:bold; padding:3px; border:2px solid #000; }
   .status.unpaid { background:#000; color:#fff; }
+  .tip { font-size:18px; font-weight:bold; text-align:center; padding:4px; margin:5px 0; border:2px solid #000; }
   .qr { text-align:center; margin-top:6px; }
   .qr img { width:26mm; height:26mm; }
   .qr-label { font-size:11px; font-weight:bold; }
@@ -116,11 +117,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
 </style></head>
 <body>
   <div class="content">
-  <div class="header">COCINA · PEDIDO #${esc(order.orderNumber)}</div>
+  <div class="header">COCINA - PEDIDO #${esc(order.orderNumber)}</div>
   <div class="sub">${esc(fmtDate(order.createdAt))}</div>
   <div class="sep"></div>
   <div class="meta">
-    <div><b>Tipo:</b> ${order.deliveryType === 'DELIVERY' ? 'DELIVERY 🛵' : 'RETIRO EN LOCAL 🏪'}</div>
+    <div><b>Tipo:</b> ${order.deliveryType === 'DELIVERY' ? 'DELIVERY' : 'RETIRO EN LOCAL'}</div>
     ${customerName ? `<div><b>Cliente:</b> ${esc(customerName)}</div>` : ''}
     ${order.phone || order.user?.phone ? `<div><b>Tel:</b> ${esc(order.phone || order.user?.phone)}</div>` : ''}
     ${order.deliveryType === 'DELIVERY' && order.address ? `<div><b>Dirección:</b> ${esc(order.address.street)} ${esc(order.address.number)}${order.address.apartment ? ' ' + esc(order.address.apartment) : ''}, ${esc(order.address.city)}</div>` : ''}
@@ -130,10 +131,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   ${itemsHtml}
   <div class="sep"></div>
   <div class="pay">
-    ${Number(order.tip) > 0 ? `<div class="meta">🛵 Propina repartidor: <b>${esc(fmtMoney(Number(order.tip)))}</b></div>` : ''}
+    ${Number(order.tip) > 0 ? `<div class="tip">PROPINA REPARTIDOR: ${esc(fmtMoney(Number(order.tip)))}</div>` : ''}
     <div class="total"><span>TOTAL</span><span>${esc(fmtMoney(Number(order.total)))}</span></div>
     <div class="status ${isPaid ? 'paid' : 'unpaid'}">
-      ${isPaid ? `PAGADO ✓ (${esc(methodLabel)})` : `FALTA COBRAR · ${esc(methodLabel)}`}
+      ${isPaid ? `PAGADO (${esc(methodLabel)})` : `FALTA COBRAR - ${esc(methodLabel)}`}
     </div>
   </div>
   ${cleanNotes ? `<div class="sep"></div><div class="meta"><b>Obs:</b> ${esc(cleanNotes)}</div>` : ''}
