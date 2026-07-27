@@ -128,6 +128,8 @@ export default function PosPage() {
   const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA' | 'MIXTO' | 'A_DEFINIR'>('EFECTIVO');
   const [cashAmount, setCashAmount] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
+  // Efectivo con el que paga el cliente ("paga con"), para el vuelto.
+  const [pagaCon, setPagaCon] = useState('');
   const [paid, setPaid] = useState(false);
   const [discount, setDiscount] = useState('');
   const [notes, setNotes] = useState('');
@@ -200,6 +202,7 @@ export default function PosPage() {
         if (typeof d.paymentMethod === 'string') setPaymentMethod(d.paymentMethod);
         if (typeof d.cashAmount === 'string') setCashAmount(d.cashAmount);
         if (typeof d.transferAmount === 'string') setTransferAmount(d.transferAmount);
+        if (typeof d.pagaCon === 'string') setPagaCon(d.pagaCon);
         if (typeof d.paid === 'boolean') setPaid(d.paid);
         if (typeof d.discount === 'string') setDiscount(d.discount);
         if (typeof d.notes === 'string') setNotes(d.notes);
@@ -221,12 +224,12 @@ export default function PosPage() {
           DRAFT_KEY,
           JSON.stringify({
             items, customerName, phone, deliveryType, address,
-            paymentMethod, cashAmount, transferAmount, paid, discount, notes,
+            paymentMethod, cashAmount, transferAmount, pagaCon, paid, discount, notes,
           })
         );
       }
     } catch { /* almacenamiento no disponible / lleno: seguimos sin persistir */ }
-  }, [hydrated, items, customerName, phone, deliveryType, address, paymentMethod, cashAmount, transferAmount, paid, discount, notes]);
+  }, [hydrated, items, customerName, phone, deliveryType, address, paymentMethod, cashAmount, transferAmount, pagaCon, paid, discount, notes]);
 
   const addItem = (item: Omit<PosItem, 'key'>) => {
     setItems((prev) => {
@@ -330,6 +333,7 @@ export default function PosPage() {
     setAddress({ street: '', number: '', apartment: '', city: 'San Vicente', reference: '' });
     setCashAmount('');
     setTransferAmount('');
+    setPagaCon('');
     setPaid(false);
     setDiscount('');
     setPaymentMethod('EFECTIVO');
@@ -378,6 +382,9 @@ export default function PosPage() {
       // "A definir" nunca puede quedar marcado como pagado.
       paid: paymentMethod === 'A_DEFINIR' ? false : paid,
       ...(paymentMethod === 'MIXTO' ? { cashAmount: cash, transferAmount: transfer } : {}),
+      ...(paymentMethod === 'EFECTIVO' && pagaCon !== '' && Number(pagaCon) > 0
+        ? { cashReceived: Number(pagaCon) }
+        : {}),
       ...(deliveryType === 'DELIVERY'
         ? {
             address: {
@@ -727,6 +734,32 @@ export default function PosPage() {
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
                 <TextField label="Efectivo" size="small" type="number" value={cashAmount} onChange={(e) => handleSplit('cash', e.target.value)} />
                 <TextField label="Transferencia" size="small" type="number" value={transferAmount} onChange={(e) => handleSplit('transfer', e.target.value)} />
+              </Box>
+            )}
+
+            {/* Paga con → vuelto (solo efectivo) */}
+            {paymentMethod === 'EFECTIVO' && (
+              <Box>
+                <TextField
+                  label="Paga con (opcional)"
+                  size="small"
+                  type="number"
+                  fullWidth
+                  inputProps={{ min: 0, step: 0.01 }}
+                  value={pagaCon}
+                  onChange={(e) => setPagaCon(e.target.value)}
+                  InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+                />
+                {pagaCon !== '' && Number(pagaCon) >= total && (
+                  <Typography variant="body2" color="success.main" fontWeight={700} sx={{ mt: 0.5 }}>
+                    Vuelto: {formatCurrency(Number(pagaCon) - total)}
+                  </Typography>
+                )}
+                {pagaCon !== '' && Number(pagaCon) > 0 && Number(pagaCon) < total && (
+                  <Typography variant="caption" color="error.main" sx={{ mt: 0.5, display: 'block' }}>
+                    Menor al total ({formatCurrency(total)})
+                  </Typography>
+                )}
               </Box>
             )}
 

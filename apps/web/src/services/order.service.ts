@@ -223,6 +223,8 @@ export async function createOrder(
     total: data.total,
     cashAmount: data.paymentMethod === 'MIXTO' ? data.cashAmount : null,
     transferAmount: data.paymentMethod === 'MIXTO' ? data.transferAmount : null,
+    // "Paga con" solo aplica a pago en efectivo (para calcular el vuelto).
+    cashReceived: data.paymentMethod === 'EFECTIVO' ? (data.cashReceived ?? null) : null,
     notes: data.notes,
     phone: data.phone,
     whatsappToken: data.whatsappToken,

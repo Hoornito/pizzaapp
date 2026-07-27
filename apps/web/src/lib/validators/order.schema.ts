@@ -38,6 +38,8 @@ export const createOrderSchema = z
     // Sólo para pago MIXTO: reparto entre efectivo y transferencia.
     cashAmount: z.coerce.number().min(0).optional(),
     transferAmount: z.coerce.number().min(0).optional(),
+    // Sólo EFECTIVO: con cuánto paga el cliente (para el vuelto). Opcional.
+    cashReceived: z.coerce.number().min(0).optional(),
     // Mostrador: el pedido ya se cobró al cargarlo (marca el pago como aprobado).
     paid: z.boolean().optional(),
     notes: z.string().optional(),

@@ -309,6 +309,8 @@ model Order {
   // Sólo para paymentMethod = MIXTO: cuánto paga en efectivo y cuánto por transferencia.
   cashAmount     Decimal?      @db.Decimal(10, 2)
   transferAmount Decimal?      @db.Decimal(10, 2)
+  // Efectivo con el que paga el cliente ("paga con"), para calcular el vuelto.
+  cashReceived   Decimal?      @db.Decimal(10, 2)
   notes          String?
   phone          String?
   whatsappToken  String?

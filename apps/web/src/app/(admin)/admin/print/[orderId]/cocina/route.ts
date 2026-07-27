@@ -110,6 +110,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   .status { margin-top:3px; text-align:center; font-weight:bold; padding:3px; border:2px solid #000; }
   .status.unpaid { background:#000; color:#fff; }
   .tip { display:flex; justify-content:space-between; font-size:14px; font-weight:bold; margin:4px 0; }
+  .cash { font-size:12px; font-weight:bold; margin:3px 0; }
+  .cash > div { display:flex; justify-content:space-between; }
   .qr { text-align:center; margin-top:6px; }
   .qr img { width:26mm; height:26mm; }
   .qr-label { font-size:11px; font-weight:bold; }
@@ -133,6 +135,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   <div class="pay">
     ${Number(order.tip) > 0 ? `<div class="tip"><span>PROPINA REPARTIDOR</span><span>${esc(fmtMoney(Number(order.tip)))}</span></div>` : ''}
     <div class="total"><span>TOTAL</span><span>${esc(fmtMoney(Number(order.total)))}</span></div>
+    ${
+      order.paymentMethod === 'EFECTIVO' && Number(order.cashReceived) > 0
+        ? `<div class="cash">
+      <div><span>Paga con</span><span>${esc(fmtMoney(Number(order.cashReceived)))}</span></div>
+      <div><span>Vuelto</span><span>${esc(fmtMoney(Number(order.cashReceived) - Number(order.total)))}</span></div>
+    </div>`
+        : ''
+    }
     <div class="status ${isPaid ? 'paid' : 'unpaid'}">
       ${isPaid ? `PAGADO (${esc(methodLabel)})` : `FALTA COBRAR - ${esc(methodLabel)}`}
     </div>
