@@ -40,6 +40,7 @@ import {
   CASH_SHIFT_LABELS,
   FINANCE_CATEGORY_SUELDOS,
   FINANCE_CATEGORY_ADELANTOS,
+  FINANCE_CATEGORY_PROPINA,
 } from '@/lib/constants';
 
 type TxnType = 'INCOME' | 'EXPENSE';
@@ -53,12 +54,15 @@ interface TxnForm {
   paymentMethod: string;
   employeeId: string;
   accumulate: string;
+  devolucionAdelanto: string;
 }
 
-const emptyForm: TxnForm = { amount: '', cashAmount: '', virtualAmount: '', category: '', description: '', paymentMethod: 'EFECTIVO', employeeId: '', accumulate: '' };
+const emptyForm: TxnForm = { amount: '', cashAmount: '', virtualAmount: '', category: '', description: '', paymentMethod: 'EFECTIVO', employeeId: '', accumulate: '', devolucionAdelanto: '' };
 
 const needsEmployee = (category: string) =>
-  category === FINANCE_CATEGORY_SUELDOS || category === FINANCE_CATEGORY_ADELANTOS;
+  category === FINANCE_CATEGORY_SUELDOS ||
+  category === FINANCE_CATEGORY_ADELANTOS ||
+  category === FINANCE_CATEGORY_PROPINA;
 
 export default function FinancePage() {
   const { showSuccess, showError } = useSnackbar();
@@ -130,6 +134,7 @@ export default function FinancePage() {
           paymentMethod: txnForm.paymentMethod,
           employeeId: needsEmployee(txnForm.category) ? txnForm.employeeId || null : null,
           accumulate: isSueldo && txnForm.accumulate ? Number(txnForm.accumulate) : null,
+          devolucionAdelanto: isSueldo && txnForm.devolucionAdelanto ? Number(txnForm.devolucionAdelanto) : null,
         }),
       });
       const json = await res.json();
@@ -548,7 +553,15 @@ export default function FinancePage() {
               <Select
                 label="Categoría *"
                 value={txnForm.category}
-                onChange={(e) => setTxnForm((p) => ({ ...p, category: e.target.value, employeeId: '' }))}
+                onChange={(e) =>
+                  setTxnForm((p) => ({
+                    ...p,
+                    category: e.target.value,
+                    employeeId: '',
+                    // La propina siempre es en efectivo.
+                    paymentMethod: e.target.value === FINANCE_CATEGORY_PROPINA ? 'EFECTIVO' : p.paymentMethod,
+                  }))
+                }
               >
                 {categories.map((c) => (
                   <MenuItem key={c} value={c}>{c}</MenuItem>
@@ -556,31 +569,39 @@ export default function FinancePage() {
               </Select>
             </FormControl>
 
-            {/* 2. Empleado (sueldos / adelantos) */}
-            {needsEmployee(txnForm.category) && (
-              <FormControl fullWidth>
-                <InputLabel>Empleado *</InputLabel>
-                <Select
-                  label="Empleado *"
-                  value={txnForm.employeeId}
-                  onChange={(e) => setTxnForm((p) => ({ ...p, employeeId: e.target.value }))}
-                >
-                  {employees.length === 0 && (
-                    <MenuItem value="" disabled>No hay empleados activos cargados</MenuItem>
-                  )}
-                  {employees.map((emp) => (
-                    <MenuItem key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
+            {/* 2. Empleado (sueldos / adelantos) o Repartidor (propina) */}
+            {needsEmployee(txnForm.category) && (() => {
+              const esPropina = txnForm.category === FINANCE_CATEGORY_PROPINA;
+              const opciones = esPropina ? employees.filter((emp) => emp.role === 'REPARTIDOR') : employees;
+              const label = esPropina ? 'Repartidor *' : 'Empleado *';
+              return (
+                <FormControl fullWidth>
+                  <InputLabel>{label}</InputLabel>
+                  <Select
+                    label={label}
+                    value={txnForm.employeeId}
+                    onChange={(e) => setTxnForm((p) => ({ ...p, employeeId: e.target.value }))}
+                  >
+                    {opciones.length === 0 && (
+                      <MenuItem value="" disabled>
+                        {esPropina ? 'No hay repartidores cargados' : 'No hay empleados activos cargados'}
+                      </MenuItem>
+                    )}
+                    {opciones.map((emp) => (
+                      <MenuItem key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              );
+            })()}
 
-            {/* 3. Método de pago */}
+            {/* 3. Método de pago (la propina queda fija en efectivo) */}
             <FormControl fullWidth>
               <InputLabel>Método de pago *</InputLabel>
               <Select
                 label="Método de pago *"
                 value={txnForm.paymentMethod}
+                disabled={txnForm.category === FINANCE_CATEGORY_PROPINA}
                 onChange={(e) => setTxnForm((p) => ({ ...p, paymentMethod: e.target.value }))}
               >
                 {FINANCE_PAYMENT_METHODS
@@ -636,6 +657,19 @@ export default function FinancePage() {
                 onChange={(e) => setTxnForm((p) => ({ ...p, accumulate: e.target.value }))}
                 fullWidth
                 helperText="Monto que el empleado deja a favor (no sale de caja). Se suma a su acumulado en Empleados. Podés cargar solo esto y dejar el retiro vacío."
+              />
+            )}
+
+            {/* 5b. Devolución de adelanto (solo sueldos) */}
+            {txnForm.category === FINANCE_CATEGORY_SUELDOS && (
+              <TextField
+                label="Devolución de adelanto (opcional)"
+                type="number"
+                inputProps={{ min: 0, step: 0.01 }}
+                value={txnForm.devolucionAdelanto}
+                onChange={(e) => setTxnForm((p) => ({ ...p, devolucionAdelanto: e.target.value }))}
+                fullWidth
+                helperText="Monto que el empleado devuelve de su adelanto. Descuenta directamente su adelanto pendiente en Empleados."
               />
             )}
 

@@ -187,6 +187,7 @@ export async function createFinanceTransaction(
   }
 
   // Sueldo con "acumula a favor": suma al acumulado del empleado (sin tocar caja).
+  let linkUsed = false;
   if (
     input.category === FINANCE_CATEGORY_SUELDOS &&
     input.employeeId &&
@@ -200,6 +201,28 @@ export async function createFinanceTransaction(
         amount: input.accumulate,
         // Vinculado al egreso: si se borra el sueldo, se revierte el acumulado.
         financeTransactionId: txn.id,
+        createdById: userId ?? null,
+      },
+    });
+    linkUsed = true;
+  }
+
+  // Sueldo con "devolución de adelanto": el empleado devuelve parte del adelanto,
+  // así que descuenta su pendiente (ADELANTO_DESCUENTO). El vínculo al egreso es
+  // único, así que solo lo usamos si no lo tomó el acumulado.
+  if (
+    input.category === FINANCE_CATEGORY_SUELDOS &&
+    input.employeeId &&
+    input.devolucionAdelanto &&
+    input.devolucionAdelanto > 0
+  ) {
+    await prisma.employeeMovement.create({
+      data: {
+        employeeId: input.employeeId,
+        kind: 'ADELANTO_DESCUENTO',
+        amount: input.devolucionAdelanto,
+        note: 'Devolución de adelanto (con sueldo)',
+        financeTransactionId: linkUsed ? null : txn.id,
         createdById: userId ?? null,
       },
     });
@@ -285,6 +308,8 @@ export async function getFinanceTotals(from: Date, to: Date, shift?: CashShift |
     id: string;
     name: string;
     sueldos: number;
+    sueldoEfectivo: number;
+    sueldoVirtual: number;
     adelantosOtorgados: number;
     adelantosDescontado: number;
     adelantoNeto: number;
@@ -293,7 +318,7 @@ export async function getFinanceTotals(from: Date, to: Date, shift?: CashShift |
   const employeeMap: Record<string, EmpRow> = {};
   const ensureEmp = (id: string, name: string): EmpRow => {
     if (!employeeMap[id]) {
-      employeeMap[id] = { id, name, sueldos: 0, adelantosOtorgados: 0, adelantosDescontado: 0, adelantoNeto: 0, total: 0 };
+      employeeMap[id] = { id, name, sueldos: 0, sueldoEfectivo: 0, sueldoVirtual: 0, adelantosOtorgados: 0, adelantosDescontado: 0, adelantoNeto: 0, total: 0 };
     }
     return employeeMap[id];
   };
@@ -370,8 +395,13 @@ export async function getFinanceTotals(from: Date, to: Date, shift?: CashShift |
           ? `${t.employee.firstName} ${t.employee.lastName}`
           : 'Empleado eliminado';
         const row = ensureEmp(t.employeeId, name);
-        if (isSueldo) row.sueldos += amt;
-        else row.adelantosOtorgados += amt;
+        if (isSueldo) {
+          row.sueldos += amt;
+          row.sueldoEfectivo += cashPart;
+          row.sueldoVirtual += virtualPart;
+        } else {
+          row.adelantosOtorgados += amt;
+        }
       }
     }
   }
@@ -387,6 +417,15 @@ export async function getFinanceTotals(from: Date, to: Date, shift?: CashShift |
       ...r,
       adelantoNeto: r.adelantosOtorgados - r.adelantosDescontado,
       total: r.sueldos + r.adelantosOtorgados,
+      // Método del sueldo pagado: E (efectivo), T (transferencia/virtual) o E+T.
+      sueldoMetodo:
+        r.sueldoEfectivo > 0 && r.sueldoVirtual > 0
+          ? 'E+T'
+          : r.sueldoEfectivo > 0
+            ? 'E'
+            : r.sueldoVirtual > 0
+              ? 'T'
+              : '',
     }))
     .sort((a, b) => b.total - a.total);
 

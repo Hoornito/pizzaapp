@@ -50,6 +50,7 @@ interface CheckoutForm {
   reference: string;
   phone: string;
   notes: string;
+  tip: string;
 }
 
 export default function CheckoutPage() {
@@ -72,7 +73,12 @@ export default function CheckoutPage() {
     reference: '',
     phone: session?.user.phone || '',
     notes: '',
+    tip: '',
   });
+
+  // Propina para el repartidor (solo delivery). Se suma al total a pagar.
+  const tipNum = form.deliveryType === 'DELIVERY' ? Math.max(parseFloat(form.tip) || 0, 0) : 0;
+  const payTotal = total + tipNum;
 
   // Evita que, al vaciar el carrito tras crear el pedido, este efecto compita
   // con la navegación a la pantalla del pedido (o a MercadoPago).
@@ -90,9 +96,9 @@ export default function CheckoutPage() {
   // siempre arranque sumando el total.
   useEffect(() => {
     if (form.paymentMethod === 'MIXTO' && !form.cashAmount && !form.transferAmount) {
-      setForm((prev) => ({ ...prev, cashAmount: String(total), transferAmount: '0' }));
+      setForm((prev) => ({ ...prev, cashAmount: String(payTotal), transferAmount: '0' }));
     }
-  }, [form.paymentMethod, total]);
+  }, [form.paymentMethod, payTotal]);
 
   const handleChange = (field: keyof CheckoutForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -101,8 +107,8 @@ export default function CheckoutPage() {
   // El reparto Mixto es complementario: lo que falta para el total va al otro medio.
   const handleSplitChange = (field: 'cashAmount' | 'transferAmount', value: string) => {
     const raw = parseFloat(value);
-    const amount = Math.min(Math.max(Number.isNaN(raw) ? 0 : raw, 0), total);
-    const other = Math.round((total - amount) * 100) / 100;
+    const amount = Math.min(Math.max(Number.isNaN(raw) ? 0 : raw, 0), payTotal);
+    const other = Math.round((payTotal - amount) * 100) / 100;
     setForm((prev) => ({
       ...prev,
       [field]: value === '' ? '' : String(amount),
@@ -147,7 +153,7 @@ export default function CheckoutPage() {
 
     const cashAmount = parseFloat(form.cashAmount) || 0;
     const transferAmount = parseFloat(form.transferAmount) || 0;
-    if (form.paymentMethod === 'MIXTO' && Math.abs(cashAmount + transferAmount - total) >= 0.01) {
+    if (form.paymentMethod === 'MIXTO' && Math.abs(cashAmount + transferAmount - payTotal) >= 0.01) {
       showError('El efectivo y la transferencia deben sumar el total');
       return;
     }
@@ -171,7 +177,8 @@ export default function CheckoutPage() {
         paymentMethod: form.paymentMethod,
         subtotal,
         deliveryFee,
-        total,
+        tip: tipNum,
+        total: payTotal,
         ...(form.paymentMethod === 'MIXTO' ? { cashAmount, transferAmount } : {}),
         ...(form.deliveryType === 'DELIVERY'
           ? {
@@ -391,11 +398,11 @@ export default function CheckoutPage() {
                 (() => {
                   const cash = parseFloat(form.cashAmount) || 0;
                   const transfer = parseFloat(form.transferAmount) || 0;
-                  const matches = Math.abs(cash + transfer - total) < 0.01;
+                  const matches = Math.abs(cash + transfer - payTotal) < 0.01;
                   return (
                     <Box sx={{ mb: 3 }}>
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                        Repartí el total de <strong>{formatCurrency(total)}</strong> entre efectivo y
+                        Repartí el total de <strong>{formatCurrency(payTotal)}</strong> entre efectivo y
                         transferencia (se completan automáticamente).
                       </Typography>
                       <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
@@ -404,25 +411,55 @@ export default function CheckoutPage() {
                           type="number"
                           value={form.cashAmount}
                           onChange={(e) => handleSplitChange('cashAmount', e.target.value)}
-                          inputProps={{ min: 0, max: total, step: '0.01' }}
+                          inputProps={{ min: 0, max: payTotal, step: '0.01' }}
                         />
                         <TextField
                           label="🏦 Transferencia"
                           type="number"
                           value={form.transferAmount}
                           onChange={(e) => handleSplitChange('transferAmount', e.target.value)}
-                          inputProps={{ min: 0, max: total, step: '0.01' }}
+                          inputProps={{ min: 0, max: payTotal, step: '0.01' }}
                         />
                       </Box>
                       <Alert severity={matches ? 'success' : 'error'} sx={{ mt: 1.5 }}>
                         {matches
-                          ? `Suma correcta: ${formatCurrency(cash)} + ${formatCurrency(transfer)} = ${formatCurrency(total)}`
-                          : `La suma (${formatCurrency(cash + transfer)}) debe ser igual al total (${formatCurrency(total)})`}
+                          ? `Suma correcta: ${formatCurrency(cash)} + ${formatCurrency(transfer)} = ${formatCurrency(payTotal)}`
+                          : `La suma (${formatCurrency(cash + transfer)}) debe ser igual al total (${formatCurrency(payTotal)})`}
                       </Alert>
                       {transfer > 0 && <Box sx={{ mt: 1.5 }}>{transferInfoAlert}</Box>}
                     </Box>
                   );
                 })()
+              )}
+
+              {/* Propina para el repartidor (opcional, solo delivery) */}
+              {form.deliveryType === 'DELIVERY' && (
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+                    🛵 Propina para el repartidor (opcional)
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {[0, 500, 1000, 2000].map((amt) => (
+                      <Button
+                        key={amt}
+                        size="small"
+                        variant={tipNum === amt ? 'contained' : 'outlined'}
+                        onClick={() => handleChange('tip', amt === 0 ? '' : String(amt))}
+                      >
+                        {amt === 0 ? 'Sin propina' : formatCurrency(amt)}
+                      </Button>
+                    ))}
+                    <TextField
+                      label="Otro monto"
+                      type="number"
+                      size="small"
+                      value={form.tip}
+                      onChange={(e) => handleChange('tip', e.target.value)}
+                      inputProps={{ min: 0, step: '50' }}
+                      sx={{ width: 120 }}
+                    />
+                  </Box>
+                </Box>
               )}
 
               {!session && (
@@ -443,7 +480,7 @@ export default function CheckoutPage() {
                       Math.abs(
                         (parseFloat(form.cashAmount) || 0) +
                           (parseFloat(form.transferAmount) || 0) -
-                          total
+                          payTotal
                       ) >= 0.01)
                   }
                   sx={{ px: 4 }}
@@ -461,6 +498,19 @@ export default function CheckoutPage() {
             <Typography variant="h6" fontWeight={600} gutterBottom>Resumen</Typography>
             <Divider sx={{ mb: 2 }} />
             <CartSummary />
+            {tipNum > 0 && (
+              <>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                  <Typography color="text.secondary">🛵 Propina repartidor</Typography>
+                  <Typography>{formatCurrency(tipNum)}</Typography>
+                </Box>
+                <Divider sx={{ my: 1 }} />
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography variant="h6" fontWeight={700}>Total a pagar</Typography>
+                  <Typography variant="h6" fontWeight={700} color="primary">{formatCurrency(payTotal)}</Typography>
+                </Box>
+              </>
+            )}
             {form.deliveryType === 'DELIVERY' && deliveryFee > 0 && (
               <Alert severity="info" sx={{ mt: 2, fontSize: '0.8rem' }}>
                 El costo de envío puede variar según tu zona

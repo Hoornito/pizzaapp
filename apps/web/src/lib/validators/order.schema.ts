@@ -31,6 +31,8 @@ export const createOrderSchema = z
     deliveryFee: z.coerce.number().min(0),
     // Descuento aplicado (mostrador). Opcional; 0 por defecto.
     discount: z.coerce.number().min(0).optional(),
+    // Propina para el repartidor (cliente delivery). Opcional; 0 por defecto.
+    tip: z.coerce.number().min(0).optional(),
     // Puede ser 0 si el descuento cubre el total (pedido bonificado al 100%).
     total: z.coerce.number().min(0),
     // Sólo para pago MIXTO: reparto entre efectivo y transferencia.

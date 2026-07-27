@@ -303,6 +303,8 @@ model Order {
   deliveryFee    Decimal       @db.Decimal(10, 2) @default(0)
   // Descuento aplicado al pedido (mostrador). total = subtotal + envío − descuento.
   discount       Decimal       @db.Decimal(10, 2) @default(0)
+  // Propina para el repartidor (delivery, la deja el cliente). Se suma al total.
+  tip            Decimal       @db.Decimal(10, 2) @default(0)
   total          Decimal       @db.Decimal(10, 2)
   // Sólo para paymentMethod = MIXTO: cuánto paga en efectivo y cuánto por transferencia.
   cashAmount     Decimal?      @db.Decimal(10, 2)

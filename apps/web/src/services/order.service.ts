@@ -169,6 +169,17 @@ export async function createOrder(
   // No permitir vender postres sin stock suficiente (las demás categorías no controlan stock).
   if (!isTest) await assertPostresStock(data.items);
 
+  // Horario aproximado de entrega, simulado según la cola de pedidos activos:
+  // base 25' + 5' por cada pedido en curso (tope 90'). Sirve de referencia para
+  // los pedidos tomados por teléfono/mostrador.
+  const activeQueue = await prisma.order.count({
+    where: {
+      isTest: false,
+      status: { in: ['RECIBIDO', 'CONFIRMADO', 'PREPARANDO', 'EN_HORNO', 'LISTO', 'EN_REPARTO'] },
+    },
+  });
+  const estimatedTime = Math.min(25 + activeQueue * 5, 90);
+
   // Para delivery sin addressId, creamos la dirección a partir de los datos inline.
   let addressId = data.addressId;
   if (!addressId && data.deliveryType === 'DELIVERY' && data.address) {
@@ -201,12 +212,14 @@ export async function createOrder(
     userId,
     addressId,
     isTest,
+    estimatedTime,
     status: initialStatus,
     deliveryType: data.deliveryType,
     paymentMethod: data.paymentMethod,
     subtotal: data.subtotal,
     deliveryFee: data.deliveryFee,
     discount: data.discount ?? 0,
+    tip: data.tip ?? 0,
     total: data.total,
     cashAmount: data.paymentMethod === 'MIXTO' ? data.cashAmount : null,
     transferAmount: data.paymentMethod === 'MIXTO' ? data.transferAmount : null,
@@ -454,6 +467,52 @@ export async function markOrderPaid(
     eventBus.emit('order:status_changed', order as never);
   }
 
+  return order;
+}
+
+/**
+ * Cambia el método de pago de un pedido YA cobrado (p. ej. se marcó efectivo y
+ * en realidad fue tarjeta). Actualiza el pedido y el pago; impacta en reportes
+ * porque el desglose efectivo/virtual se calcula por el método del pedido.
+ */
+export async function changeOrderPaymentMethod(
+  orderId: string,
+  details: { method: 'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA' | 'MIXTO'; cashAmount?: number; transferAmount?: number },
+  actorId?: string
+) {
+  const existing = await prisma.order.findUnique({ where: { id: orderId }, include: { payment: true } });
+  if (!existing) throw new Error('Pedido no encontrado');
+
+  if (details.method === 'MIXTO') {
+    const cash = details.cashAmount ?? 0;
+    const transfer = details.transferAmount ?? 0;
+    if (Math.abs(cash + transfer - Number(existing.total)) >= 0.01) {
+      throw new Error('El efectivo y la transferencia deben sumar el total');
+    }
+  }
+
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      paymentMethod: details.method,
+      cashAmount: details.method === 'MIXTO' ? details.cashAmount : null,
+      transferAmount: details.method === 'MIXTO' ? details.transferAmount : null,
+    },
+  });
+  if (existing.payment) {
+    await prisma.payment.update({ where: { orderId }, data: { method: details.method } });
+  }
+
+  const order = await prisma.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE });
+  if (actorId) {
+    await prisma.auditLog.create({
+      data: { userId: actorId, action: 'CHANGE_PAYMENT_METHOD', entity: 'Order', entityId: orderId },
+    });
+  }
+  if (order) {
+    emitOrderStatusChanged(orderId, order.status, order);
+    eventBus.emit('order:status_changed', order as never);
+  }
   return order;
 }
 

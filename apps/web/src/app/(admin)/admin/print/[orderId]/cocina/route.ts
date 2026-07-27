@@ -41,14 +41,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
 
   // Agrupamos ítems idénticos (2 pizzas iguales -> "2x ..."). Las mitad-y-mitad
   // tienen notas distintas, así que quedan como líneas aparte.
+  const MOLDE_RE = /(^|\n)\s*AL MOLDE\s*(\n|$)/i;
   const itemsHtml = groupTicketItems(order.items, isPizzaItemNotes)
     .map((g) => {
       if (g.isDozen) {
         // Sólo la cantidad de cada gusto, sin título.
         return `<div class="item"><div class="item-notes big">${esc(g.notes)}</div></div>`;
       }
-      const notes = !g.isPizza && g.notes ? `<div class="item-notes">${esc(g.notes)}</div>` : '';
-      return `<div class="item"><div class="item-title">${esc(g.quantity)}x ${esc(g.title)}</div>${notes}</div>`;
+      // "AL MOLDE" viene como línea aparte en las notas: lo sacamos del título y
+      // lo mostramos destacado.
+      const molde = MOLDE_RE.test(g.title) || MOLDE_RE.test(g.notes || '');
+      const titleClean = (g.title || '').replace(/\n?\s*AL MOLDE\s*/i, '').trim();
+      const notesClean = !g.isPizza && g.notes ? g.notes.replace(/\n?\s*AL MOLDE\s*/i, '').trim() : '';
+      const moldeHtml = molde ? `<div class="item-notes big">🟡 AL MOLDE</div>` : '';
+      // Extra de la pizza (p. ej. "EXTRA: HUEVO").
+      const extraHtml = g.extra ? `<div class="item-notes big">➕ ${esc(g.extra)}</div>` : '';
+      const notesHtml = notesClean ? `<div class="item-notes">${esc(notesClean)}</div>` : '';
+      return `<div class="item"><div class="item-title">${esc(g.quantity)}x ${esc(titleClean)}</div>${moldeHtml}${extraHtml}${notesHtml}</div>`;
     })
     .join('');
 
@@ -115,11 +124,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
     ${customerName ? `<div><b>Cliente:</b> ${esc(customerName)}</div>` : ''}
     ${order.phone || order.user?.phone ? `<div><b>Tel:</b> ${esc(order.phone || order.user?.phone)}</div>` : ''}
     ${order.deliveryType === 'DELIVERY' && order.address ? `<div><b>Dirección:</b> ${esc(order.address.street)} ${esc(order.address.number)}${order.address.apartment ? ' ' + esc(order.address.apartment) : ''}, ${esc(order.address.city)}</div>` : ''}
+    ${order.deliveryType === 'DELIVERY' && order.address?.reference ? `<div><b>Ref:</b> ${esc(order.address.reference)}</div>` : ''}
   </div>
   <div class="sep"></div>
   ${itemsHtml}
   <div class="sep"></div>
   <div class="pay">
+    ${Number(order.tip) > 0 ? `<div class="meta">🛵 Propina repartidor: <b>${esc(fmtMoney(Number(order.tip)))}</b></div>` : ''}
     <div class="total"><span>TOTAL</span><span>${esc(fmtMoney(Number(order.total)))}</span></div>
     <div class="status ${isPaid ? 'paid' : 'unpaid'}">
       ${isPaid ? `PAGADO ✓ (${esc(methodLabel)})` : `FALTA COBRAR · ${esc(methodLabel)}`}

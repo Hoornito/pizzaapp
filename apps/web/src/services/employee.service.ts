@@ -66,7 +66,7 @@ export async function getEmployeeMovements(employeeId: string) {
   return prisma.employeeMovement.findMany({
     where: { employeeId },
     orderBy: { createdAt: 'desc' },
-    take: 50,
+    take: 300,
   });
 }
 

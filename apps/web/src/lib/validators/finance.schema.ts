@@ -6,11 +6,13 @@ import {
   CASH_SHIFTS,
   FINANCE_CATEGORY_SUELDOS,
   FINANCE_CATEGORY_ADELANTOS,
+  FINANCE_CATEGORY_PROPINA,
 } from '@/lib/constants';
 
 const EMPLOYEE_CATEGORIES: readonly string[] = [
   FINANCE_CATEGORY_SUELDOS,
   FINANCE_CATEGORY_ADELANTOS,
+  FINANCE_CATEGORY_PROPINA,
 ];
 
 export const financeTransactionSchema = z
@@ -26,6 +28,8 @@ export const financeTransactionSchema = z
     employeeId: z.string().cuid().optional().nullable(),
     // Solo para Sueldos: cuánto acumula a favor el empleado (además de lo que retira).
     accumulate: z.coerce.number().min(0).optional().nullable(),
+    // Solo para Sueldos: monto que el empleado devuelve de su adelanto (descuenta el pendiente).
+    devolucionAdelanto: z.coerce.number().min(0).optional().nullable(),
   })
   .superRefine((data, ctx) => {
     const allowed: readonly string[] =
@@ -48,12 +52,20 @@ export const financeTransactionSchema = z
         message: 'El monto debe ser mayor a 0',
       });
     }
-    // Sueldos y Adelantos requieren empleado asociado
+    // Sueldos, Adelantos y Propina requieren empleado asociado
     if (EMPLOYEE_CATEGORIES.includes(data.category) && !data.employeeId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['employeeId'],
         message: 'Seleccioná el empleado',
+      });
+    }
+    // La propina siempre se paga en efectivo.
+    if (data.category === FINANCE_CATEGORY_PROPINA && data.paymentMethod !== 'EFECTIVO') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['paymentMethod'],
+        message: 'La propina se paga en efectivo',
       });
     }
     // MIXTO: el efectivo no puede superar el total.

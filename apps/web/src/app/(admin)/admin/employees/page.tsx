@@ -35,6 +35,20 @@ const ROLE_LABELS: Record<EmployeeRole, string> = {
   OTRO: 'Otro',
 };
 
+const MOV_LABELS: Record<string, string> = {
+  ADELANTO: 'Adelanto otorgado',
+  ADELANTO_DESCUENTO: 'Devolución / descuento de adelanto',
+  ACUMULADO_APORTE: 'Aporte a favor',
+  ACUMULADO_RETIRO: 'Retiro a favor',
+};
+// Signo del movimiento para el color/prefijo del monto.
+const MOV_POSITIVE: Record<string, boolean> = {
+  ADELANTO: true, // le dieron plata
+  ACUMULADO_RETIRO: true, // retiró plata
+  ADELANTO_DESCUENTO: false, // devolvió / se descontó
+  ACUMULADO_APORTE: false, // dejó a favor
+};
+
 interface EmployeeForm {
   firstName: string;
   lastName: string;
@@ -71,6 +85,28 @@ export default function EmployeesPage() {
   // Diálogo de movimiento de saldo (descuento adelanto / aporte / retiro a favor)
   const [movCtx, setMovCtx] = useState<{ emp: any; kind: string; title: string } | null>(null);
   const [movForm, setMovForm] = useState({ amount: '', note: '' });
+
+  // Modal de historial de movimientos del empleado (con filtro por tipo).
+  const [histCtx, setHistCtx] = useState<any>(null);
+  const [histMovs, setHistMovs] = useState<any[]>([]);
+  const [histLoading, setHistLoading] = useState(false);
+  const [histFilter, setHistFilter] = useState<string>('TODOS');
+
+  const openHistory = async (emp: any) => {
+    setHistCtx(emp);
+    setHistFilter('TODOS');
+    setHistLoading(true);
+    setHistMovs([]);
+    try {
+      const res = await fetch(`/api/admin/employees/${emp.id}/movements`, { cache: 'no-store' });
+      const json = await res.json();
+      setHistMovs(res.ok ? json.data || [] : []);
+    } catch {
+      setHistMovs([]);
+    } finally {
+      setHistLoading(false);
+    }
+  };
 
   const loadEmployees = () => {
     fetch('/api/admin/employees')
@@ -274,7 +310,8 @@ export default function EmployeesPage() {
                   />
                 </TableCell>
                 <TableCell>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    <Button size="small" onClick={() => openHistory(emp)}>📋 Historial</Button>
                     <Button size="small" onClick={() => openDialog(emp)}>Editar</Button>
                     <Button size="small" color="error" onClick={() => handleDelete(emp)}>Eliminar</Button>
                   </Box>
@@ -420,6 +457,80 @@ export default function EmployeesPage() {
           >
             Confirmar
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal: historial de movimientos del empleado */}
+      <Dialog open={histCtx !== null} onClose={() => setHistCtx(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Movimientos · {histCtx?.firstName} {histCtx?.lastName}
+        </DialogTitle>
+        <DialogContent>
+          <FormControl size="small" sx={{ minWidth: 240, mt: 1, mb: 2 }}>
+            <InputLabel id="hist-filter-label">Filtrar por tipo</InputLabel>
+            <Select
+              labelId="hist-filter-label"
+              label="Filtrar por tipo"
+              value={histFilter}
+              onChange={(e) => setHistFilter(e.target.value)}
+            >
+              <MenuItem value="TODOS">Todos</MenuItem>
+              {Object.entries(MOV_LABELS).map(([k, label]) => (
+                <MenuItem key={k} value={k}>{label}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          {histLoading ? (
+            <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>Cargando…</Typography>
+          ) : (
+            <TableContainer sx={{ maxHeight: 420 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell><strong>Fecha</strong></TableCell>
+                    <TableCell><strong>Tipo</strong></TableCell>
+                    <TableCell align="right"><strong>Monto</strong></TableCell>
+                    <TableCell><strong>Nota</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {(() => {
+                    const rows = histMovs.filter((m) => histFilter === 'TODOS' || m.kind === histFilter);
+                    if (rows.length === 0) {
+                      return (
+                        <TableRow>
+                          <TableCell colSpan={4} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+                            Sin movimientos para este filtro.
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }
+                    return rows.map((m) => {
+                      const pos = MOV_POSITIVE[m.kind];
+                      return (
+                        <TableRow key={m.id} hover>
+                          <TableCell>{formatDateShort(m.createdAt)}</TableCell>
+                          <TableCell>
+                            <Chip size="small" variant="outlined" label={MOV_LABELS[m.kind] || m.kind} />
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography fontWeight={600} color={pos ? 'error.main' : 'success.main'}>
+                              {pos ? '+' : '−'} {formatCurrency(Number(m.amount))}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>{m.note || '—'}</TableCell>
+                        </TableRow>
+                      );
+                    });
+                  })()}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHistCtx(null)}>Cerrar</Button>
         </DialogActions>
       </Dialog>
     </Box>

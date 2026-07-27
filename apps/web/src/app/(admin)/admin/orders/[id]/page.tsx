@@ -71,6 +71,28 @@ export default function AdminOrderDetailPage({ params }: Props) {
   };
 
   const [payOpen, setPayOpen] = useState(false);
+  const [changeMethodOpen, setChangeMethodOpen] = useState(false);
+
+  // Corrige el método de pago de un pedido ya cobrado (impacta en reportes).
+  const submitChangeMethod = async (data: { method: PaymentKind; cashAmount?: number; transferAmount?: number }) => {
+    setUpdating(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${id}/payment-method`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) { showError(json.error || 'Error al cambiar el método'); return; }
+      setOrder(json.data);
+      setChangeMethodOpen(false);
+      showSuccess('Método de pago actualizado');
+    } catch {
+      showError('Error de conexión');
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const submitPayment = async (data: { method: PaymentKind; cashAmount?: number; transferAmount?: number }) => {
     setUpdating(true);
@@ -284,6 +306,14 @@ export default function AdminOrderDetailPage({ params }: Props) {
                     )}
                   </Box>
                 )}
+                {/* Pedido ya cobrado: permitir corregir el método (impacta en reportes). */}
+                {order.payment?.status === 'APPROVED' && order.status !== 'CANCELADO' && (
+                  <Box sx={{ mt: 1 }}>
+                    <Button variant="text" size="small" onClick={() => setChangeMethodOpen(true)} disabled={updating}>
+                      ✏️ Cambiar método de pago
+                    </Button>
+                  </Box>
+                )}
               </Box>
               <Box>
                 <Typography variant="body2" color="text.secondary">Fecha</Typography>
@@ -325,6 +355,16 @@ export default function AdminOrderDetailPage({ params }: Props) {
         busy={updating}
         onClose={() => setPayOpen(false)}
         onConfirm={submitPayment}
+      />
+
+      <PaymentDialog
+        open={changeMethodOpen}
+        total={Number(order.total)}
+        initialMethod={order.paymentMethod}
+        title="Cambiar método de pago"
+        busy={updating}
+        onClose={() => setChangeMethodOpen(false)}
+        onConfirm={submitChangeMethod}
       />
     </Box>
   );

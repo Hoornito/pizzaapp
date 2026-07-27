@@ -408,13 +408,23 @@ export default function AdminOrdersPage() {
               <Grid item xs={12} sm={6} md={4} key={order.id}>
                 <Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                   <CardContent sx={{ flex: 1 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, gap: 1 }}>
                       <Typography variant="h6" fontWeight={700}>#{order.orderNumber}</Typography>
-                      <Chip
-                        label={ORDER_STATUS_LABELS[order.status]}
-                        color={ORDER_STATUS_COLORS[order.status] as any}
-                        size="small"
-                      />
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Button
+                          size="small"
+                          disabled={busy}
+                          onClick={() => reprint(order.id)}
+                          sx={{ minWidth: 0, textTransform: 'none', px: 1 }}
+                        >
+                          🖨️ Reimprimir
+                        </Button>
+                        <Chip
+                          label={ORDER_STATUS_LABELS[order.status]}
+                          color={ORDER_STATUS_COLORS[order.status] as any}
+                          size="small"
+                        />
+                      </Box>
                     </Box>
 
                     <Typography variant="body2" color="text.secondary">{formatDate(order.createdAt)}</Typography>
@@ -521,9 +531,6 @@ export default function AdminOrdersPage() {
                       </Button>
                     )}
                     <Button size="small" onClick={() => router.push(`/admin/orders/${order.id}`)}>Ver</Button>
-                    <Button size="small" disabled={busy} onClick={() => reprint(order.id)}>
-                      🖨️ Reimprimir
-                    </Button>
                     {canCancel && (
                       <Button size="small" color="error" disabled={busy} onClick={() => cancelOrder(order.id)}>Cancelar</Button>
                     )}

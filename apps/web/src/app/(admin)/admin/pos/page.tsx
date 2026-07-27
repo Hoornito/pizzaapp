@@ -35,7 +35,7 @@ import { DrinkModal } from '@/components/products/DrinkModal';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useSnackbar } from '@/app/snackbar-context';
 import { formatCurrency, formatDozensNotes } from '@/lib/utils';
-import { flavorsForSize, formatPizzaName, formatPizzaNotes } from '@/lib/pizza';
+import { flavorsForSize, formatPizzaName, formatPizzaNotes, isPizzaItemNotes } from '@/lib/pizza';
 import { promoEmpanadaCount, formatPromoNotes } from '@/lib/promos';
 import { PIZZA_SIZES, PIZZA_SIZE_LABELS, type PizzaSize } from '@/types/product.types';
 
@@ -87,6 +87,8 @@ interface PosItem {
   // Solo pizzas (y promos) admiten "extra" (p. ej. extra de huevo).
   extraEligible?: boolean;
   extra?: PosExtra;
+  // Pizza al molde (se marca en el ticket de cocina).
+  alMolde?: boolean;
 }
 
 /** Precio de una línea = (precio + extra) × cantidad. */
@@ -121,7 +123,8 @@ export default function PosPage() {
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
   const [deliveryType, setDeliveryType] = useState<'PICKUP' | 'DELIVERY'>('PICKUP');
-  const [address, setAddress] = useState({ street: '', number: '', apartment: '', city: '', reference: '' });
+  // La ciudad es siempre San Vicente (zona de reparto).
+  const [address, setAddress] = useState({ street: '', number: '', apartment: '', city: 'San Vicente', reference: '' });
   const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA' | 'MIXTO' | 'A_DEFINIR'>('EFECTIVO');
   const [cashAmount, setCashAmount] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
@@ -299,6 +302,9 @@ export default function PosPage() {
   const clearExtra = (key: string) =>
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, extra: undefined } : i)));
 
+  const toggleMolde = (key: string) =>
+    setItems((prev) => prev.map((i) => (i.key === key ? { ...i, alMolde: !i.alMolde } : i)));
+
   /** Agrega una pizza como N líneas de 1 (cada una con su posible extra). */
   const addPizzaLines = (item: Omit<PosItem, 'key' | 'quantity'> & { quantity: number }) => {
     const copies = Math.max(1, item.quantity);
@@ -321,7 +327,7 @@ export default function PosPage() {
     setCustomerName('');
     setPhone('');
     setNotes('');
-    setAddress({ street: '', number: '', apartment: '', city: '', reference: '' });
+    setAddress({ street: '', number: '', apartment: '', city: 'San Vicente', reference: '' });
     setCashAmount('');
     setTransferAmount('');
     setPaid(false);
@@ -351,7 +357,7 @@ export default function PosPage() {
       return;
     }
     if (items.length === 0) { showError('Agregá al menos un producto'); return; }
-    if (deliveryType === 'DELIVERY' && (!address.street || !address.number || !address.city)) {
+    if (deliveryType === 'DELIVERY' && (!address.street || !address.number)) {
       showError('Completá la dirección de entrega'); return;
     }
     const cash = parseFloat(cashAmount) || 0;
@@ -369,7 +375,8 @@ export default function PosPage() {
       deliveryFee,
       discount: discountNum,
       total,
-      paid,
+      // "A definir" nunca puede quedar marcado como pagado.
+      paid: paymentMethod === 'A_DEFINIR' ? false : paid,
       ...(paymentMethod === 'MIXTO' ? { cashAmount: cash, transferAmount: transfer } : {}),
       ...(deliveryType === 'DELIVERY'
         ? {
@@ -377,7 +384,7 @@ export default function PosPage() {
               street: address.street,
               number: address.number,
               apartment: address.apartment || undefined,
-              city: address.city,
+              city: 'San Vicente',
               reference: address.reference || undefined,
             },
           }
@@ -389,7 +396,10 @@ export default function PosPage() {
         // Línea "EXTRA: ..." (en mayúsculas) que los tickets separan y muestran
         // pegada al ítem. El costo del extra va sumado al precio unitario.
         const extraNote = i.extra ? `EXTRA: ${i.extra.description.toUpperCase()}` : '';
-        const composed = [i.notes, extraNote].filter(Boolean).join('\n');
+        // "AL MOLDE" va después de las notas de la pizza (que empiezan con el tamaño),
+        // así el ticket lo detecta sin romper la identificación de pizza.
+        const moldeNote = i.alMolde ? 'AL MOLDE' : '';
+        const composed = [i.notes, moldeNote, extraNote].filter(Boolean).join('\n');
         return {
           productId: i.productId,
           promotionId: i.promotionId,
@@ -409,7 +419,11 @@ export default function PosPage() {
       });
       const json = await res.json();
       if (!res.ok) { showError(json.error || 'No se pudo cargar el pedido'); return; }
-      showSuccess(`Pedido #${json.data.orderNumber} cargado · se envió a imprimir`);
+      const eta = json.data.estimatedTime;
+      showSuccess(
+        `Pedido #${json.data.orderNumber} cargado · se envió a imprimir` +
+          (eta ? ` · entrega aprox. ~${eta} min` : '')
+      );
       resetCart();
     } catch {
       showError('Error de conexión');
@@ -614,21 +628,41 @@ export default function PosPage() {
                         {i.notes}
                       </Typography>
                     )}
-                    {i.extra && (
-                      <Chip
-                        size="small"
-                        color="secondary"
-                        variant="outlined"
-                        onDelete={() => clearExtra(i.key)}
-                        label={`Extra: ${i.extra.description}${i.extra.amount > 0 ? ` +${formatCurrency(i.extra.amount)}` : ''}`}
-                        sx={{ mt: 0.5 }}
-                      />
-                    )}
+                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
+                      {i.alMolde && (
+                        <Chip
+                          size="small"
+                          color="warning"
+                          onDelete={() => toggleMolde(i.key)}
+                          label="🟡 Al molde"
+                        />
+                      )}
+                      {i.extra && (
+                        <Chip
+                          size="small"
+                          color="secondary"
+                          variant="outlined"
+                          onDelete={() => clearExtra(i.key)}
+                          label={`Extra: ${i.extra.description}${i.extra.amount > 0 ? ` +${formatCurrency(i.extra.amount)}` : ''}`}
+                        />
+                      )}
+                    </Box>
                     <Typography variant="body2" color="primary.main" fontWeight={700} sx={{ mt: 0.3 }}>
                       {formatCurrency(lineTotal(i))}
                     </Typography>
                   </Box>
 
+                  {isPizzaItemNotes(i.notes) && (
+                    <Button
+                      size="small"
+                      variant={i.alMolde ? 'contained' : 'text'}
+                      color="warning"
+                      onClick={() => toggleMolde(i.key)}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      🟡 Al molde
+                    </Button>
+                  )}
                   {i.extraEligible && (
                     <Button size="small" variant="text" color="secondary" onClick={() => openExtra(i)} sx={{ textTransform: 'none' }}>
                       {i.extra ? 'Editar extra' : '＋ Extra'}
@@ -675,7 +709,8 @@ export default function PosPage() {
                 <TextField label="Calle *" size="small" value={address.street} onChange={(e) => setAddress({ ...address, street: e.target.value })} />
                 <TextField label="Número *" size="small" value={address.number} onChange={(e) => setAddress({ ...address, number: e.target.value })} />
                 <TextField label="Depto" size="small" value={address.apartment} onChange={(e) => setAddress({ ...address, apartment: e.target.value })} />
-                <TextField label="Ciudad *" size="small" value={address.city} onChange={(e) => setAddress({ ...address, city: e.target.value })} />
+                {/* La ciudad es siempre San Vicente (zona de reparto). */}
+                <TextField label="Ciudad" size="small" value="San Vicente" disabled helperText="Fijo por zona de reparto" />
                 <TextField label="Referencia" size="small" sx={{ gridColumn: 'span 2' }} value={address.reference} onChange={(e) => setAddress({ ...address, reference: e.target.value })} />
               </Box>
             )}
@@ -698,8 +733,21 @@ export default function PosPage() {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
               <FormControlLabel
                 sx={{ ml: 0 }}
-                control={<Checkbox size="small" checked={paid} onChange={(e) => setPaid(e.target.checked)} />}
-                label={paid ? '✅ Pagó (el ticket sale sin «FALTA COBRAR»)' : '💰 Pagó'}
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={paid && paymentMethod !== 'A_DEFINIR'}
+                    disabled={paymentMethod === 'A_DEFINIR'}
+                    onChange={(e) => setPaid(e.target.checked)}
+                  />
+                }
+                label={
+                  paymentMethod === 'A_DEFINIR'
+                    ? '💰 Pagó (elegí primero el método de pago)'
+                    : paid
+                      ? '✅ Pagó (el ticket sale sin «FALTA COBRAR»)'
+                      : '💰 Pagó'
+                }
               />
               <TextField
                 label="Descuento"

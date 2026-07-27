@@ -91,6 +91,7 @@ export const FINANCE_INCOME_CATEGORIES = [
 export const FINANCE_EXPENSE_CATEGORIES = [
   'Sueldos',
   'Adelantos',
+  'Propina',
   'Proveedores',
   'Servicios (Luz, Gas, etc.)',
   'Alquiler',
@@ -101,6 +102,7 @@ export const FINANCE_EXPENSE_CATEGORIES = [
 // Categorías usadas en los reportes financieros
 export const FINANCE_CATEGORY_SUELDOS = 'Sueldos';
 export const FINANCE_CATEGORY_ADELANTOS = 'Adelantos';
+export const FINANCE_CATEGORY_PROPINA = 'Propina';
 export const FINANCE_CATEGORY_SOBRES = 'Retiro en sobre';
 // Retiro del "dinero a favor" generado por la venta de postres (egreso en Finanzas).
 export const FINANCE_CATEGORY_POSTRES = 'Retiro de postres';

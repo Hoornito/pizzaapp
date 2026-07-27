@@ -209,7 +209,19 @@ export default function AdminReportsPage() {
                       {report.finance.byEmployee.map((e: any) => (
                         <TableRow key={e.id}>
                           <TableCell>{e.name}</TableCell>
-                          <TableCell align="right">{formatCurrency(e.sueldos)}</TableCell>
+                          <TableCell align="right">
+                            {formatCurrency(e.sueldos)}
+                            {/* Método (E/T) solo en el filtro por Día. */}
+                            {period === 'day' && e.sueldoMetodo && e.sueldos > 0 && (
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                color={e.sueldoMetodo === 'E' ? 'success' : e.sueldoMetodo === 'T' ? 'info' : 'default'}
+                                label={e.sueldoMetodo}
+                                sx={{ ml: 0.75, height: 18, fontWeight: 700 }}
+                              />
+                            )}
+                          </TableCell>
                           <TableCell align="right">{formatCurrency(e.adelantosOtorgados)}</TableCell>
                           <TableCell align="right" sx={{ color: 'error.main' }}>
                             {e.adelantosDescontado > 0 ? `− ${formatCurrency(e.adelantosDescontado)}` : formatCurrency(0)}
