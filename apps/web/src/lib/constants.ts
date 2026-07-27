@@ -162,7 +162,7 @@ export function isCityInDeliveryZone(city: string | null | undefined): boolean {
 }
 
 export const TRANSFER_INFO = {
-  alias: 'cambalache.sv',
+  alias: 'pizzacambalache.sv',
   cbu: '', // Se transfiere por alias; si querés mostrar CBU, cargalo acá.
   holder: 'Paula Victoria Yaggi',
   // WhatsApp al que el cliente envía el comprobante de transferencia.
