@@ -275,6 +275,12 @@ function OrderDetailContent({ params }: Props) {
               </Step>
             ))}
           </Stepper>
+          {order.estimatedTime > 0 && order.status !== 'ENTREGADO' && (
+            <Alert severity="info" icon={false} sx={{ mt: 2 }}>
+              🕒 Tiempo estimado: <strong>~{order.estimatedTime} min</strong>
+              {order.deliveryType === 'DELIVERY' ? ' para la entrega' : ' para el retiro'} (aproximado, según la cantidad de pedidos)
+            </Alert>
+          )}
         </Paper>
       )}
 

@@ -100,7 +100,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   .header { font-size:20px; font-weight:bold; text-align:center; }
   .sub { font-size:11px; text-align:center; }
   .sep { border-top:2px solid #000; margin:5px 0; }
-  .meta { font-size:12px; margin:4px 0; }
+  .meta { font-size:12px; margin:4px 0; font-weight:bold; }
   .item { margin-bottom:8px; }
   .item-title { font-size:14px; font-weight:bold; }
   .item-notes { font-size:12px; padding-left:6mm; white-space:pre-line; }
@@ -109,7 +109,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   .total { font-size:17px; font-weight:bold; display:flex; justify-content:space-between; }
   .status { margin-top:3px; text-align:center; font-weight:bold; padding:3px; border:2px solid #000; }
   .status.unpaid { background:#000; color:#fff; }
-  .tip { font-size:18px; font-weight:bold; text-align:center; padding:4px; margin:5px 0; border:2px solid #000; }
+  .tip { display:flex; justify-content:space-between; font-size:14px; font-weight:bold; margin:4px 0; }
   .qr { text-align:center; margin-top:6px; }
   .qr img { width:26mm; height:26mm; }
   .qr-label { font-size:11px; font-weight:bold; }
@@ -131,7 +131,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   ${itemsHtml}
   <div class="sep"></div>
   <div class="pay">
-    ${Number(order.tip) > 0 ? `<div class="tip">PROPINA REPARTIDOR: ${esc(fmtMoney(Number(order.tip)))}</div>` : ''}
+    ${Number(order.tip) > 0 ? `<div class="tip"><span>PROPINA REPARTIDOR</span><span>${esc(fmtMoney(Number(order.tip)))}</span></div>` : ''}
     <div class="total"><span>TOTAL</span><span>${esc(fmtMoney(Number(order.total)))}</span></div>
     <div class="status ${isPaid ? 'paid' : 'unpaid'}">
       ${isPaid ? `PAGADO (${esc(methodLabel)})` : `FALTA COBRAR - ${esc(methodLabel)}`}

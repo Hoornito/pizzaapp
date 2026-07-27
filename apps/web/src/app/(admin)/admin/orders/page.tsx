@@ -442,6 +442,14 @@ export default function AdminOrdersPage() {
                       <Chip label={order.deliveryType === 'DELIVERY' ? '🛵 Delivery' : '🏪 Retiro'} size="small" variant="outlined" />
                       <Chip label={`${ORDER_PAYMENT_METHOD_EMOJI[order.paymentMethod] || ''} ${ORDER_PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}`} size="small" variant="outlined" />
                       <Chip label={paid ? 'Pagado' : 'Pago pendiente'} size="small" color={paid ? 'success' : 'warning'} />
+                      {order.estimatedTime > 0 && (
+                        <Chip
+                          size="small"
+                          color="info"
+                          variant="outlined"
+                          label={`🕒 aprox ${new Date(new Date(order.createdAt).getTime() + order.estimatedTime * 60000).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} (~${order.estimatedTime} min)`}
+                        />
+                      )}
                     </Box>
 
                     <Divider sx={{ my: 1.5 }} />
