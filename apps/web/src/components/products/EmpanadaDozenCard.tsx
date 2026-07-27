@@ -13,7 +13,6 @@ import RestaurantMenuIcon from '@mui/icons-material/RestaurantMenu';
 import type { ProductWithCategory } from '@/types/product.types';
 import { usePromotions } from '@/hooks/useProducts';
 import { useCart } from '@/hooks/useCart';
-import { useSnackbar } from '@/app/snackbar-context';
 import { formatCurrency, formatDozensNotes } from '@/lib/utils';
 import { EmpanadaDozenModal } from './EmpanadaDozenModal';
 
@@ -27,7 +26,6 @@ interface EmpanadaDozenCardProps {
 export function EmpanadaDozenCard({ empanadas }: EmpanadaDozenCardProps) {
   const { promotions } = usePromotions(true);
   const { addItemAndOpen } = useCart();
-  const { showSuccess } = useSnackbar();
   const [open, setOpen] = useState(false);
 
   const promo = useMemo(
@@ -114,9 +112,6 @@ export function EmpanadaDozenCard({ empanadas }: EmpanadaDozenCardProps) {
             notes: formatDozensNotes(dozens),
           });
           setOpen(false);
-          showSuccess(
-            `${dozenCount} ${dozenCount === 1 ? 'docena agregada' : 'docenas agregadas'} al carrito`
-          );
         }}
       />
     </>

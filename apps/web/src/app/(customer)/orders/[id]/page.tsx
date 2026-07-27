@@ -396,6 +396,13 @@ function OrderDetailContent({ params }: Props) {
           )}
         </Box>
       </Paper>
+
+      {/* Volver al menú (debajo del detalle del pedido) */}
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+        <Button variant="contained" size="large" onClick={() => router.push('/menu')}>
+          ← Volver al menú
+        </Button>
+      </Box>
     </Container>
   );
 }

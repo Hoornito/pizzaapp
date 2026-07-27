@@ -91,10 +91,18 @@ export default function EmployeesPage() {
   const [histMovs, setHistMovs] = useState<any[]>([]);
   const [histLoading, setHistLoading] = useState(false);
   const [histFilter, setHistFilter] = useState<string>('TODOS');
+  const [histFrom, setHistFrom] = useState<string>('');
+  const [histTo, setHistTo] = useState<string>('');
 
   const openHistory = async (emp: any) => {
     setHistCtx(emp);
     setHistFilter('TODOS');
+    // Por defecto, últimos 30 días (para no mostrar una lista enorme).
+    const hoy = new Date();
+    const hace30 = new Date();
+    hace30.setDate(hace30.getDate() - 30);
+    setHistFrom(hace30.toISOString().split('T')[0]);
+    setHistTo(hoy.toISOString().split('T')[0]);
     setHistLoading(true);
     setHistMovs([]);
     try {
@@ -466,20 +474,38 @@ export default function EmployeesPage() {
           Movimientos · {histCtx?.firstName} {histCtx?.lastName}
         </DialogTitle>
         <DialogContent>
-          <FormControl size="small" sx={{ minWidth: 240, mt: 1, mb: 2 }}>
-            <InputLabel id="hist-filter-label">Filtrar por tipo</InputLabel>
-            <Select
-              labelId="hist-filter-label"
-              label="Filtrar por tipo"
-              value={histFilter}
-              onChange={(e) => setHistFilter(e.target.value)}
-            >
-              <MenuItem value="TODOS">Todos</MenuItem>
-              {Object.entries(MOV_LABELS).map(([k, label]) => (
-                <MenuItem key={k} value={k}>{label}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mt: 1, mb: 2 }}>
+            <FormControl size="small" sx={{ minWidth: 220 }}>
+              <InputLabel id="hist-filter-label">Filtrar por tipo</InputLabel>
+              <Select
+                labelId="hist-filter-label"
+                label="Filtrar por tipo"
+                value={histFilter}
+                onChange={(e) => setHistFilter(e.target.value)}
+              >
+                <MenuItem value="TODOS">Todos</MenuItem>
+                {Object.entries(MOV_LABELS).map(([k, label]) => (
+                  <MenuItem key={k} value={k}>{label}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              type="date"
+              size="small"
+              label="Desde"
+              value={histFrom}
+              onChange={(e) => setHistFrom(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              type="date"
+              size="small"
+              label="Hasta"
+              value={histTo}
+              onChange={(e) => setHistTo(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+          </Box>
 
           {histLoading ? (
             <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>Cargando…</Typography>
@@ -496,7 +522,13 @@ export default function EmployeesPage() {
                 </TableHead>
                 <TableBody>
                   {(() => {
-                    const rows = histMovs.filter((m) => histFilter === 'TODOS' || m.kind === histFilter);
+                    const fromTs = histFrom ? new Date(histFrom + 'T00:00:00').getTime() : -Infinity;
+                    const toTs = histTo ? new Date(histTo + 'T23:59:59').getTime() : Infinity;
+                    const rows = histMovs.filter((m) => {
+                      if (histFilter !== 'TODOS' && m.kind !== histFilter) return false;
+                      const ts = new Date(m.createdAt).getTime();
+                      return ts >= fromTs && ts <= toTs;
+                    });
                     if (rows.length === 0) {
                       return (
                         <TableRow>

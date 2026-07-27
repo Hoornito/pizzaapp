@@ -19,7 +19,6 @@ import {
 import { sizeRange, flavorsForSize, formatPizzaName, formatPizzaNotes } from '@/lib/pizza';
 import { useCart } from '@/hooks/useCart';
 import { useUIStore } from '@/store/uiStore';
-import { useSnackbar } from '@/app/snackbar-context';
 import { formatCurrency } from '@/lib/utils';
 import { PizzaModal } from './PizzaModal';
 
@@ -31,7 +30,6 @@ interface PizzaSizeCardsProps {
 export function PizzaSizeCards({ pizzas }: PizzaSizeCardsProps) {
   const { addItem } = useCart();
   const { openCart } = useUIStore();
-  const { showSuccess } = useSnackbar();
   const [modalSize, setModalSize] = useState<PizzaSize | null>(null);
 
   // Solo tamaños que tengan al menos un gusto con precio cargado.
@@ -112,9 +110,6 @@ export function PizzaSizeCards({ pizzas }: PizzaSizeCardsProps) {
             });
             setModalSize(null);
             openCart();
-            showSuccess(
-              `${selected.length} ${selected.length === 1 ? 'pizza agregada' : 'pizzas agregadas'} al carrito`
-            );
           }}
         />
       )}

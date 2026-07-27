@@ -14,7 +14,6 @@ import type { PromotionWithItems, EmpanadaDozen } from '@/types/product.types';
 import { useCart } from '@/hooks/useCart';
 import { useProducts, useCategories } from '@/hooks/useProducts';
 import { formatCurrency } from '@/lib/utils';
-import { useSnackbar } from '@/app/snackbar-context';
 import { promoEmpanadaCount, formatPromoNotes } from '@/lib/promos';
 import { EmpanadaPickModal } from '@/components/products/EmpanadaPickModal';
 import { useMemo, useState } from 'react';
@@ -25,7 +24,6 @@ interface PromotionCardProps {
 
 export function PromotionCard({ promotion }: PromotionCardProps) {
   const { addItemAndOpen } = useCart();
-  const { showSuccess } = useSnackbar();
   const { products } = useProducts({ available: true });
   const { categories } = useCategories();
   const [pickOpen, setPickOpen] = useState(false);
@@ -54,7 +52,6 @@ export function PromotionCard({ promotion }: PromotionCardProps) {
       quantity: 1,
       notes: formatPromoNotes(promotion.id, chosen) || undefined,
     });
-    showSuccess(`${promotion.name} agregado al carrito`);
   };
 
   const handleAdd = () => {

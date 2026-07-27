@@ -13,7 +13,6 @@ import RestaurantMenuIcon from '@mui/icons-material/RestaurantMenu';
 import type { ProductWithCategory } from '@/types/product.types';
 import { useCart } from '@/hooks/useCart';
 import { useUIStore } from '@/store/uiStore';
-import { useSnackbar } from '@/app/snackbar-context';
 import { formatCurrency, toNumber } from '@/lib/utils';
 import { EmpanadaLooseModal } from './EmpanadaLooseModal';
 
@@ -25,7 +24,6 @@ interface EmpanadaLooseCardProps {
 export function EmpanadaLooseCard({ empanadas }: EmpanadaLooseCardProps) {
   const { addItem } = useCart();
   const { openCart } = useUIStore();
-  const { showSuccess } = useSnackbar();
   const [open, setOpen] = useState(false);
 
   const available = empanadas.filter((e) => e.available);
@@ -99,8 +97,6 @@ export function EmpanadaLooseCard({ empanadas }: EmpanadaLooseCardProps) {
           );
           setOpen(false);
           openCart();
-          const total = selection.reduce((n, s) => n + s.quantity, 0);
-          showSuccess(`${total} ${total === 1 ? 'empanada agregada' : 'empanadas agregadas'} al carrito`);
         }}
       />
     </>

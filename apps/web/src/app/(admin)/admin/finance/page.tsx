@@ -684,26 +684,50 @@ export default function FinancePage() {
             />
           </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setTxnDialog(null)}>Cancelar</Button>
-          <Button
-            variant="contained"
-            onClick={handleSaveTxn}
-            disabled={(() => {
-              if (saving || !txnForm.category) return true;
-              if (needsEmployee(txnForm.category) && !txnForm.employeeId) return true;
-              if (txnForm.paymentMethod === 'MIXTO') {
-                return !(Number(txnForm.cashAmount) > 0) || !(Number(txnForm.virtualAmount) > 0);
-              }
-              // Sueldos: alcanza con el retiro O con lo que acumula a favor.
-              if (txnForm.category === FINANCE_CATEGORY_SUELDOS) {
-                return !(Number(txnForm.amount) > 0 || Number(txnForm.accumulate) > 0);
-              }
-              return !(Number(txnForm.amount) > 0);
-            })()}
-          >
-            Guardar
-          </Button>
+        <DialogActions sx={{ justifyContent: 'space-between', px: 3 }}>
+          {/* En Sueldos, corroborar cuánto se le liquida en total al empleado. */}
+          {txnForm.category === FINANCE_CATEGORY_SUELDOS ? (
+            (() => {
+              const retira =
+                txnForm.paymentMethod === 'MIXTO'
+                  ? Number(txnForm.cashAmount || 0) + Number(txnForm.virtualAmount || 0)
+                  : Number(txnForm.amount || 0);
+              const sueldoTotal = retira + Number(txnForm.accumulate || 0) + Number(txnForm.devolucionAdelanto || 0);
+              return (
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Sueldo total (retira + acumula + devolución)
+                  </Typography>
+                  <Typography variant="h6" fontWeight={800} color="primary.main">
+                    {formatCurrency(sueldoTotal)}
+                  </Typography>
+                </Box>
+              );
+            })()
+          ) : (
+            <Box />
+          )}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button onClick={() => setTxnDialog(null)}>Cancelar</Button>
+            <Button
+              variant="contained"
+              onClick={handleSaveTxn}
+              disabled={(() => {
+                if (saving || !txnForm.category) return true;
+                if (needsEmployee(txnForm.category) && !txnForm.employeeId) return true;
+                if (txnForm.paymentMethod === 'MIXTO') {
+                  return !(Number(txnForm.cashAmount) > 0) || !(Number(txnForm.virtualAmount) > 0);
+                }
+                // Sueldos: alcanza con el retiro O con lo que acumula a favor.
+                if (txnForm.category === FINANCE_CATEGORY_SUELDOS) {
+                  return !(Number(txnForm.amount) > 0 || Number(txnForm.accumulate) > 0);
+                }
+                return !(Number(txnForm.amount) > 0);
+              })()}
+            >
+              Guardar
+            </Button>
+          </Box>
         </DialogActions>
       </Dialog>
 

@@ -93,13 +93,6 @@ export default function OrdersPage() {
           ))}
         </Box>
       )}
-
-      {/* Volver al menú (siempre disponible, debajo de todo) */}
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-        <Button variant="contained" size="large" onClick={() => router.push('/menu')}>
-          ← Volver al menú
-        </Button>
-      </Box>
     </Container>
   );
 }

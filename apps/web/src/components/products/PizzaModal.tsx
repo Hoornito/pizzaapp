@@ -219,20 +219,25 @@ export function PizzaModal({ open, onClose, size, flavors, onConfirm }: PizzaMod
                   borderColor: selected ? 'primary.main' : 'divider',
                   bgcolor: selected ? 'action.hover' : 'background.paper',
                   display: 'flex',
-                  alignItems: 'center',
+                  alignItems: 'flex-start',
                   gap: 1,
                 }}
               >
                 {selected ? (
-                  <CheckCircleIcon color="primary" fontSize="small" />
+                  <CheckCircleIcon color="primary" fontSize="small" sx={{ mt: 0.25 }} />
                 ) : (
                   <Box sx={{ width: 20 }} />
                 )}
                 <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                  <Typography variant="body2" fontWeight={600} noWrap>
+                  <Typography variant="body2" fontWeight={600}>
                     {f.name}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  {f.description && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.3 }}>
+                      {f.description}
+                    </Typography>
+                  )}
+                  <Typography variant="caption" color="primary.main" fontWeight={700}>
                     {formatCurrency(price)}
                   </Typography>
                 </Box>

@@ -22,7 +22,7 @@ interface ProductCardProps {
 
 export function ProductCard({ product }: ProductCardProps) {
   const { addItemAndOpen, items } = useCart();
-  const { showSuccess, showError } = useSnackbar();
+  const { showError } = useSnackbar();
   // La Doble Cambalache pide los gustos antes de agregarse.
   const isDoble = /doble cambalache/i.test(product.name);
   const [dobleOpen, setDobleOpen] = useState(false);
@@ -50,7 +50,6 @@ export function ProductCard({ product }: ProductCardProps) {
       quantity: 1,
       notes,
     });
-    showSuccess(`${product.name} agregado al carrito`);
   };
 
   const handleAddToCart = () => {
