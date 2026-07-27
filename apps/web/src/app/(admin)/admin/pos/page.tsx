@@ -737,19 +737,34 @@ export default function PosPage() {
               </Box>
             )}
 
-            {/* Paga con → vuelto (solo efectivo) */}
+            {/* Paga con → vuelto (solo efectivo). Vacío = paga justo. */}
             {paymentMethod === 'EFECTIVO' && (
               <Box>
-                <TextField
-                  label="Paga con (opcional)"
-                  size="small"
-                  type="number"
-                  fullWidth
-                  inputProps={{ min: 0, step: 0.01 }}
-                  value={pagaCon}
-                  onChange={(e) => setPagaCon(e.target.value)}
-                  InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
-                />
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                  <TextField
+                    label="Paga con"
+                    size="small"
+                    type="number"
+                    fullWidth
+                    inputProps={{ min: 0, step: 0.01 }}
+                    value={pagaCon}
+                    onChange={(e) => setPagaCon(e.target.value)}
+                    InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+                  />
+                  <Button
+                    size="small"
+                    variant={pagaCon === '' ? 'contained' : 'outlined'}
+                    onClick={() => setPagaCon('')}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    Paga justo
+                  </Button>
+                </Box>
+                {pagaCon === '' && (
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                    Sin monto = paga justo (no se imprime vuelto).
+                  </Typography>
+                )}
                 {pagaCon !== '' && Number(pagaCon) >= total && (
                   <Typography variant="body2" color="success.main" fontWeight={700} sx={{ mt: 0.5 }}>
                     Vuelto: {formatCurrency(Number(pagaCon) - total)}
