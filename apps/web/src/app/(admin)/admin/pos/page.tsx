@@ -943,7 +943,8 @@ export default function PosPage() {
           onClose={() => setDobleOpen(false)}
           price={Number(dobleCambalache.price)}
           onConfirm={(notes) => {
-            addItem({ productId: dobleCambalache.id, name: dobleCambalache.name, unitPrice: Number(dobleCambalache.price), quantity: 1, notes });
+            // Admite "extra" como las pizzas/promos.
+            addItem({ productId: dobleCambalache.id, name: dobleCambalache.name, unitPrice: Number(dobleCambalache.price), quantity: 1, notes, extraEligible: true });
             setDobleOpen(false);
           }}
         />
