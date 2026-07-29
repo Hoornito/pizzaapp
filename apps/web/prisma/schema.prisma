@@ -315,6 +315,11 @@ model Order {
   phone          String?
   whatsappToken  String?
   estimatedTime  Int?
+  // Marcas de tiempo para medir la demora real: inicio (creación/entrada a
+  // cocina) y fin (entregado). Sirven para calcular a futuro un tiempo estimado
+  // por tipo de pedido (pizzas/empanadas/complejidad/envío).
+  startedAt      DateTime?
+  finishedAt     DateTime?
   deliveryEmployeeId String?
   // Pedido de SIMULACIÓN (caja de entrenamiento): se borra al cerrar la caja test.
   isTest         Boolean       @default(false)

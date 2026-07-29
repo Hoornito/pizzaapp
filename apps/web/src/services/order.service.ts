@@ -156,42 +156,10 @@ export async function getOrderByNumber(orderNumber: string) {
   return prisma.order.findUnique({ where: { orderNumber }, include: ORDER_INCLUDE });
 }
 
-/**
- * ETA aproximada (minutos) para un pedido nuevo, en base a:
- *  - el TIEMPO REAL que tardaron los últimos pedidos entregados (creación →
- *    entregado), que refleja la demora real del local, y
- *  - la cola actual de pedidos activos (cada "tanda" por delante suma tiempo).
- * Reemplaza el viejo "25' + 5' por pedido" fijo.
- */
-async function estimateDeliveryMinutes(): Promise<number> {
-  const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const [recientes, queue] = await Promise.all([
-    prisma.order.findMany({
-      where: { status: 'ENTREGADO', isTest: false, createdAt: { gte: from } },
-      orderBy: { updatedAt: 'desc' },
-      take: 15,
-      select: { createdAt: true, updatedAt: true },
-    }),
-    prisma.order.count({
-      where: { isTest: false, status: { in: ['RECIBIDO', 'CONFIRMADO', 'PREPARANDO', 'EN_HORNO', 'LISTO', 'EN_REPARTO'] } },
-    }),
-  ]);
-
-  // Duración real (creación → entregado) de los últimos pedidos, sin outliers.
-  const durs = recientes
-    .map((o) => (o.updatedAt.getTime() - o.createdAt.getTime()) / 60000)
-    .filter((m) => m >= 5 && m <= 180);
-  const avgReal = durs.length ? durs.reduce((a, b) => a + b, 0) / durs.length : 30;
-
-  // La cocina prepara ~3 pedidos en paralelo; cada tanda por delante suma media
-  // preparación al tiempo base.
-  const CONCURRENTES = 3;
-  const tandasPorDelante = Math.max(0, Math.ceil(queue / CONCURRENTES) - 1);
-  const eta = avgReal + tandasPorDelante * avgReal * 0.5;
-
-  // Redondeo a 5 min, acotado a un rango razonable.
-  return Math.min(120, Math.max(15, Math.round(eta / 5) * 5));
-}
+// Tiempo estimado de entrega. Por ahora FIJO en 30 min: guardamos startedAt /
+// finishedAt en cada pedido para, más adelante, calcular un estimado real por
+// tipo de pedido (cantidad de pizzas/empanadas, complejidad, envío).
+const FIXED_ETA_MINUTES = 30;
 
 export async function createOrder(
   userId: string,
@@ -206,9 +174,8 @@ export async function createOrder(
   // No permitir vender postres sin stock suficiente (las demás categorías no controlan stock).
   if (!isTest) await assertPostresStock(data.items);
 
-  // Horario aproximado de entrega, calculado con el tiempo REAL de los últimos
-  // pedidos entregados + la cola actual (ver estimateDeliveryMinutes).
-  const estimatedTime = await estimateDeliveryMinutes();
+  // Horario estimado de entrega: por ahora fijo (ver FIXED_ETA_MINUTES).
+  const estimatedTime = FIXED_ETA_MINUTES;
 
   // Para delivery sin addressId, creamos la dirección a partir de los datos inline.
   let addressId = data.addressId;
@@ -243,6 +210,8 @@ export async function createOrder(
     addressId,
     isTest,
     estimatedTime,
+    // Inicio del pedido (para medir la demora real hasta la entrega).
+    startedAt: new Date(),
     status: initialStatus,
     deliveryType: data.deliveryType,
     paymentMethod: data.paymentMethod,
@@ -370,6 +339,8 @@ export async function updateOrderStatus(
     data: {
       status: data.status,
       estimatedTime: data.estimatedTime,
+      // Marca de fin cuando se entrega (una sola vez), para medir la demora real.
+      ...(data.status === 'ENTREGADO' && !existing.finishedAt ? { finishedAt: new Date() } : {}),
     },
     include: ORDER_INCLUDE,
   });
