@@ -50,12 +50,60 @@ export async function markTokenAsUsed(token: string): Promise<void> {
   });
 }
 
+/** Guarda un mensaje del hilo (para el inbox) y actualiza la conversación. */
+export async function logMessage(
+  conversationId: string,
+  data: {
+    direction: 'IN' | 'OUT';
+    type?: string;
+    body?: string | null;
+    mediaUrl?: string | null;
+    mediaMime?: string | null;
+    waMessageId?: string | null;
+    status?: string | null;
+    sentById?: string | null;
+  }
+) {
+  await prisma.whatsAppMessage.create({
+    data: {
+      conversationId,
+      direction: data.direction,
+      type: data.type ?? 'text',
+      body: data.body ?? null,
+      mediaUrl: data.mediaUrl ?? null,
+      mediaMime: data.mediaMime ?? null,
+      waMessageId: data.waMessageId ?? null,
+      status: data.status ?? null,
+      sentById: data.sentById ?? null,
+    },
+  });
+  await prisma.whatsAppConversation.update({
+    where: { id: conversationId },
+    data: {
+      lastMessageAt: new Date(),
+      ...(data.direction === 'IN' ? { unread: { increment: 1 } } : {}),
+    },
+  });
+}
+
 export async function processIncomingMessage(from: string, message: WAMessage): Promise<void> {
   try {
     await markAsRead(message.id);
   } catch {}
 
   const conversation = await getOrCreateConversation(from, message.from);
+
+  // Guardamos el mensaje entrante en el hilo (para verlo en el inbox del panel).
+  await logMessage(conversation.id, {
+    direction: 'IN',
+    type: message.type,
+    body: message.text?.body ?? message.button?.text ?? null,
+    waMessageId: message.id,
+  });
+
+  // Takeover humano: si la conversación está "atendida a mano", el bot no responde.
+  if (conversation.botPaused) return;
+
   const state = conversation.state as WAConversationState;
   const text =
     message.text?.body?.trim().toLowerCase() ||
