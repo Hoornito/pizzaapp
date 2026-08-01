@@ -23,6 +23,7 @@ import BadgeIcon from '@mui/icons-material/Badge';
 import PrintIcon from '@mui/icons-material/Print';
 import PointOfSaleIcon from '@mui/icons-material/PointOfSale';
 import CakeIcon from '@mui/icons-material/Cake';
+import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import type { Role } from '@prisma/client';
@@ -37,6 +38,7 @@ const navItems = [
   { label: 'Dashboard', icon: <DashboardIcon />, href: '/admin/dashboard', adminOnly: true },
   { label: 'Mostrador', icon: <PointOfSaleIcon />, href: '/admin/pos' },
   { label: 'Pedidos', icon: <ShoppingBagIcon />, href: '/admin/orders' },
+  { label: 'WhatsApp', icon: <WhatsAppIcon />, href: '/admin/whatsapp' },
   { label: 'Productos', icon: <LocalPizzaIcon />, href: '/admin/products' },
   { label: 'Postres', icon: <CakeIcon />, href: '/admin/postres' },
   { label: 'Categorías', icon: <CategoryIcon />, href: '/admin/categories' },
