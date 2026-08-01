@@ -17,7 +17,7 @@ import Grid from '@mui/material/Grid';
 import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, NEXT_STATUSES } from '@/lib/constants';
 import { isPizzaItemNotes } from '@/lib/pizza';
 import { PaymentDialog, type PaymentKind } from '@/components/admin/PaymentDialog';
-import { formatCurrency, formatDate, formatOrderPayment } from '@/lib/utils';
+import { formatCurrency, formatDate, formatOrderPayment, groupTicketItems } from '@/lib/utils';
 import { DeliveryMapQR } from '@/components/orders/DeliveryMapQR';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useSnackbar } from '@/app/snackbar-context';
@@ -177,25 +177,38 @@ export default function AdminOrderDetailPage({ params }: Props) {
           <Paper sx={{ p: 3, mb: 3 }}>
             <Typography variant="h6" fontWeight={600} gutterBottom>Productos</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {order.items?.map((item: any) => {
-                const isPizza = isPizzaItemNotes(item.notes);
-                const title = isPizza ? item.notes : item.product?.name || item.promotion?.name;
-                return (
-                  <Box key={item.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <Box>
-                      <Typography fontWeight={500}>{item.quantity}x {title}</Typography>
-                      {!isPizza && item.notes && (
-                        <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line' }}>
-                          {item.notes}
+              {(() => {
+                // Agrupa idénticos (3x ...), separando por extra y por "al molde".
+                const MOLDE_RE = /(^|\n)\s*AL MOLDE\s*(\n|$)/i;
+                return groupTicketItems(order.items || [], isPizzaItemNotes).map((g, i) => {
+                  const molde = MOLDE_RE.test(g.title) || MOLDE_RE.test(g.notes || '');
+                  const titleClean = (g.title || '').replace(/\n?\s*AL MOLDE\s*/i, '').trim();
+                  const notesClean = !g.isPizza && g.notes ? g.notes.replace(/\n?\s*AL MOLDE\s*/i, '').trim() : '';
+                  return (
+                    <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+                      <Box>
+                        <Typography fontWeight={500} component="div">
+                          {g.quantity}x {titleClean}
+                          {molde && (
+                            <Chip size="small" color="warning" label="al molde" sx={{ ml: 0.5, height: 20 }} />
+                          )}
+                          {g.extra && (
+                            <Chip size="small" color="secondary" variant="outlined" label={g.extra} sx={{ ml: 0.5, height: 20 }} />
+                          )}
                         </Typography>
-                      )}
+                        {notesClean && (
+                          <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line' }}>
+                            {notesClean}
+                          </Typography>
+                        )}
+                      </Box>
+                      <Typography fontWeight={600} sx={{ whiteSpace: 'nowrap' }}>
+                        {formatCurrency(g.unitPrice * g.quantity)}
+                      </Typography>
                     </Box>
-                    <Typography fontWeight={600}>
-                      {formatCurrency(item.unitPrice * item.quantity)}
-                    </Typography>
-                  </Box>
-                );
-              })}
+                  );
+                });
+              })()}
             </Box>
             <Divider sx={{ my: 2 }} />
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
