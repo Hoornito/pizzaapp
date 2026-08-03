@@ -17,6 +17,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@auth/prisma-adapter": "^2.7.2",
     "@emotion/cache": "^11.13.1",
     "@emotion/react": "^11.13.3",

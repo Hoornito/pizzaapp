@@ -91,18 +91,28 @@ async function generateOrderNumber(isTest: boolean): Promise<string> {
   const pad = prefix ? 3 : 4;
   const startsWith = `${dateStr}-${prefix}`;
 
-  // Último número usado con esta fecha+prefijo. Como el sufijo va con ceros a la
-  // izquierda, el orden lexicográfico descendente da el máximo real.
-  const last = await prisma.order.findFirst({
+  // Último número usado con esta fecha+prefijo. Calculamos el máximo SOLO sobre el
+  // formato regular (fecha-prefijo + N dígitos al final): así los "agregados"
+  // vinculados (#…-TM006-2), que comparten prefijo pero llevan un sufijo extra,
+  // NO ensucian la numeración (romperían el slice y podrían colisionar).
+  const rows = await prisma.order.findMany({
     where: prefix
       ? { orderNumber: { startsWith } }
       : // formato por día: excluir los de turno (que tienen "-T…").
         { orderNumber: { startsWith: `${dateStr}-` }, NOT: { orderNumber: { startsWith: `${dateStr}-T` } } },
-    orderBy: { orderNumber: 'desc' },
     select: { orderNumber: true },
   });
-
-  const lastNum = last ? parseInt(last.orderNumber.slice(-pad), 10) || 0 : 0;
+  const re = prefix
+    ? new RegExp(`-${prefix}(\\d{${pad}})$`)
+    : new RegExp(`^${dateStr}-(\\d{${pad}})$`);
+  let lastNum = 0;
+  for (const r of rows) {
+    const m = r.orderNumber.match(re);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > lastNum) lastNum = n;
+    }
+  }
   return `${startsWith}${String(lastNum + 1).padStart(pad, '0')}`;
 }
 
@@ -166,7 +176,14 @@ export async function createOrder(
   data: CreateOrderInput,
   // Pedidos tomados desde el mostrador/admin: se confirman al instante y se
   // imprimen (cocina + comanda) apenas se cargan.
-  options?: { printOnCreate?: boolean; confirmImmediately?: boolean; isTest?: boolean }
+  options?: {
+    printOnCreate?: boolean;
+    confirmImmediately?: boolean;
+    isTest?: boolean;
+    // Número forzado (pedido "agregado" vinculado: #TM003-2). Si choca con la
+    // restricción única, quien llama debe reintentar con el siguiente sufijo.
+    explicitOrderNumber?: string;
+  }
 ) {
   // Pedido de simulación (caja test): no controla ni descuenta stock real.
   const isTest = !!options?.isTest;
@@ -255,11 +272,13 @@ export async function createOrder(
   // número y reintentamos, en vez de fallar con "Unique constraint failed".
   const createWithRetry = async () => {
     for (let attempt = 1; ; attempt++) {
-      const orderNumber = await generateOrderNumber(isTest);
+      const orderNumber = options?.explicitOrderNumber ?? (await generateOrderNumber(isTest));
       try {
         return await prisma.order.create({ data: orderData(orderNumber), include: ORDER_INCLUDE });
       } catch (e) {
-        if (isDuplicateOrderNumber(e) && attempt < 8) continue;
+        // Con número forzado no reintentamos acá (no hay otro número que probar):
+        // que lo maneje quien llama.
+        if (!options?.explicitOrderNumber && isDuplicateOrderNumber(e) && attempt < 8) continue;
         throw e;
       }
     }

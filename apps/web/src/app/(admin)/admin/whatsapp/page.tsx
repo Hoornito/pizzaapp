@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -14,7 +15,14 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import SendIcon from '@mui/icons-material/Send';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
+import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import { useSnackbar } from '@/app/snackbar-context';
+import OrderReviewDialog, { type ReadyOrder } from './OrderReviewDialog';
+
+type Flow = 'normal' | 'ready' | 'needs_human';
 
 interface Convo {
   id: string;
@@ -23,6 +31,8 @@ interface Convo {
   botPaused: boolean;
   unread: number;
   lastMessageAt: string | null;
+  flow: Flow;
+  addonOf: string | null;
   lastMessage: { body: string | null; type: string; direction: string } | null;
 }
 interface Msg {
@@ -45,13 +55,30 @@ const preview = (c: Convo) => {
   return (c.lastMessage.direction === 'OUT' ? 'Vos: ' : '') + (b.length > 40 ? b.slice(0, 40) + '…' : b);
 };
 
+// Fondo de la caja del chat según su estado (verde/rojo, bien visible).
+const GREEN = 'rgba(46,125,50,0.16)';
+const GREEN_SEL = 'rgba(46,125,50,0.30)';
+const RED = 'rgba(211,47,47,0.14)';
+const RED_SEL = 'rgba(211,47,47,0.28)';
+const flowBg = (flow: Flow, selected: boolean) => {
+  if (flow === 'ready') return { borderLeft: '6px solid', borderLeftColor: 'success.main', bgcolor: selected ? GREEN_SEL : GREEN };
+  if (flow === 'needs_human') return { borderLeft: '6px solid', borderLeftColor: 'error.main', bgcolor: selected ? RED_SEL : RED };
+  return { borderLeft: '6px solid transparent', bgcolor: selected ? 'action.selected' : 'transparent' };
+};
+
 export default function WhatsAppInboxPage() {
-  const { showError } = useSnackbar();
+  const { showError, showSuccess } = useSnackbar();
   const [convos, setConvos] = useState<Convo[]>([]);
   const [selected, setSelected] = useState<Convo | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [threadFlow, setThreadFlow] = useState<Flow>('normal');
+  const [readyOrder, setReadyOrder] = useState<ReadyOrder | null>(null);
+  const [addonOf, setAddonOf] = useState<string | null>(null);
+  const [humanReason, setHumanReason] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  const [takeOpen, setTakeOpen] = useState(false);
+  const [aiDisabled, setAiDisabled] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
 
   const loadConvos = useCallback(() => {
@@ -64,12 +91,24 @@ export default function WhatsAppInboxPage() {
   const loadMessages = useCallback((id: string) => {
     fetch(`/api/admin/whatsapp/conversations/${id}`, { cache: 'no-store' })
       .then((r) => r.json())
-      .then((d) => setMessages(d.data || []))
+      .then((d) => {
+        setMessages(d.data || []);
+        setThreadFlow((d.flow as Flow) || 'normal');
+        setReadyOrder(d.readyOrder || null);
+        setAddonOf(d.addonOf || null);
+        setHumanReason(d.humanReason || null);
+      })
       .catch(() => {});
   }, []);
 
-  useEffect(() => { loadConvos(); }, [loadConvos]);
-  // Refresco de la lista y del hilo abierto.
+  const loadAiStatus = useCallback(() => {
+    fetch('/api/admin/whatsapp/ai', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setAiDisabled(!!d.disabled))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { loadConvos(); loadAiStatus(); }, [loadConvos, loadAiStatus]);
   useEffect(() => {
     const t = setInterval(() => {
       loadConvos();
@@ -85,8 +124,11 @@ export default function WhatsAppInboxPage() {
   const openConvo = (c: Convo) => {
     setSelected(c);
     setMessages([]);
+    setReadyOrder(null);
+    setAddonOf(null);
+    setHumanReason(null);
+    setThreadFlow(c.flow);
     loadMessages(c.id);
-    // Marcada como leída al abrir (el GET la resetea); reflejamos local.
     setConvos((prev) => prev.map((x) => (x.id === c.id ? { ...x, unread: 0 } : x)));
   };
 
@@ -123,14 +165,69 @@ export default function WhatsAppInboxPage() {
       if (!res.ok) throw new Error();
       setSelected((s) => (s ? { ...s, botPaused: paused } : s));
       setConvos((prev) => prev.map((x) => (x.id === selected.id ? { ...x, botPaused: paused } : x)));
+      // Reactivar la IA hace que retome el pedido: refrescamos con un pequeño delay.
+      if (!paused) setTimeout(() => loadMessages(selected.id), 900);
     } catch {
       showError('No se pudo cambiar el modo');
     }
   };
 
+  const toggleGlobalAI = async () => {
+    const disabled = !aiDisabled;
+    try {
+      const res = await fetch('/api/admin/whatsapp/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disabled }),
+      });
+      if (!res.ok) throw new Error();
+      setAiDisabled(disabled);
+      showSuccess(disabled ? 'IA apagada en todos los chats' : 'IA reactivada');
+    } catch {
+      showError('No se pudo cambiar la IA global');
+    }
+  };
+
+  const onTaken = (orderNumber: string) => {
+    showSuccess(`Pedido #${orderNumber} enviado a Pedidos ✅`);
+    setTakeOpen(false);
+    setReadyOrder(null);
+    setAddonOf(null);
+    setHumanReason(null);
+    setThreadFlow('normal');
+    loadConvos();
+    if (selected) setTimeout(() => loadMessages(selected.id), 400);
+  };
+
+  const onEdited = (d: { readyOrder?: ReadyOrder | null; flow?: string; addonOf?: string | null; humanReason?: string | null }) => {
+    setReadyOrder(d.readyOrder || null);
+    if (d.flow) setThreadFlow(d.flow as Flow);
+    setAddonOf(d.addonOf || null);
+    setHumanReason(d.humanReason || null);
+    if (selected) loadMessages(selected.id);
+  };
+
+  const takeLabel = addonOf ? `Tomar agregado #${addonOf}` : 'Tomar pedido';
+
   return (
     <Box>
-      <Typography variant="h4" fontWeight={700} sx={{ mb: 2 }}>WhatsApp</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+        <Typography variant="h4" fontWeight={700}>WhatsApp</Typography>
+        {aiDisabled && <Chip color="error" size="small" label="IA apagada (global)" />}
+        <Box sx={{ flex: 1 }} />
+        <Button
+          onClick={toggleGlobalAI}
+          variant={aiDisabled ? 'contained' : 'outlined'}
+          color={aiDisabled ? 'error' : 'inherit'}
+          size="small"
+          startIcon={<PowerSettingsNewIcon />}
+        >
+          {aiDisabled ? 'Reactivar IA' : 'Apagar IA (global)'}
+        </Button>
+        <Button component={Link} href="/admin/whatsapp/sim" variant="outlined" size="small" startIcon={<SmartToyIcon />}>
+          Simulador
+        </Button>
+      </Box>
       <Paper variant="outlined" sx={{ display: 'flex', height: { xs: 'calc(100vh - 200px)', md: '72vh' }, overflow: 'hidden' }}>
         {/* Lista de conversaciones */}
         <Box
@@ -151,8 +248,8 @@ export default function WhatsAppInboxPage() {
               onClick={() => openConvo(c)}
               sx={{
                 p: 1.5, cursor: 'pointer', borderBottom: '1px solid', borderColor: 'divider',
-                bgcolor: selected?.id === c.id ? 'action.selected' : 'transparent',
-                '&:hover': { bgcolor: 'action.hover' },
+                ...flowBg(c.flow, selected?.id === c.id),
+                '&:hover': { filter: 'brightness(0.97)' },
               }}
             >
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
@@ -160,9 +257,14 @@ export default function WhatsAppInboxPage() {
                 <Badge color="success" badgeContent={c.unread} />
               </Box>
               <Typography variant="body2" color="text.secondary" noWrap>{preview(c)}</Typography>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
-                <Typography variant="caption" color="text.secondary">{fmtTime(c.lastMessageAt)}</Typography>
-                {c.botPaused && <Chip size="small" color="warning" label="a mano" sx={{ height: 18 }} />}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5, gap: 1 }}>
+                <Typography variant="caption" color="text.secondary" noWrap>{fmtTime(c.lastMessageAt)}</Typography>
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  {c.addonOf && <Chip size="small" color="warning" label={`agregado #${c.addonOf}`} sx={{ height: 18 }} />}
+                  {c.flow === 'ready' && <Chip size="small" color="success" label="pedido listo" sx={{ height: 18 }} />}
+                  {c.flow === 'needs_human' && !c.addonOf && <Chip size="small" color="error" label="atención" sx={{ height: 18 }} />}
+                  {c.botPaused && c.flow !== 'needs_human' && <Chip size="small" color="warning" variant="outlined" label="a mano" sx={{ height: 18 }} />}
+                </Box>
               </Box>
             </Box>
           ))}
@@ -174,8 +276,8 @@ export default function WhatsAppInboxPage() {
             <Box sx={{ m: 'auto', color: 'text.secondary' }}>Elegí una conversación</Box>
           ) : (
             <>
-              {/* Header del hilo */}
-              <Box sx={{ p: 1.5, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1 }}>
+              {/* Header del hilo (coloreado según estado) */}
+              <Box sx={{ p: 1.5, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1, ...flowBg(threadFlow, false) }}>
                 <IconButton size="small" sx={{ display: { md: 'none' } }} onClick={() => setSelected(null)}>
                   <ArrowBackIcon />
                 </IconButton>
@@ -183,12 +285,40 @@ export default function WhatsAppInboxPage() {
                   <Typography fontWeight={700} noWrap>{selected.contactName || selected.phone}</Typography>
                   <Typography variant="caption" color="text.secondary">{selected.phone}</Typography>
                 </Box>
+                {/* Botón para tomar el pedido/agregado (aparece cuando hay pedido armado). */}
+                {readyOrder && (
+                  <Button
+                    variant="contained"
+                    color={addonOf ? 'warning' : 'success'}
+                    size="small"
+                    startIcon={addonOf ? <AddShoppingCartIcon /> : <ReceiptLongIcon />}
+                    onClick={() => setTakeOpen(true)}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    {takeLabel}
+                  </Button>
+                )}
                 <FormControlLabel
                   sx={{ mr: 0 }}
                   control={<Switch size="small" checked={selected.botPaused} onChange={toggleBot} />}
-                  label={<Typography variant="body2">{selected.botPaused ? 'Atendido a mano' : 'Bot activo'}</Typography>}
+                  label={<Typography variant="body2">{selected.botPaused ? 'A mano' : 'Bot activo'}</Typography>}
                 />
               </Box>
+
+              {threadFlow === 'needs_human' && (
+                <Box sx={{ px: 2, py: 1, bgcolor: RED, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  <Typography variant="body2" color="error.main" fontWeight={700}>
+                    🔴 Atención: {humanReason || 'el bot no pudo seguir'}
+                  </Typography>
+                  <Typography variant="caption" color="error.main">
+                    {readyOrder
+                      ? addonOf
+                        ? `Revisá el agregado al #${addonOf} y tomalo.`
+                        : 'Poné el precio del extra con "Editar" y tomá el pedido (no hace falta reactivar el bot).'
+                      : 'Respondé la consulta a mano y reactivá el bot para que siga tomando el pedido.'}
+                  </Typography>
+                </Box>
+              )}
 
               {/* Mensajes */}
               <Box ref={threadRef} sx={{ flex: 1, overflowY: 'auto', p: 2, bgcolor: 'grey.50', display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -236,6 +366,16 @@ export default function WhatsAppInboxPage() {
           )}
         </Box>
       </Paper>
+
+      <OrderReviewDialog
+        open={takeOpen}
+        onClose={() => setTakeOpen(false)}
+        conversationId={selected?.id ?? null}
+        readyOrder={readyOrder}
+        addonOf={addonOf}
+        onTaken={onTaken}
+        onEdited={onEdited}
+      />
     </Box>
   );
 }

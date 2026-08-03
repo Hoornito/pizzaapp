@@ -49,4 +49,10 @@ export interface WAStatus {
   recipient_id: string;
 }
 
-export type WAConversationState = 'MENU' | 'AWAITING_OPTION' | 'ORDER_LINK_SENT' | 'CHECKING_ORDER';
+export type WAConversationState =
+  | 'MENU'
+  | 'AWAITING_OPTION'
+  | 'ORDER_LINK_SENT'
+  | 'CHECKING_ORDER'
+  // Tomando el pedido por chat con la IA.
+  | 'AI_ORDERING';

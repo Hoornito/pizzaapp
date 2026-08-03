@@ -111,6 +111,18 @@ export async function processIncomingMessage(from: string, message: WAMessage): 
     message.interactive?.button_reply?.id?.toLowerCase() ||
     message.interactive?.list_reply?.id?.toLowerCase() ||
     '';
+  // Texto tal cual lo escribió el cliente (para el parser de IA).
+  const rawText = message.text?.body?.trim() || '';
+
+  // Modo pedido por chat: derivamos al flujo con IA (import dinámico para evitar
+  // un ciclo de imports con wa-order-flow).
+  if (state === 'AI_ORDERING') {
+    if (message.type === 'text' && rawText) {
+      const { handleAIOrder } = await import('./wa-order-flow.service');
+      await handleAIOrder({ id: conversation.id, phone: conversation.phone, context: conversation.context }, rawText);
+    }
+    return;
+  }
 
   switch (state) {
     case 'MENU':
@@ -126,8 +138,16 @@ export async function processIncomingMessage(from: string, message: WAMessage): 
 async function handleMenuState(from: string, text: string, _message: WAMessage): Promise<void> {
   if (text === '1' || text === 'ver promociones' || text === 'promotions') {
     await sendPromotionsInfo(from);
-  } else if (text === '2' || text === 'realizar pedido' || text === 'order') {
-    await sendOrderLink(from);
+  } else if (text === '2' || text === 'realizar pedido' || text === 'hacer pedido' || text === 'order') {
+    // Entramos al modo pedido por chat con IA.
+    const { isAIEnabled } = await import('@/lib/anthropic');
+    if (isAIEnabled()) {
+      await updateConversationState(from, 'AI_ORDERING');
+      await sendText(from, '🍕 ¡Genial! Contame qué querés pedir y te lo voy armando. Podés escribirlo como quieras (ej: "una grande de muzza al molde y una coca").');
+    } else {
+      // Sin IA configurada: caemos al link de compra de siempre.
+      await sendOrderLink(from);
+    }
   } else if (text === '3' || text === 'consultar pedido' || text === 'check_order') {
     await sendText(
       from,
@@ -146,7 +166,7 @@ async function sendWelcomeMenu(to: string): Promise<void> {
     '🍕 *¡Bienvenido a Pizzería!*\n\nSomos la mejor pizzería de la ciudad. ¿Qué querés hacer?',
     [
       { id: 'promotions', title: '🎁 Ver Promociones' },
-      { id: 'order', title: '🛒 Realizar Pedido' },
+      { id: 'order', title: '🛒 Hacer Pedido' },
       { id: 'check_order', title: '📦 Consultar Pedido' },
     ]
   );
