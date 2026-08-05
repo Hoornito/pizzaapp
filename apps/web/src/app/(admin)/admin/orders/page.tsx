@@ -102,6 +102,8 @@ export default function AdminOrdersPage() {
   const [rowsPerPage, setRowsPerPage] = useState(12);
   const [total, setTotal] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Tiempo estimado que el local escribe en cada tarjeta antes de confirmar.
+  const [etaDraft, setEtaDraft] = useState<Record<string, string>>({});
   const [drivers, setDrivers] = useState<any[]>([]);
   const [soundOn, setSoundOn] = useState(true);
   const soundOnRef = useRef(true);
@@ -180,17 +182,31 @@ export default function AdminOrdersPage() {
     };
   }, [socket, tab, page, rowsPerPage, statusFilter, date, deliveredMode]);
 
-  const changeStatus = async (id: string, status: string, okMsg: string): Promise<boolean> => {
+  const changeStatus = async (
+    id: string,
+    status: string,
+    okMsg: string,
+    // Minutos que carga el local a mano al confirmar (solo pedidos "lo antes posible").
+    estimatedTime?: number
+  ): Promise<boolean> => {
     setBusyId(id);
     try {
       const res = await fetch(`/api/admin/orders/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, ...(estimatedTime != null ? { estimatedTime } : {}) }),
       });
       const json = await res.json();
       if (!res.ok) { showError(json.error || 'Error al actualizar'); return false; }
       showSuccess(okMsg);
+      // Cerramos el campo de tiempo estimado de ese pedido: ya sea que lo hayan
+      // guardado suelto o mandado al confirmar, a partir de acá manda la etiqueta.
+      setEtaDraft((prev) => {
+        if (prev[id] === undefined) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       loadOrders();
       return true;
     } catch {
@@ -212,7 +228,13 @@ export default function AdminOrdersPage() {
       setPayTarget({ orderId: order.id, total: Number(order.total), method: order.paymentMethod, thenDeliver: true });
       return;
     }
-    changeStatus(order.id, next.status, `${next.label} ✓`);
+    // Al confirmar un pedido "lo antes posible" mandamos el tiempo estimado que
+    // cargó el local: es lo que va a ver el cliente en su pedido.
+    const eta =
+      next.status === 'CONFIRMADO' && !order.scheduledFor
+        ? parseInt(etaDraft[order.id] ?? '', 10)
+        : NaN;
+    changeStatus(order.id, next.status, `${next.label} ✓`, Number.isFinite(eta) && eta > 0 ? eta : undefined);
   };
 
   // Reenvía el pedido a la estación de impresión (QZ Tray). Requiere tener la
@@ -442,15 +464,65 @@ export default function AdminOrdersPage() {
                       <Chip label={order.deliveryType === 'DELIVERY' ? '🛵 Delivery' : '🏪 Retiro'} size="small" variant="outlined" />
                       <Chip label={`${ORDER_PAYMENT_METHOD_EMOJI[order.paymentMethod] || ''} ${ORDER_PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}`} size="small" variant="outlined" />
                       <Chip label={paid ? 'Pagado' : 'Pago pendiente'} size="small" color={paid ? 'success' : 'warning'} />
-                      {order.estimatedTime > 0 && (
+                      {/* Programado: manda el horario del cliente, no hay estimado que cargar. */}
+                      {order.scheduledFor ? (
                         <Chip
                           size="small"
-                          color="info"
-                          variant="outlined"
-                          label={`🕒 aprox ${new Date(new Date(order.createdAt).getTime() + order.estimatedTime * 60000).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} (~${order.estimatedTime} min)`}
+                          color="warning"
+                          label={`🕒 Programado ${new Date(order.scheduledFor).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`}
+                          sx={{ fontWeight: 700 }}
                         />
+                      ) : (
+                        order.estimatedTime > 0 && (
+                          <Tooltip title="Tocá para cambiar el tiempo estimado">
+                            <Chip
+                              size="small"
+                              color="info"
+                              variant="outlined"
+                              onClick={() => setEtaDraft((prev) => ({ ...prev, [order.id]: String(order.estimatedTime) }))}
+                              label={`🕒 aprox ${new Date(new Date(order.createdAt).getTime() + order.estimatedTime * 60000).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} (~${order.estimatedTime} min)`}
+                            />
+                          </Tooltip>
+                        )
                       )}
                     </Box>
+
+                    {/* Tiempo estimado a mano (solo "lo antes posible"). Una vez
+                        cargado el campo desaparece y queda la etiqueta de arriba;
+                        se vuelve a abrir tocándola. */}
+                    {!order.scheduledFor &&
+                      !['ENTREGADO', 'CANCELADO'].includes(order.status) &&
+                      (!(order.estimatedTime > 0) || etaDraft[order.id] !== undefined) && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5 }}>
+                          <TextField
+                            size="small"
+                            type="number"
+                            label="Tiempo estimado (min)"
+                            value={etaDraft[order.id] ?? ''}
+                            onChange={(e) => setEtaDraft((prev) => ({ ...prev, [order.id]: e.target.value }))}
+                            inputProps={{ min: 0, step: 5 }}
+                            sx={{ width: 170 }}
+                          />
+                          {order.status !== 'RECIBIDO' && (
+                            <Button
+                              size="small"
+                              disabled={busy || !etaDraft[order.id]}
+                              onClick={async () => {
+                                const mins = parseInt(etaDraft[order.id] ?? '', 10);
+                                if (!Number.isFinite(mins) || mins <= 0) { showError('Poné los minutos.'); return; }
+                                await changeStatus(order.id, order.status, 'Tiempo estimado guardado ✓', mins);
+                              }}
+                            >
+                              Guardar
+                            </Button>
+                          )}
+                        </Box>
+                      )}
+                    {order.status === 'RECIBIDO' && !order.scheduledFor && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Se le avisa al cliente al confirmar el pedido.
+                      </Typography>
+                    )}
 
                     <Divider sx={{ my: 1.5 }} />
 

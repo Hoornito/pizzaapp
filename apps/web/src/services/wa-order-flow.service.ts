@@ -11,6 +11,7 @@ import { createOrder } from '@/services/order.service';
 import { getWAMenu, norm, type WAMenu } from '@/services/wa-menu.service';
 import { parseOrder, type ParsedDraft, type ParsedItem, type ParserTurn } from '@/services/wa-parser.service';
 import { generatePurchaseToken, logMessage } from '@/services/whatsapp.service';
+import { defaultProvider, type AIProvider } from '@/lib/ai-provider';
 import type { CreateOrderInput } from '@/lib/validators';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -32,7 +33,10 @@ interface ReadyOrderItem {
   unitPrice: number; // precio base del ítem (DB)
   /** Texto del agregado que se cobra (ej "huevo"), o null. */
   extra: string | null;
-  /** Precio del extra POR UNIDAD (lo pone el operador). 0 si no hay/aún sin precio. */
+  /**
+   * Precio del extra POR UNIDAD. Sale solo de la categoría "extras" si el
+   * agregado está cargado ahí; si no, queda en 0 y lo pone el operador.
+   */
   extraPrice: number;
   notes: string | null; // molde / sustituciones (NO el extra)
 }
@@ -66,6 +70,9 @@ interface WAContext {
   // Motivo por el que la IA derivó a una persona (extra a cobrar, consulta de
   // stock, etc.), para mostrárselo al operador en el chat.
   humanReason?: string;
+  // Proveedor de IA fijado para ESTE chat (para comparar Claude vs Gemini con
+  // el mismo pedido). Ausente = el configurado por env.
+  provider?: AIProvider;
 }
 
 const SESSION_TTL_MS = 3 * 60 * 60 * 1000; // 3 h separa pedidos de distintos momentos
@@ -160,7 +167,7 @@ async function setRed(conversationId: string, ctx: WAContext) {
 export async function handleAIOrder(
   conversation: { id: string; phone: string; context: unknown },
   _incomingText: string,
-  opts?: { skipStoreCheck?: boolean }
+  opts?: { skipStoreCheck?: boolean; provider?: AIProvider }
 ): Promise<void> {
   const { id, phone } = conversation;
 
@@ -181,6 +188,10 @@ export async function handleAIOrder(
 
   const menu = await getWAMenu();
   const ctx = loadContext(conversation.context);
+  // Proveedor de IA: el que pidió el simulador manda y queda fijado en el chat;
+  // si no, el que ya tenía; si no, el de la configuración.
+  if (opts?.provider) ctx.provider = opts.provider;
+  const provider = ctx.provider ?? defaultProvider();
   // Límite de sesión: si venció, arranca un pedido nuevo (mirando un ratito atrás
   // para no dejar afuera el mensaje que acaba de entrar).
   const startedAt =
@@ -191,7 +202,7 @@ export async function handleAIOrder(
 
   // El mensaje entrante ya quedó guardado en el hilo antes de llamarnos.
   const history = await buildHistory(id, startedAt);
-  const draft = await parseOrder(menu.menuText, history);
+  const draft = await parseOrder(menu.menuText, history, provider);
 
   // IA no disponible / falló → derivamos a una persona.
   if (!draft) {
@@ -201,14 +212,15 @@ export async function handleAIOrder(
   }
 
   if (draft.intent === 'cancel') {
-    await saveContext(id, { session: { startedAt: Date.now() } });
+    await saveContext(id, { session: { startedAt: Date.now() }, provider: ctx.provider });
     await botSay(id, phone, draft.reply || 'Listo, cancelé el pedido. Cuando quieras arrancamos de nuevo 🍕');
     return;
   }
 
   // El cliente pregunta algo fuera de alcance (stock, reclamos…) → 🔴. Un extra a
-  // cobrar NO frena acá: lo maneja respondToDraft (sigue tomando y frena al final).
-  if (draft.needsHuman && !hasPaidExtra(draft)) {
+  // cobrar NO frena acá: lo maneja respondToDraft (le pone precio solo, y si no lo
+  // tiene cargado frena recién al final).
+  if (draft.needsHuman && !hasExtra(draft)) {
     ctx.humanReason = draft.humanReason?.trim() || draft.reply || 'Consulta fuera del menú';
     await setRed(id, ctx);
     await botSay(id, phone, draft.reply || 'Buena pregunta 🙌 Dejame que te confirma una persona en un ratito.');
@@ -225,34 +237,37 @@ export async function handleAIOrder(
   await respondToDraft({ id, phone }, menu, draft, ctx);
 }
 
-function hasPaidExtra(draft: ParsedDraft): boolean {
+/** ¿El pedido suma algún agregado que se cobra? */
+function hasExtra(draft: ParsedDraft): boolean {
   return draft.items.some((it) => it.extra && it.extra.trim());
 }
 
-/** Lista de extras del pedido (ej "huevo, panceta"). */
-function extraList(draft: ParsedDraft): string {
-  return draft.items.filter((i) => i.extra && i.extra.trim()).map((i) => i.extra!.trim()).join(', ');
-}
-/** Motivo legible para el operador cuando hay un extra a cobrar. */
-function extraReason(draft: ParsedDraft): string {
-  if (draft.humanReason && draft.humanReason.trim()) return draft.humanReason.trim();
-  const list = extraList(draft);
-  return list ? `Extra a cobrar: ${list}` : 'Extra a cobrar';
+/** Agregados del pedido armado que quedaron SIN precio (no están en "extras"). */
+function unpricedExtras(ro: ReadyOrder): string[] {
+  return ro.items.filter((it) => it.extra && !it.extraPrice).map((it) => it.extra!);
 }
 
 /**
- * El pedido tiene un agregado que se cobra y YA está completo: lo deja armado con
- * los precios de base y pasa a 🔴 para que una persona le ponga el precio del
+ * El pedido está completo pero tiene agregados sin precio cargado: lo deja armado
+ * con los precios de base y pasa a 🔴 para que una persona le ponga el precio del
  * extra (botón Editar) y lo tome. No hay que reactivar el bot para esto.
+ * (Si el agregado está cargado en la categoría "extras", esto no pasa: el pedido
+ * sigue solo y queda 🟢.)
  */
-async function stageExtra(id: string, phone: string, ctx: WAContext, readyOrder: ReadyOrder, draft: ParsedDraft): Promise<void> {
+async function stageExtra(
+  id: string,
+  phone: string,
+  ctx: WAContext,
+  readyOrder: ReadyOrder,
+  pending: string[]
+): Promise<void> {
   ctx.flow = 'needs_human';
   ctx.addonOf = undefined;
   ctx.readyOrder = readyOrder;
-  ctx.humanReason = extraReason(draft);
+  const list = pending.join(', ');
+  ctx.humanReason = list ? `Extra sin precio: ${list}` : 'Extra a cobrar';
   await saveContext(id, ctx);
   await pauseBot(id);
-  const list = extraList(draft);
   await botSay(id, phone, `El agregado${list ? ` de ${list}` : ''} te lo confirma una persona con el precio 🙌 En un ratito seguimos.`);
 }
 
@@ -329,9 +344,10 @@ async function assembleOrder(menu: WAMenu, draft: ParsedDraft): Promise<Assemble
   };
 }
 
-/** Etiqueta con cantidad ("2× Muzzarella"), sin duplicar el "×". */
+/** Etiqueta con cantidad y agregado ("2× Muzzarella + huevo"). */
 function qtyLabel(it: ReadyOrderItem): string {
-  return it.quantity > 1 ? `${it.quantity}× ${it.label}` : it.label;
+  const base = it.quantity > 1 ? `${it.quantity}× ${it.label}` : it.label;
+  return it.extra ? `${base} + ${it.extra}` : base;
 }
 
 /** Resumen corto con el total (desde la DB) para que el cliente confirme. */
@@ -383,9 +399,11 @@ async function respondToDraft(
     return;
   }
   // a.status === 'ready': el pedido está COMPLETO.
-  // Con EXTRA que se cobra → 🔴 armado para ponerle el precio (una sola vez, al final).
-  if (hasPaidExtra(draft)) {
-    await stageExtra(id, phone, ctx, a.readyOrder, draft);
+  // Los extras cargados en la categoría "extras" ya vienen con precio: el pedido
+  // sigue solo. Sólo frena (🔴) si quedó algún agregado sin precio.
+  const pending = unpricedExtras(a.readyOrder);
+  if (pending.length) {
+    await stageExtra(id, phone, ctx, a.readyOrder, pending);
     return;
   }
   // Sin extra → 🟢: el botón "Tomar pedido" queda disponible aunque el cliente no
@@ -462,6 +480,7 @@ export async function takeReadyOrder(conversationId: string, userId: string): Pr
   await pauseBot(conversationId, false);
   await saveContext(conversationId, {
     session: { startedAt: Date.now() },
+    provider: ctx.provider,
     lastOrder: {
       number: order.orderNumber,
       at: Date.now(),
@@ -547,6 +566,7 @@ export async function takeAddonOrder(conversationId: string, userId: string): Pr
   await pauseBot(conversationId, false);
   await saveContext(conversationId, {
     session: { startedAt: Date.now() },
+    provider: ctx.provider,
     lastOrder: { ...ctx.lastOrder!, at: Date.now() },
   });
 
@@ -618,10 +638,10 @@ export async function resumeAI(conversationId: string): Promise<void> {
   const history = await buildHistory(conversationId, startedAt);
   if (!history.length) return;
 
-  const draft = await parseOrder(menu.menuText, history);
+  const draft = await parseOrder(menu.menuText, history, ctx.provider ?? defaultProvider());
   if (!draft) return; // seguimos con la persona; no forzamos nada
 
-  if (draft.needsHuman && !hasPaidExtra(draft)) {
+  if (draft.needsHuman && !hasExtra(draft)) {
     ctx.humanReason = draft.humanReason?.trim() || draft.reply || 'Consulta fuera del menú';
     await setRed(conversationId, ctx);
     return;
@@ -672,6 +692,47 @@ function findByName<T extends { name: string }>(list: T[], name: string): T | un
   );
 }
 
+/**
+ * Busca un agregado en la categoría "extras". El texto del modelo puede venir
+ * como "extra de huevo" o "huevo", así que sacamos el prefijo y comparamos.
+ * Prioriza el nombre MÁS LARGO contenido en el texto, para que "doble muzzarella"
+ * no caiga en "muzzarella" si ambos están cargados.
+ */
+function findExtraProduct(extras: ProductWithCategory[], text: string): ProductWithCategory | undefined {
+  const target = norm(text).replace(/^(extra|extras|agregado|adicional)\s+/, '').replace(/^de\s+/, '').trim();
+  if (!target) return undefined;
+
+  const exact = extras.find((e) => norm(e.name) === target);
+  if (exact) return exact;
+
+  const contained = extras
+    .filter((e) => target.includes(norm(e.name)))
+    .sort((a, b) => b.name.length - a.name.length);
+  if (contained.length) return contained[0];
+
+  // Último intento al revés: el cliente dijo menos de lo que dice el nombre
+  // cargado (ej "panceta" → "Panceta ahumada").
+  return extras
+    .filter((e) => norm(e.name).includes(target))
+    .sort((a, b) => a.name.length - b.name.length)[0];
+}
+
+/**
+ * Precio por unidad del agregado, desde la categoría "extras". Si el extra tiene
+ * precios por tamaño cargados (como las pizzas), usa el del tamaño del ítem.
+ * Devuelve 0 si el agregado no está cargado → el pedido va a 🔴 y lo pone una persona.
+ */
+function resolveExtraPrice(menu: WAMenu, extra: string | null, size: PizzaSize | null): number {
+  if (!extra) return 0;
+  const prod = findExtraProduct(menu.extras, extra);
+  if (!prod) return 0;
+  if (size) {
+    const bySize = flavorPrice(prod, size);
+    if (bySize != null) return bySize;
+  }
+  return toNumber(prod.price);
+}
+
 function resolveItem(menu: WAMenu, item: ParsedItem): ReadyOrderItem | { error: string } {
   const qty = Math.max(1, Math.floor(item.quantity || 1));
   const extra = item.extra && item.extra.trim() ? item.extra.trim() : null;
@@ -679,7 +740,7 @@ function resolveItem(menu: WAMenu, item: ParsedItem): ReadyOrderItem | { error: 
   if (item.kind === 'promo') {
     const promo = findByName(menu.promotions, item.name);
     if (!promo) return { error: `promo "${item.name}"` };
-    return { label: promo.name, productId: null, promotionId: promo.id, quantity: qty, unitPrice: promo.price, extra, extraPrice: 0, notes: composeNotes(item.notes, item.molde) };
+    return { label: promo.name, productId: null, promotionId: promo.id, quantity: qty, unitPrice: promo.price, extra, extraPrice: resolveExtraPrice(menu, extra, null), notes: composeNotes(item.notes, item.molde) };
   }
 
   if (item.kind === 'pizza') {
@@ -696,12 +757,12 @@ function resolveItem(menu: WAMenu, item: ParsedItem): ReadyOrderItem | { error: 
     const unitPrice = pizzaPrice(flavors.map((f) => flavorPrice(f, size)!));
     const flavorLabel = flavors.length === 1 ? flavors[0].name : flavors.map((f) => `½ ${f.name}`).join(' · ');
     const baseNote = `${PIZZA_SIZE_LABELS[size]} · ${flavorLabel}`;
-    return { label: `${baseNote}${item.molde ? ' (al molde)' : ''}`, productId: flavors[0].id, promotionId: null, quantity: qty, unitPrice, extra, extraPrice: 0, notes: composeNotes(baseNote, item.molde) };
+    return { label: `${baseNote}${item.molde ? ' (al molde)' : ''}`, productId: flavors[0].id, promotionId: null, quantity: qty, unitPrice, extra, extraPrice: resolveExtraPrice(menu, extra, size), notes: composeNotes(baseNote, item.molde) };
   }
 
   const prod = findByName(menu.products, item.name);
   if (!prod) return { error: `"${item.name}"` };
-  return { label: prod.name, productId: prod.id, promotionId: null, quantity: qty, unitPrice: toNumber(prod.price), extra, extraPrice: 0, notes: composeNotes(item.notes, item.molde) };
+  return { label: prod.name, productId: prod.id, promotionId: null, quantity: qty, unitPrice: toNumber(prod.price), extra, extraPrice: resolveExtraPrice(menu, extra, null), notes: composeNotes(item.notes, item.molde) };
 }
 
 async function getDefaultDeliveryFee(): Promise<number> {

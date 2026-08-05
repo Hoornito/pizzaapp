@@ -17,6 +17,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useProducts, useCategories, usePromotions } from '@/hooks/useProducts';
 import { useDebounce } from '@/hooks/useDebounce';
+import { HIDDEN_MENU_CATEGORY_SLUGS } from '@/lib/constants';
 
 /** La docena se arma desde su propia card (categoría Empanadas), no como promo suelta. */
 const DOZEN_PROMO_ID = 'promo-docena-empanadas';
@@ -27,9 +28,24 @@ export function ProductGrid() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
 
-  const { categories } = useCategories();
-  const { products, loading } = useProducts({ available: true });
+  const { categories: allCategories } = useCategories();
+  const { products: allProducts, loading } = useProducts({ available: true });
   const { promotions } = usePromotions(true);
+
+  // Los "Agregados" (extras a cobrar) son de uso interno: se cargan a mano para
+  // que el bot les ponga precio, y no se muestran en el menú del cliente.
+  const categories = useMemo(
+    () => allCategories.filter((c) => !HIDDEN_MENU_CATEGORY_SLUGS.includes(c.slug)),
+    [allCategories]
+  );
+  const hiddenCategoryIds = useMemo(
+    () => new Set(allCategories.filter((c) => HIDDEN_MENU_CATEGORY_SLUGS.includes(c.slug)).map((c) => c.id)),
+    [allCategories]
+  );
+  const products = useMemo(
+    () => allProducts.filter((p) => !hiddenCategoryIds.has(p.categoryId)),
+    [allProducts, hiddenCategoryIds]
+  );
 
   // Promociones a mostrar en la pestaña (la docena de empanadas tiene su card aparte).
   const promosForTab = useMemo(

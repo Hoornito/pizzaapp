@@ -30,6 +30,11 @@ services:
       SMTP_FROM: ${SMTP_FROM:-Pizzería <noreply@pizzeria.com>}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      WA_AI_PROVIDER: ${WA_AI_PROVIDER:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_PARSER_MODEL: ${GEMINI_PARSER_MODEL:-}
+      GEMINI_EDITOR_MODEL: ${GEMINI_EDITOR_MODEL:-}
+      GEMINI_THINKING_BUDGET: ${GEMINI_THINKING_BUDGET:-}
     volumes:
       - ./apps/web:/app
       - /app/node_modules

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardActions from '@mui/material/CardActions';
@@ -15,6 +15,7 @@ import { usePromotions } from '@/hooks/useProducts';
 import { useCart } from '@/hooks/useCart';
 import { formatCurrency, formatDozensNotes } from '@/lib/utils';
 import { EmpanadaDozenModal } from './EmpanadaDozenModal';
+import { ProductDetailModal } from './ProductDetailModal';
 
 /** Id de la promoción "Docena de Empanadas" definida en el seed. */
 const DOZEN_PROMO_ID = 'promo-docena-empanadas';
@@ -27,6 +28,8 @@ export function EmpanadaDozenCard({ empanadas }: EmpanadaDozenCardProps) {
   const { promotions } = usePromotions(true);
   const { addItemAndOpen } = useCart();
   const [open, setOpen] = useState(false);
+  // Ficha: se abre al tocar la foto.
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const promo = useMemo(
     () =>
@@ -62,7 +65,14 @@ export function EmpanadaDozenCard({ empanadas }: EmpanadaDozenCardProps) {
           component="img"
           image={promo.image || '/images/placeholder-pizza.jpg'}
           alt={promo.name}
-          sx={{ objectFit: 'cover', height: { xs: 110, sm: 180 } }}
+          onClick={() => setDetailOpen(true)}
+          role="button"
+          tabIndex={0}
+          aria-label={`Ver detalle de ${promo.name}`}
+          onKeyDown={(e: KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailOpen(true); }
+          }}
+          sx={{ objectFit: 'cover', height: { xs: 110, sm: 180 }, cursor: 'pointer' }}
         />
         <CardContent sx={{ flexGrow: 1, p: { xs: 1.25, sm: 2 } }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1, gap: 0.5 }}>
@@ -93,6 +103,18 @@ export function EmpanadaDozenCard({ empanadas }: EmpanadaDozenCardProps) {
           </Button>
         </CardActions>
       </Card>
+
+      <ProductDetailModal
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        name={promo.name}
+        description={promo.description || 'Elegí 12 empanadas y combiná los sabores a tu gusto.'}
+        image={promo.image}
+        price={dozenPrice}
+        priceNote="/ docena"
+        addLabel="Armar docena"
+        onAdd={() => setOpen(true)}
+      />
 
       <EmpanadaDozenModal
         open={open}

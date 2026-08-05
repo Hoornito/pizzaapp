@@ -12,6 +12,7 @@ import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
+import { EXTRAS_CATEGORY_SLUG } from '@/lib/constants';
 
 interface ProductFormProps {
   initialData?: any;
@@ -68,6 +69,10 @@ export function ProductForm({ initialData, onSubmit }: ProductFormProps) {
 
   const selectedCategory = categories.find((c) => c.id === form.categoryId);
   const isPizza = selectedCategory?.slug === 'pizzas';
+  // Los agregados también pueden cobrarse distinto según el tamaño de la pizza
+  // (un huevo en una grande no vale lo mismo que en una individual).
+  const isExtra = selectedCategory?.slug === EXTRAS_CATEGORY_SLUG;
+  const hasSizePrices = isPizza || isExtra;
 
   const toPriceOrNull = (v: string) => (v !== '' && !isNaN(parseFloat(v)) ? parseFloat(v) : null);
 
@@ -78,10 +83,10 @@ export function ProductForm({ initialData, onSubmit }: ProductFormProps) {
       await onSubmit({
         ...form,
         price: parseFloat(form.price),
-        // Precios por tamaño solo para pizzas; en otros productos van null.
-        priceSmall: isPizza ? toPriceOrNull(form.priceSmall) : null,
-        priceMedium: isPizza ? toPriceOrNull(form.priceMedium) : null,
-        priceLarge: isPizza ? toPriceOrNull(form.priceLarge) : null,
+        // Precios por tamaño solo para pizzas y agregados; en el resto van null.
+        priceSmall: hasSizePrices ? toPriceOrNull(form.priceSmall) : null,
+        priceMedium: hasSizePrices ? toPriceOrNull(form.priceMedium) : null,
+        priceLarge: hasSizePrices ? toPriceOrNull(form.priceLarge) : null,
       });
     } finally {
       setSubmitting(false);
@@ -139,10 +144,12 @@ export function ProductForm({ initialData, onSubmit }: ProductFormProps) {
           />
         </Box>
 
-        {isPizza && (
+        {hasSizePrices && (
           <Box>
             <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-              🍕 Precios por tamaño (dejá vacío el tamaño que no ofrecés)
+              {isExtra
+                ? '➕ Precio del agregado por tamaño (opcional: vacío = se cobra el precio base)'
+                : '🍕 Precios por tamaño (dejá vacío el tamaño que no ofrecés)'}
             </Typography>
             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
               <TextField
@@ -171,7 +178,9 @@ export function ProductForm({ initialData, onSubmit }: ProductFormProps) {
               />
             </Box>
             <Typography variant="caption" color="text.secondary">
-              El precio "base" de arriba se usa como referencia; en el menú la pizza se cobra por tamaño.
+              {isExtra
+                ? 'El bot cobra el precio del tamaño de la pizza; si está vacío, usa el precio base de arriba.'
+                : 'El precio "base" de arriba se usa como referencia; en el menú la pizza se cobra por tamaño.'}
             </Typography>
           </Box>
         )}

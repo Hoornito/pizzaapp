@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { eventBus } from '@/lib/event-bus';
 import { emitOrderCreated, emitOrderStatusChanged, emitNotification, emitPrintOrder } from '@/lib/socket-server';
 import { getOpenCashRegister } from '@/services/finance.service';
+import { isValidSlot } from '@/services/schedule.service';
 import { sendText } from '@/lib/whatsapp';
 import { sanitizePhone } from '@/lib/utils';
 import type { CreateOrderInput, UpdateOrderStatusInput } from '@/lib/validators';
@@ -166,10 +167,9 @@ export async function getOrderByNumber(orderNumber: string) {
   return prisma.order.findUnique({ where: { orderNumber }, include: ORDER_INCLUDE });
 }
 
-// Tiempo estimado de entrega. Por ahora FIJO en 30 min: guardamos startedAt /
-// finishedAt en cada pedido para, más adelante, calcular un estimado real por
-// tipo de pedido (cantidad de pizzas/empanadas, complejidad, envío).
-const FIXED_ETA_MINUTES = 30;
+// El tiempo estimado ya NO se calcula solo: lo carga a mano el local desde la
+// tarjeta del pedido, al confirmarlo. Seguimos guardando startedAt / finishedAt
+// en cada pedido para, más adelante, poder estimarlo por tipo de pedido.
 
 export async function createOrder(
   userId: string,
@@ -191,8 +191,17 @@ export async function createOrder(
   // No permitir vender postres sin stock suficiente (las demás categorías no controlan stock).
   if (!isTest) await assertPostresStock(data.items);
 
-  // Horario estimado de entrega: por ahora fijo (ver FIXED_ETA_MINUTES).
-  const estimatedTime = FIXED_ETA_MINUTES;
+  // Pedido programado: validamos contra las franjas vigentes AHORA. El cliente
+  // pudo dejar el checkout abierto un rato largo y la franja que eligió ya puede
+  // haber pasado; en ese caso no lo dejamos pasar como si nada.
+  let scheduledFor: Date | null = null;
+  if (data.scheduledFor) {
+    const when = new Date(data.scheduledFor);
+    if (!(await isValidSlot(when))) {
+      throw new Error('El horario que elegiste ya no está disponible. Elegí otro.');
+    }
+    scheduledFor = when;
+  }
 
   // Para delivery sin addressId, creamos la dirección a partir de los datos inline.
   let addressId = data.addressId;
@@ -226,7 +235,9 @@ export async function createOrder(
     userId,
     addressId,
     isTest,
-    estimatedTime,
+    // Sin tiempo estimado al crear: lo carga el local a mano al confirmar.
+    estimatedTime: null,
+    scheduledFor,
     // Inicio del pedido (para medir la demora real hasta la entrega).
     startedAt: new Date(),
     status: initialStatus,

@@ -16,7 +16,8 @@ import { useProducts, useCategories } from '@/hooks/useProducts';
 import { formatCurrency } from '@/lib/utils';
 import { promoEmpanadaCount, formatPromoNotes } from '@/lib/promos';
 import { EmpanadaPickModal } from '@/components/products/EmpanadaPickModal';
-import { useMemo, useState } from 'react';
+import { ProductDetailModal } from '@/components/products/ProductDetailModal';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 
 interface PromotionCardProps {
   promotion: PromotionWithItems;
@@ -27,6 +28,8 @@ export function PromotionCard({ promotion }: PromotionCardProps) {
   const { products } = useProducts({ available: true });
   const { categories } = useCategories();
   const [pickOpen, setPickOpen] = useState(false);
+  // Ficha de la promo: se abre al tocar la foto.
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const empanadaCount = promoEmpanadaCount(promotion.id);
   const empanadasCategoryId = useMemo(() => categories.find((c) => c.slug === 'empanadas')?.id, [categories]);
@@ -103,7 +106,14 @@ export function PromotionCard({ promotion }: PromotionCardProps) {
           height="180"
           image={promotion.image || '/images/placeholder-promo.jpg'}
           alt={promotion.name}
-          sx={{ objectFit: 'cover' }}
+          onClick={() => setDetailOpen(true)}
+          role="button"
+          tabIndex={0}
+          aria-label={`Ver detalle de ${promotion.name}`}
+          onKeyDown={(e: KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailOpen(true); }
+          }}
+          sx={{ objectFit: 'cover', cursor: 'pointer' }}
         />
       </Box>
 
@@ -158,6 +168,18 @@ export function PromotionCard({ promotion }: PromotionCardProps) {
           {empanadaCount > 0 ? `Elegir ${empanadaCount} empanadas` : 'Agregar promoción'}
         </Button>
       </CardActions>
+
+      <ProductDetailModal
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        name={promotion.name}
+        description={promotion.description}
+        image={promotion.image}
+        price={Number(promotion.promotionalPrice)}
+        priceNote={discountPct > 0 ? `${discountPct}% de descuento` : null}
+        addLabel={empanadaCount > 0 ? `Elegir ${empanadaCount} empanadas` : 'Agregar a mi pedido'}
+        onAdd={handleAdd}
+      />
 
       {empanadaCount > 0 && (
         <EmpanadaPickModal

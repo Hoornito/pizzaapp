@@ -5,7 +5,9 @@ import { businessHoursSchema } from '@/lib/validators';
 import { z } from 'zod';
 
 export async function GET() {
-  const hours = await prisma.businessHours.findMany({ orderBy: { dayOfWeek: 'asc' } });
+  const hours = await prisma.businessHours.findMany({
+    orderBy: [{ dayOfWeek: 'asc' }, { shift: 'asc' }],
+  });
   return NextResponse.json({ success: true, data: hours });
 }
 
@@ -21,10 +23,11 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Datos inválidos', details: parsed.error.flatten() }, { status: 400 });
   }
 
+  // La clave es día + turno: cada día puede tener mediodía y noche por separado.
   const updated = await Promise.all(
     parsed.data.map((h) =>
       prisma.businessHours.upsert({
-        where: { dayOfWeek: h.dayOfWeek },
+        where: { dayOfWeek_shift: { dayOfWeek: h.dayOfWeek, shift: h.shift } },
         update: { openTime: h.openTime, closeTime: h.closeTime, isOpen: h.isOpen },
         create: h,
       })

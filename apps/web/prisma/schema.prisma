@@ -315,6 +315,9 @@ model Order {
   phone          String?
   whatsappToken  String?
   estimatedTime  Int?
+  // Pedido programado: horario elegido por el cliente ("Programar para después").
+  // Null = "lo antes posible" (el local carga el tiempo estimado a mano).
+  scheduledFor   DateTime?
   // Marcas de tiempo para medir la demora real: inicio (creación/entrada a
   // cocina) y fin (entregado). Sirven para calcular a futuro un tiempo estimado
   // por tipo de pedido (pizzas/empanadas/complejidad/envío).
@@ -408,13 +411,16 @@ model DeliveryFee {
 model BusinessHours {
   id        String   @id @default(cuid())
   dayOfWeek Int
+  // Turno del día: 0 = mediodía, 1 = noche. Existe porque el local abre en dos
+  // tramos (ej. 11–15 y 18–00) y con una sola fila por día no se podía expresar.
+  shift     Int      @default(0)
   openTime  String
   closeTime String
   isOpen    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([dayOfWeek])
+  @@unique([dayOfWeek, shift])
 }
 
 // ─── WhatsApp ─────────────────────────────────────────────────────────────────
@@ -465,6 +471,51 @@ model WhatsAppMessage {
 
   @@index([conversationId, createdAt])
   @@index([waMessageId])
+}
+
+// ─── Entrenamiento del bot de WhatsApp ────────────────────────────────────────
+
+// Instrucciones del bot (el texto que antes vivía en wa-bot-instructions.md).
+// Cada guardado —tuyo a mano o destilado por la IA— crea una VERSIÓN nueva: la
+// última es la activa y las anteriores quedan para restaurar. En producción el
+// archivo vive dentro de la imagen Docker, así que la DB es el único lugar donde
+// una edición sobrevive a un deploy.
+model BotInstruction {
+  id          String   @id @default(cuid())
+  version     Int      @unique
+  content     String   @db.Text
+  // De dónde salió esta versión: 'seed' | 'manual' | 'destilado'.
+  source      String   @default("manual")
+  // Nota corta para el historial ("destilado de 8 correcciones").
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Una corrección del operador: "esto dijo el bot / esto tendría que haber dicho".
+// Mientras está pendiente se le pasa a la IA como ejemplo (few-shot). Al destilar
+// se absorbe en las instrucciones y queda marcada como aplicada.
+model WABotCorrection {
+  id             String    @id @default(cuid())
+  conversationId String?
+  // Últimos turnos del chat que llevaron a esa respuesta (ParserTurn[]).
+  context        Json
+  // Lo que el bot respondió.
+  badReply       String    @db.Text
+  // Lo que tendría que haber respondido.
+  goodReply      String    @db.Text
+  // Por qué estaba mal (opcional, ayuda mucho al destilar).
+  note           String?
+  // Cuándo se absorbió en las instrucciones (null = pendiente).
+  appliedAt      DateTime?
+  // Versión de instrucciones que la absorbió.
+  appliedVersion Int?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+
+  @@index([appliedAt, createdAt])
 }
 
 model WhatsAppToken {

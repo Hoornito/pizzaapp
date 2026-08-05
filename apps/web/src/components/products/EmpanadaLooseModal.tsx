@@ -16,6 +16,7 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import CloseIcon from '@mui/icons-material/Close';
 import type { ProductWithCategory } from '@/types/product.types';
 import { formatCurrency, toNumber } from '@/lib/utils';
+import { ProductDetailModal } from './ProductDetailModal';
 
 export interface LooseSelection {
   productId: string;
@@ -34,9 +35,11 @@ interface Props {
 /** Empanadas sueltas: cantidad libre por gusto, se suman al precio individual. */
 export function EmpanadaLooseModal({ open, onClose, empanadas, onConfirm }: Props) {
   const [qty, setQty] = useState<Record<string, number>>({});
+  // Ficha del gusto (se abre tocando la foto), sin perder lo ya elegido.
+  const [detail, setDetail] = useState<ProductWithCategory | null>(null);
 
   useEffect(() => {
-    if (open) setQty({});
+    if (open) { setQty({}); setDetail(null); }
   }, [open]);
 
   const change = (id: string, delta: number) =>
@@ -83,8 +86,10 @@ export function EmpanadaLooseModal({ open, onClose, empanadas, onConfirm }: Prop
           sx={{
             maxHeight: { xs: '45vh', sm: 360 },
             overflowY: 'auto',
+            // Nunca scroll horizontal: si no entran dos por fila, se apilan.
+            overflowX: 'hidden',
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
             gap: 1,
             alignContent: 'start',
           }}
@@ -100,10 +105,38 @@ export function EmpanadaLooseModal({ open, onClose, empanadas, onConfirm }: Prop
                   borderColor: n > 0 ? 'primary.main' : 'divider', bgcolor: n > 0 ? 'action.hover' : 'background.paper',
                 }}
               >
-                <Avatar src={emp.image || undefined} variant="rounded" sx={{ width: 36, height: 36, bgcolor: 'grey.100', fontSize: '1.1rem' }}>🥟</Avatar>
+                {/* Foto: abre la ficha del gusto con la descripción completa. */}
+                <Avatar
+                  src={emp.image || undefined}
+                  variant="rounded"
+                  onClick={() => setDetail(emp)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Ver detalle de ${emp.name}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail(emp); }
+                  }}
+                  sx={{ width: 52, height: 52, bgcolor: 'grey.100', fontSize: '1.4rem', cursor: 'pointer', flexShrink: 0 }}
+                >
+                  🥟
+                </Avatar>
                 <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                   <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.2 }}>{emp.name}</Typography>
-                  <Typography variant="caption" color="text.secondary">{formatCurrency(toNumber(emp.price))}</Typography>
+                  {emp.description && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden', lineHeight: 1.25,
+                      }}
+                    >
+                      {emp.description}
+                    </Typography>
+                  )}
+                  <Typography variant="caption" color="primary.main" fontWeight={700} sx={{ display: 'block' }}>
+                    {formatCurrency(toNumber(emp.price))}
+                  </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
                   <IconButton size="small" onClick={() => change(emp.id, -1)} disabled={n === 0} sx={{ bgcolor: 'grey.100' }}><RemoveIcon fontSize="small" /></IconButton>
@@ -127,6 +160,19 @@ export function EmpanadaLooseModal({ open, onClose, empanadas, onConfirm }: Prop
           Agregar
         </Button>
       </DialogActions>
+
+      {/* Ficha del gusto: solo informativa, la cantidad se maneja con los contadores. */}
+      <ProductDetailModal
+        open={!!detail}
+        onClose={() => setDetail(null)}
+        name={detail?.name ?? ''}
+        description={detail?.description}
+        image={detail?.image}
+        price={detail ? toNumber(detail.price) : null}
+        priceNote="por unidad"
+        addLabel="Agregar al pedido"
+        onAdd={() => detail && change(detail.id, 1)}
+      />
     </Dialog>
   );
 }

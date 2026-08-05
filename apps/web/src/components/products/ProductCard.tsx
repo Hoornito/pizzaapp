@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardActions from '@mui/material/CardActions';
@@ -15,6 +15,7 @@ import { useCart } from '@/hooks/useCart';
 import { formatCurrency } from '@/lib/utils';
 import { useSnackbar } from '@/app/snackbar-context';
 import { DobleCambalacheDialog } from './DobleCambalacheDialog';
+import { ProductDetailModal } from './ProductDetailModal';
 
 interface ProductCardProps {
   product: ProductWithCategory;
@@ -26,6 +27,8 @@ export function ProductCard({ product }: ProductCardProps) {
   // La Doble Cambalache pide los gustos antes de agregarse.
   const isDoble = /doble cambalache/i.test(product.name);
   const [dobleOpen, setDobleOpen] = useState(false);
+  // Ficha del producto: se abre al tocar la foto (desktop y mobile).
+  const [detailOpen, setDetailOpen] = useState(false);
 
   // Solo los postres controlan stock. No mostramos la cantidad al cliente, pero
   // no dejamos agregar más de lo disponible (el servidor igual valida al cobrar).
@@ -76,7 +79,14 @@ export function ProductCard({ product }: ProductCardProps) {
         component="img"
         image={product.image || '/images/placeholder-pizza.jpg'}
         alt={product.name}
-        sx={{ objectFit: 'cover', height: { xs: 110, sm: 180 } }}
+        onClick={() => setDetailOpen(true)}
+        role="button"
+        tabIndex={0}
+        aria-label={`Ver detalle de ${product.name}`}
+        onKeyDown={(e: KeyboardEvent) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailOpen(true); }
+        }}
+        sx={{ objectFit: 'cover', height: { xs: 110, sm: 180 }, cursor: 'pointer' }}
       />
       <CardContent sx={{ flexGrow: 1, p: { xs: 1.25, sm: 2 } }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1, gap: 0.5 }}>
@@ -111,6 +121,17 @@ export function ProductCard({ product }: ProductCardProps) {
           {outOfStock ? 'Sin stock' : noMoreStock ? 'Sin más por ahora' : !product.available ? 'No disponible' : 'Agregar'}
         </Button>
       </CardActions>
+      <ProductDetailModal
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        name={product.name}
+        description={product.description}
+        image={product.image}
+        price={Number(product.price)}
+        onAdd={handleAddToCart}
+        addDisabled={!canAdd}
+        addLabel={outOfStock ? 'Sin stock' : noMoreStock ? 'Sin más por ahora' : 'Agregar a mi pedido'}
+      />
       {isDoble && (
         <DobleCambalacheDialog
           open={dobleOpen}

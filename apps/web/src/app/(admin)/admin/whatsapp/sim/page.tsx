@@ -13,7 +13,15 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Tooltip from '@mui/material/Tooltip';
+import IconButton from '@mui/material/IconButton';
 import SendIcon from '@mui/icons-material/Send';
+import EditNoteIcon from '@mui/icons-material/EditNote';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -49,11 +57,26 @@ export default function WhatsAppSimPage() {
   const [busy, setBusy] = useState(false);
   const [takeOpen, setTakeOpen] = useState(false);
   const [aiDisabled, setAiDisabled] = useState(false);
+  // Corrección en curso: mensaje del bot que estamos corrigiendo.
+  // Proveedor de IA con el que responde ESTE chat (para comparar Claude vs Gemini).
+  const [providers, setProviders] = useState<{ id: string; model: string }[]>([]);
+  const [provider, setProvider] = useState<string>('');
+  const [correcting, setCorrecting] = useState<Msg | null>(null);
+  const [goodReply, setGoodReply] = useState('');
+  const [why, setWhy] = useState('');
+  const [savingFix, setSavingFix] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight }); }, [messages]);
   useEffect(() => {
-    fetch('/api/admin/whatsapp/ai', { cache: 'no-store' }).then((r) => r.json()).then((d) => setAiDisabled(!!d.disabled)).catch(() => {});
+    fetch('/api/admin/whatsapp/ai', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        setAiDisabled(!!d.disabled);
+        setProviders(d.providers || []);
+        setProvider(d.defaultProvider || '');
+      })
+      .catch(() => {});
   }, []);
 
   const applyView = (d: View) => {
@@ -80,7 +103,7 @@ export default function WhatsAppSimPage() {
       if (sender === 'cliente') {
         const r = await fetch('/api/admin/whatsapp/sim', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: phone.trim(), text }),
+          body: JSON.stringify({ phone: phone.trim(), text, provider: provider || undefined }),
         });
         const d = await r.json();
         if (!r.ok) { showError(d.error || 'Error en el simulador'); return; }
@@ -147,6 +170,47 @@ export default function WhatsAppSimPage() {
     }
   };
 
+  // ─── Corregir una respuesta del bot ──────────────────────────────────────
+  const openCorrection = (m: Msg) => {
+    setCorrecting(m);
+    setGoodReply('');
+    setWhy('');
+  };
+
+  /** Turnos previos a ese mensaje: es el contexto que llevó a la respuesta mala. */
+  const contextFor = (m: Msg) => {
+    const idx = messages.findIndex((x) => x.id === m.id);
+    return messages
+      .slice(0, idx < 0 ? messages.length : idx)
+      .filter((x) => (x.body ?? '').trim())
+      .map((x) => ({ role: x.direction === 'IN' ? ('user' as const) : ('assistant' as const), text: x.body! }));
+  };
+
+  const saveCorrection = async () => {
+    if (!correcting || !goodReply.trim()) return;
+    setSavingFix(true);
+    try {
+      const r = await fetch('/api/admin/whatsapp/corrections', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: convoId,
+          context: contextFor(correcting),
+          badReply: correcting.body ?? '',
+          goodReply: goodReply.trim(),
+          note: why.trim() || null,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) { showError(d.error || 'No se pudo guardar la corrección'); return; }
+      setCorrecting(null);
+      showSuccess('Corrección guardada — el bot ya la tiene en cuenta');
+    } catch {
+      showError('Error de conexión');
+    } finally {
+      setSavingFix(false);
+    }
+  };
+
   const onTaken = (orderNumber: string) => {
     showSuccess(`Pedido #${orderNumber} enviado a Pedidos ✅`);
     setTakeOpen(false);
@@ -169,6 +233,9 @@ export default function WhatsAppSimPage() {
         <Chip size="small" label="local" color="warning" variant="outlined" />
         {aiDisabled && <Chip size="small" label="IA apagada (global)" color="error" />}
         <Box sx={{ flex: 1 }} />
+        <Button component={Link} href="/admin/whatsapp/bot" size="small" variant="outlined" startIcon={<AutoFixHighIcon />}>
+          Entrenar al bot
+        </Button>
         <Button onClick={toggleGlobalAI} variant={aiDisabled ? 'contained' : 'outlined'} color={aiDisabled ? 'error' : 'inherit'} size="small" startIcon={<PowerSettingsNewIcon />}>
           {aiDisabled ? 'Reactivar IA' : 'Apagar IA (global)'}
         </Button>
@@ -178,6 +245,7 @@ export default function WhatsAppSimPage() {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Escribí como si fueras el cliente y mirá cómo la IA arma el pedido. No hace falta ningún número de WhatsApp
         (las respuestas no salen a ningún lado, quedan acá). Necesita la <b>API key de Anthropic</b> configurada.
+        {' '}Si una respuesta del bot no te gusta, tocá el ✎ al lado de <b>Bot</b> y decile qué tendría que haber dicho.
       </Typography>
 
       <Paper variant="outlined" sx={{ p: 1.5, mb: 2, display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -189,7 +257,28 @@ export default function WhatsAppSimPage() {
           control={<Switch size="small" checked={botPaused} onChange={toggleBot} disabled={busy || !convoId} />}
           label={<Typography variant="body2">{botPaused ? 'Bot a mano' : 'Bot activo'}</Typography>}
         />
+        {providers.length > 1 && (
+          <Tooltip title="Con qué IA responde este chat. Para comparar en serio, reiniciá el chat y repetí el mismo pedido con la otra.">
+            <ToggleButtonGroup
+              size="small" exclusive value={provider}
+              onChange={(_e, v) => v && setProvider(v)}
+              disabled={busy}
+            >
+              {providers.map((p) => (
+                <ToggleButton key={p.id} value={p.id} sx={{ textTransform: 'none', px: 1.25 }}>
+                  {p.id === 'gemini' ? 'Gemini' : 'Claude'}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </Tooltip>
+        )}
         <Box sx={{ flex: 1 }} />
+        {providers.length > 0 && (
+          <Chip
+            size="small" variant="outlined"
+            label={providers.find((p) => p.id === provider)?.model || provider}
+          />
+        )}
         {flow === 'ready' && <Chip color="success" label="🟢 Pedido listo" />}
         {flow === 'needs_human' && <Chip color="error" label={addonOf ? `🔴 Agregado #${addonOf}` : '🔴 Necesita una persona'} />}
       </Paper>
@@ -229,12 +318,20 @@ export default function WhatsAppSimPage() {
           {messages.length === 0 && <Typography color="text.secondary" sx={{ m: 'auto' }}>Mandá el primer mensaje como cliente 👇</Typography>}
           {messages.map((m) => {
             const isCustomer = m.direction === 'IN';
+            const isBot = !isCustomer && !m.sentById;
             const who = isCustomer ? 'Cliente' : m.sentById ? 'Local' : 'Bot';
             return (
               <Box key={m.id} sx={{ alignSelf: isCustomer ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: isCustomer ? 'right' : 'left', px: 0.5 }}>
-                  {who}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 0.5, justifyContent: isCustomer ? 'flex-end' : 'flex-start' }}>
+                  <Typography variant="caption" color="text.secondary">{who}</Typography>
+                  {isBot && (
+                    <Tooltip title="Corregir esta respuesta">
+                      <IconButton size="small" sx={{ p: 0.25 }} onClick={() => openCorrection(m)}>
+                        <EditNoteIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </Box>
                 <Box sx={{
                   bgcolor: isCustomer ? 'primary.light' : m.sentById ? 'warning.light' : 'background.paper',
                   border: '1px solid', borderColor: 'divider', borderRadius: 2, px: 1.5, py: 0.75,
@@ -267,6 +364,43 @@ export default function WhatsAppSimPage() {
           </Button>
         </Box>
       </Paper>
+
+      {/* Corregir una respuesta del bot */}
+      <Dialog open={!!correcting} onClose={() => !savingFix && setCorrecting(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Corregir respuesta
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Se guarda con el contexto del chat. El bot la usa como ejemplo desde el próximo mensaje.
+          </Typography>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="caption" color="text.secondary">El bot respondió:</Typography>
+          <Box sx={{ bgcolor: 'grey.100', border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 1, mb: 2 }}>
+            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{correcting?.body}</Typography>
+          </Box>
+          <TextField
+            label="¿Qué tendría que haber respondido?"
+            value={goodReply}
+            onChange={(e) => setGoodReply(e.target.value)}
+            fullWidth multiline minRows={3} autoFocus
+            placeholder="Escribilo como se lo dirías vos al cliente…"
+          />
+          <TextField
+            label="¿Por qué estaba mal? (opcional)"
+            value={why}
+            onChange={(e) => setWhy(e.target.value)}
+            fullWidth size="small" sx={{ mt: 2 }}
+            placeholder="Ej: se fue de largo, tiene que ser una sola oración"
+            helperText="Ayuda mucho al destilar: es la regla que se va a escribir en las instrucciones."
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCorrecting(null)} disabled={savingFix}>Cancelar</Button>
+          <Button variant="contained" onClick={saveCorrection} disabled={savingFix || !goodReply.trim()}>
+            Guardar corrección
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <OrderReviewDialog
         open={takeOpen}

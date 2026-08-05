@@ -5,6 +5,11 @@ import Anthropic from '@anthropic-ai/sdk';
 // interpretar un pedido a partir de texto libre contra un menú acotado.
 export const WA_PARSER_MODEL = 'claude-haiku-4-5';
 
+// Modelo para reescribir las instrucciones del bot ("Destilar correcciones").
+// Acá sí conviene el más capaz: corre a mano, una vez cada tantas correcciones
+// (centavos por uso), y de su calidad depende cómo se comporta el bot después.
+export const WA_EDITOR_MODEL = 'claude-opus-5';
+
 let cached: Anthropic | null | undefined;
 
 /**

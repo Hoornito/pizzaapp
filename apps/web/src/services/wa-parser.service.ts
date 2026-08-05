@@ -1,6 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { getAnthropic, WA_PARSER_MODEL } from '@/lib/anthropic';
+import { callStructured, defaultProvider, type AIProvider } from '@/lib/ai-provider';
+import { getInstructions } from '@/services/wa-instructions.service';
+import { getCorrectionExamples } from '@/services/wa-corrections.service';
 
 export type ParsedIntent = 'ordering' | 'confirm' | 'cancel' | 'other';
 export type ParsedSize = 'SMALL' | 'MEDIUM' | 'LARGE' | null;
@@ -14,7 +14,10 @@ export interface ParsedItem {
   size: ParsedSize;
   quantity: number;
   molde: boolean;
-  /** Texto libre del extra (ej. "huevo"); el humano le asigna el precio. */
+  /**
+   * Agregado que se cobra (ej. "huevo"). El precio lo pone el sistema desde la
+   * categoría AGREGADOS; si el agregado no está cargado, lo pone una persona.
+   */
   extra: string | null;
   notes: string | null;
 }
@@ -65,7 +68,7 @@ REGLAS:
 - Cuando el cliente confirme explícitamente un pedido ya resumido, poné intent="confirm".
 - Si el cliente quiere cancelar/empezar de nuevo, intent="cancel". Si escribe algo ajeno a un pedido, intent="other".
 - La ciudad de envío es siempre San Vicente (no hace falta preguntarla).
-- EXTRA que se cobra: cuando el cliente suma un ingrediente a un ítem ("muzza CON huevo", "con jamón", "agregale panceta", "extra de queso", "doble muzzarella"), eso es un EXTRA. Cargá ese ingrediente en el campo "extra" del ítem y SEGUÍ tomando el pedido con total normalidad (preguntá tamaño, entrega, pago, nombre). NO preguntes por el extra, NO avises que se cobra, NO pongas needsHuman: el sistema resuelve el precio del extra al final. Ej: "2 grandes de muzza con huevo" → 2 ítems pizza Muzzarella grandes, cada uno con extra="huevo".
+- EXTRA que se cobra: cuando el cliente suma un ingrediente a un ítem ("muzza CON huevo", "con jamón", "agregale panceta", "extra de queso", "doble muzzarella"), eso es un EXTRA. Cargá ese ingrediente en el campo "extra" del ítem —si figura en la lista AGREGADOS del menú, escribilo con ESE nombre exacto— y SEGUÍ tomando el pedido con total normalidad (preguntá tamaño, entrega, pago, nombre). NO preguntes por el extra, NO avises que se cobra, NO pongas needsHuman: el sistema resuelve el precio del extra al final. Ej: "2 grandes de muzza con huevo" → 2 ítems pizza Muzzarella grandes, cada uno con extra="huevo".
 - Pedir una aclaración NORMAL del menú (qué tamaño, si la empanada de carne es común/picante/a cuchillo, etc.) NO es derivar a humano: preguntalo vos en "reply" con needsHuman=false.
 - DERIVAR A HUMANO (needsHuman=true): SOLO si el CLIENTE PREGUNTA algo que no podés resolver con el menú —si HAY STOCK/disponibilidad de algo, un reclamo, negociar precios, algo raro fuera de tomar el pedido—. Nunca por un extra ni por pedir una aclaración. Ahí poné needsHuman=true y en "reply" avisá breve que en un momento lo atiende una persona. NO inventes la respuesta. En cualquier otro caso needsHuman=false.
 - humanReason: si needsHuman=true o hay un ítem con extra, completá un motivo corto para el que atienda ("extra de huevo a cobrar", "pregunta si hay tal cosa"). Si no, null.
@@ -125,25 +128,19 @@ const schema = {
   required: ['intent', 'items', 'deliveryType', 'address', 'paymentMethod', 'customerName', 'ready', 'needsHuman', 'humanReason', 'reply'],
 };
 
-// Instrucciones editables del local (tono, reglas, aclaraciones). Se leen del
-// .md en cada llamada, así los cambios toman efecto al instante.
-const INSTRUCTIONS_PATH = path.join(process.cwd(), 'src/prompts/wa-bot-instructions.md');
-function loadBusinessInstructions(): string {
-  try {
-    return fs.readFileSync(INSTRUCTIONS_PATH, 'utf8').trim();
-  } catch {
-    return '';
-  }
-}
+// Las instrucciones editables del local viven en la base (versionadas, editables
+// desde /admin/whatsapp/bot). El .md del repo es solo la semilla inicial.
 
 /**
  * Interpreta la conversación acumulada de un pedido y devuelve un borrador
  * estructurado + una respuesta para el cliente. Devuelve `null` si la IA no está
  * disponible o falla (el flujo entonces deriva a una persona).
  */
-export async function parseOrder(menuText: string, history: ParserTurn[]): Promise<ParsedDraft | null> {
-  const client = getAnthropic();
-  if (!client) return null;
+export async function parseOrder(
+  menuText: string,
+  history: ParserTurn[],
+  provider: AIProvider = defaultProvider()
+): Promise<ParsedDraft | null> {
   // La salida estructurada NO permite que el último mensaje sea del asistente
   // (sería un "pre-fill"). Recortamos turnos finales del bot para terminar en el
   // cliente. Si no queda ningún turno del cliente, no hay nada que interpretar.
@@ -151,30 +148,33 @@ export async function parseOrder(menuText: string, history: ParserTurn[]): Promi
   while (turns.length && turns[turns.length - 1].role === 'assistant') turns = turns.slice(0, -1);
   if (!turns.length) return null;
 
-  const instructions = loadBusinessInstructions();
+  const [instructions, corrections] = await Promise.all([getInstructions(), getCorrectionExamples()]);
   const systemText = instructions
     ? `${SYSTEM}\n\n--- INSTRUCCIONES DEL LOCAL (respetalas) ---\n${instructions}`
     : SYSTEM;
 
-  try {
-    const res = await client.messages.create({
-      model: WA_PARSER_MODEL,
-      max_tokens: 1024,
-      // El menú es estable entre mensajes: lo cacheamos como prefijo para abaratar
-      // las llamadas siguientes del mismo pedido.
-      system: [
-        { type: 'text', text: systemText },
-        { type: 'text', text: `MENÚ:\n${menuText}`, cache_control: { type: 'ephemeral' } },
-      ],
-      messages: turns.map((t) => ({ role: t.role, content: t.text })),
-      // Salida estructurada: garantiza JSON con el esquema del borrador.
-      // (SDK aún no tipa output_config; se pasa como propiedad adicional.)
-      ...({ output_config: { format: { type: 'json_schema', schema } } } as Record<string, unknown>),
-    });
+  // Prefijo estable (instrucciones + menú + correcciones): en Anthropic el corte
+  // de caché va al final, así que entre mensajes del mismo pedido las llamadas
+  // siguientes se cobran a precio de lectura.
+  const systemBlocks = [systemText, `MENÚ:\n${menuText}`];
+  if (corrections) systemBlocks.push(corrections);
 
-    const block = res.content.find((b) => b.type === 'text');
-    if (!block || block.type !== 'text') return null;
-    return JSON.parse(block.text) as ParsedDraft;
+  try {
+    const res = await callStructured(
+      { systemBlocks, turns, schema, maxTokens: 1024, role: 'parser' },
+      provider
+    );
+
+    // Consumo por llamada, para comparar proveedores con datos propios.
+    // `cache_read` en 0 siempre = el prefijo no llega al mínimo cacheable del
+    // modelo y estamos pagando input completo cada vez.
+    const u = res.usage;
+    console.log(
+      `[wa-parser] ${res.provider}/${res.model} in=${u.in} out=${u.out} cache_write=${u.cacheWrite} cache_read=${u.cacheRead}`
+    );
+
+    if (!res.text) return null;
+    return JSON.parse(res.text) as ParsedDraft;
   } catch (e) {
     console.error('[wa-parser] error:', e instanceof Error ? e.message : e);
     return null;

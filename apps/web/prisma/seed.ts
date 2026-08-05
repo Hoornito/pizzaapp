@@ -402,18 +402,27 @@ async function main() {
   console.log('✅ Promotions created');
 
   // ─── Business Hours ───────────────────────────────────────────────────────
+  // Dos turnos por día: mediodía (0) y noche (1).
   const days = [0, 1, 2, 3, 4, 5, 6];
+  const shifts = [
+    { shift: 0, openTime: '11:00', closeTime: '15:00' },
+    { shift: 1, openTime: '18:00', closeTime: '00:00' },
+  ];
   for (const day of days) {
-    await prisma.businessHours.upsert({
-      where: { dayOfWeek: day },
-      update: {},
-      create: {
-        dayOfWeek: day,
-        openTime: '18:00',
-        closeTime: '00:00',
-        isOpen: true,
-      },
-    });
+    for (const s of shifts) {
+      await prisma.businessHours.upsert({
+        where: { dayOfWeek_shift: { dayOfWeek: day, shift: s.shift } },
+        update: {},
+        create: {
+          dayOfWeek: day,
+          shift: s.shift,
+          openTime: s.openTime,
+          closeTime: s.closeTime,
+          // Domingo al mediodía cerrado.
+          isOpen: !(day === 0 && s.shift === 0),
+        },
+      });
+    }
   }
 
   console.log('✅ Business hours created');

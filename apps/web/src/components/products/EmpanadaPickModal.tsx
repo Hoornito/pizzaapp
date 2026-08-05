@@ -18,6 +18,8 @@ import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
 import CloseIcon from '@mui/icons-material/Close';
 import type { ProductWithCategory, EmpanadaDozen } from '@/types/product.types';
+import { toNumber } from '@/lib/utils';
+import { ProductDetailModal } from './ProductDetailModal';
 
 interface Props {
   open: boolean;
@@ -36,9 +38,11 @@ interface Props {
  */
 export function EmpanadaPickModal({ open, onClose, title, count, empanadas, onConfirm }: Props) {
   const [qty, setQty] = useState<Record<string, number>>({});
+  // Ficha del gusto (se abre tocando la foto), sin perder lo ya elegido.
+  const [detail, setDetail] = useState<ProductWithCategory | null>(null);
 
   useEffect(() => {
-    if (open) setQty({});
+    if (open) { setQty({}); setDetail(null); }
   }, [open]);
 
   const total = useMemo(() => Object.values(qty).reduce((a, n) => a + n, 0), [qty]);
@@ -88,7 +92,7 @@ export function EmpanadaPickModal({ open, onClose, title, count, empanadas, onCo
         {empanadas.length === 0 ? (
           <Typography color="text.secondary" sx={{ py: 2 }}>No hay empanadas disponibles.</Typography>
         ) : (
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1, alignContent: 'start' }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 1, alignContent: 'start', overflowX: 'hidden' }}>
             {empanadas.map((emp) => {
               const n = qty[emp.id] ?? 0;
               const selected = n > 0;
@@ -101,10 +105,38 @@ export function EmpanadaPickModal({ open, onClose, title, count, empanadas, onCo
                     borderColor: selected ? 'primary.main' : 'divider', bgcolor: selected ? 'action.hover' : 'background.paper',
                   }}
                 >
-                  <Avatar src={emp.image || undefined} variant="rounded" sx={{ width: 36, height: 36, bgcolor: 'grey.100', fontSize: '1.1rem' }}>🥟</Avatar>
-                  <Typography variant="body2" fontWeight={600} sx={{ flexGrow: 1, minWidth: 0, lineHeight: 1.2 }}>
-                    {emp.name.replace(/^Empanada de\s+/i, '').replace(/^Empanada\s+/i, '')}
-                  </Typography>
+                  {/* Foto: abre la ficha del gusto con la descripción completa. */}
+                  <Avatar
+                    src={emp.image || undefined}
+                    variant="rounded"
+                    onClick={() => setDetail(emp)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Ver detalle de ${emp.name}`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail(emp); }
+                    }}
+                    sx={{ width: 52, height: 52, bgcolor: 'grey.100', fontSize: '1.4rem', cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    🥟
+                  </Avatar>
+                  <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                    <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.2 }}>
+                      {emp.name.replace(/^Empanada de\s+/i, '').replace(/^Empanada\s+/i, '')}
+                    </Typography>
+                    {emp.description && (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden', lineHeight: 1.25,
+                        }}
+                      >
+                        {emp.description}
+                      </Typography>
+                    )}
+                  </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
                     <IconButton size="small" onClick={() => change(emp.id, -1)} disabled={n === 0} sx={{ bgcolor: 'grey.100' }}><RemoveIcon fontSize="small" /></IconButton>
                     <Typography variant="body2" sx={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{n}</Typography>
@@ -125,6 +157,20 @@ export function EmpanadaPickModal({ open, onClose, title, count, empanadas, onCo
           Confirmar
         </Button>
       </DialogActions>
+
+      {/* Ficha del gusto: informativa, la cantidad se maneja con los contadores. */}
+      <ProductDetailModal
+        open={!!detail}
+        onClose={() => setDetail(null)}
+        name={detail?.name ?? ''}
+        description={detail?.description}
+        image={detail?.image}
+        price={detail ? toNumber(detail.price) : null}
+        priceNote="precio suelta · en la promo va incluida"
+        addLabel={total >= count ? 'Ya elegiste todas' : 'Agregar a la promo'}
+        addDisabled={total >= count}
+        onAdd={() => detail && change(detail.id, 1)}
+      />
     </Dialog>
   );
 }

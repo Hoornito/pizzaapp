@@ -37,6 +37,12 @@ import { useSnackbar } from '@/app/snackbar-context';
 
 const STEPS = ['Tu pedido', 'Datos de entrega', 'Pago'];
 
+interface TimeSlot {
+  value: string;
+  from: string;
+  to: string;
+}
+
 interface CheckoutForm {
   deliveryType: 'DELIVERY' | 'PICKUP';
   paymentMethod: 'MERCADO_PAGO' | 'EFECTIVO' | 'MIXTO' | 'TRANSFERENCIA' | 'A_DEFINIR';
@@ -60,6 +66,11 @@ export default function CheckoutPage() {
   const { showError, showSuccess } = useSnackbar();
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  // Cuándo lo quiere: ya mismo o programado para una franja de hoy.
+  const [when, setWhen] = useState<'asap' | 'scheduled'>('asap');
+  const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(true);
+  const [slot, setSlot] = useState('');
   const [form, setForm] = useState<CheckoutForm>({
     deliveryType: 'DELIVERY',
     paymentMethod: 'EFECTIVO',
@@ -91,6 +102,21 @@ export default function CheckoutPage() {
   useEffect(() => {
     setDeliveryFee(0); // El envío es sin cargo.
   }, [form.deliveryType]);
+
+  // Franjas para programar. Las calcula el servidor (horarios del local + margen
+  // mínimo), así no dependen del reloj del dispositivo.
+  useEffect(() => {
+    fetch('/api/schedule/slots', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setSlots(d.data || []))
+      .catch(() => setSlots([]))
+      .finally(() => setSlotsLoading(false));
+  }, []);
+
+  // Si la franja elegida dejó de estar disponible (pasó el tiempo), la soltamos.
+  useEffect(() => {
+    if (slot && !slots.some((s) => s.value === slot)) setSlot('');
+  }, [slots, slot]);
 
   // Al elegir pago Mixto, pre-cargar todo como efectivo para que el reparto
   // siempre arranque sumando el total.
@@ -195,6 +221,7 @@ export default function CheckoutPage() {
         notes: form.notes,
         phone: form.phone,
         addressId: undefined,
+        ...(when === 'scheduled' && slot ? { scheduledFor: slot } : {}),
         items: items.map((item) => ({
           productId: item.productId,
           promotionId: item.promotionId,
@@ -314,17 +341,140 @@ export default function CheckoutPage() {
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" fontWeight={600} gutterBottom>Datos de entrega</Typography>
 
-              <FormControl component="fieldset" sx={{ mb: 3 }}>
-                <FormLabel>Tipo de entrega</FormLabel>
-                <RadioGroup
-                  value={form.deliveryType}
-                  onChange={(e) => handleChange('deliveryType', e.target.value)}
-                  row
-                >
-                  <FormControlLabel value="DELIVERY" control={<Radio />} label="🛵 Delivery" />
-                  <FormControlLabel value="PICKUP" control={<Radio />} label="🏪 Retiro en local" />
-                </RadioGroup>
-              </FormControl>
+              {/* Selector tipo "píldora": el elegido queda relleno, como en las
+                  apps de delivery. Más claro en mobile que dos radios. */}
+              <Box
+                sx={{
+                  display: 'flex', gap: 0.5, p: 0.5, mb: 3,
+                  bgcolor: 'grey.100', borderRadius: 999,
+                }}
+              >
+                {([
+                  { value: 'DELIVERY', label: 'Delivery' },
+                  { value: 'PICKUP', label: 'Retiro en el local' },
+                ] as const).map((opt) => {
+                  const selected = form.deliveryType === opt.value;
+                  return (
+                    <Button
+                      key={opt.value}
+                      onClick={() => handleChange('deliveryType', opt.value)}
+                      disableElevation
+                      sx={{
+                        flex: 1, borderRadius: 999, py: 1.1, textTransform: 'none',
+                        fontWeight: selected ? 700 : 500,
+                        fontSize: { xs: '0.85rem', sm: '0.95rem' },
+                        bgcolor: selected ? 'grey.900' : 'transparent',
+                        color: selected ? 'common.white' : 'text.secondary',
+                        '&:hover': { bgcolor: selected ? 'grey.900' : 'grey.200' },
+                      }}
+                    >
+                      {opt.label}
+                    </Button>
+                  );
+                })}
+              </Box>
+
+              {/* Cuándo lo querés: dos tarjetas seleccionables, no radios sueltos. */}
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
+                {([
+                  {
+                    value: 'asap' as const,
+                    icon: '🛵',
+                    title: 'Lo antes posible',
+                    sub: 'El local te confirma el tiempo estimado al tomar el pedido',
+                    disabled: false,
+                  },
+                  {
+                    value: 'scheduled' as const,
+                    icon: '🕒',
+                    title: 'Programar para después',
+                    sub: slotsLoading
+                      ? 'Buscando horarios…'
+                      : slots.length === 0
+                        ? 'No hay horarios disponibles para hoy'
+                        : 'Elegí una franja de hoy',
+                    disabled: !slotsLoading && slots.length === 0,
+                  },
+                ]).map((opt) => {
+                  const selected = when === opt.value;
+                  return (
+                    <Box
+                      key={opt.value}
+                      onClick={() => !opt.disabled && setWhen(opt.value)}
+                      role="button"
+                      tabIndex={opt.disabled ? -1 : 0}
+                      onKeyDown={(e) => {
+                        if (!opt.disabled && (e.key === 'Enter' || e.key === ' ')) {
+                          e.preventDefault();
+                          setWhen(opt.value);
+                        }
+                      }}
+                      sx={{
+                        display: 'flex', alignItems: 'center', gap: 1.5, p: 1.75,
+                        border: '2px solid',
+                        borderColor: selected ? 'primary.main' : 'divider',
+                        bgcolor: selected ? 'action.selected' : 'transparent',
+                        borderRadius: 2,
+                        cursor: opt.disabled ? 'not-allowed' : 'pointer',
+                        opacity: opt.disabled ? 0.5 : 1,
+                        transition: 'border-color .15s, background-color .15s',
+                        '&:hover': { borderColor: opt.disabled || selected ? undefined : 'grey.400' },
+                      }}
+                    >
+                      <Typography sx={{ fontSize: '1.5rem', lineHeight: 1 }}>{opt.icon}</Typography>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={selected ? 700 : 500}>{opt.title}</Typography>
+                        <Typography variant="caption" color="text.secondary">{opt.sub}</Typography>
+                      </Box>
+                      <Radio checked={selected} disabled={opt.disabled} tabIndex={-1} />
+                    </Box>
+                  );
+                })}
+              </Box>
+
+              {when === 'scheduled' && (
+                <Box sx={{ mb: 3 }}>
+                  {slotsLoading ? (
+                    <Typography variant="body2" color="text.secondary">Buscando horarios…</Typography>
+                  ) : slots.length === 0 ? (
+                    <Alert severity="warning">
+                      No hay horarios disponibles para hoy. Elegí <strong>Lo antes posible</strong>.
+                    </Alert>
+                  ) : (
+                    <>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                        Horarios de hoy (mínimo 30 minutos desde ahora)
+                      </Typography>
+                      <Box
+                        sx={{
+                          display: 'flex', flexDirection: 'column', gap: 0.75,
+                          maxHeight: 260, overflowY: 'auto', pr: 0.5,
+                        }}
+                      >
+                        {slots.map((s) => {
+                          const selected = slot === s.value;
+                          return (
+                            <Button
+                              key={s.value}
+                              onClick={() => setSlot(s.value)}
+                              variant={selected ? 'contained' : 'text'}
+                              color={selected ? 'primary' : 'inherit'}
+                              sx={{
+                                borderRadius: 8, py: 1.25, fontWeight: selected ? 700 : 400,
+                                color: selected ? undefined : 'text.secondary',
+                              }}
+                            >
+                              {s.from} - {s.to}
+                            </Button>
+                          );
+                        })}
+                      </Box>
+                    </>
+                  )}
+                </Box>
+              )}
+
+              <Divider sx={{ mb: 3 }} />
 
               {form.deliveryType === 'DELIVERY' && (
                 <>
@@ -368,9 +518,20 @@ export default function CheckoutPage() {
                 placeholder="Ej: sin cebolla, con extra queso..."
               />
 
-              <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
+              <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
                 <Button onClick={() => setActiveStep(0)}>Volver</Button>
-                <Button variant="contained" onClick={() => setActiveStep(2)}>Continuar</Button>
+                <Button
+                  variant="contained"
+                  onClick={() => {
+                    if (when === 'scheduled' && !slot) {
+                      showError('Elegí un horario para tu pedido programado.');
+                      return;
+                    }
+                    setActiveStep(2);
+                  }}
+                >
+                  Continuar
+                </Button>
               </Box>
             </Paper>
           )}
@@ -497,6 +658,12 @@ export default function CheckoutPage() {
           <Paper sx={{ p: 3, position: 'sticky', top: 80 }}>
             <Typography variant="h6" fontWeight={600} gutterBottom>Resumen</Typography>
             <Divider sx={{ mb: 2 }} />
+            {when === 'scheduled' && slot && (
+              <Alert severity="info" icon={false} sx={{ mb: 2, py: 0.5 }}>
+                🕒 Programado para las{' '}
+                <strong>{slots.find((s) => s.value === slot)?.from}</strong>
+              </Alert>
+            )}
             <CartSummary />
             {tipNum > 0 && (
               <>

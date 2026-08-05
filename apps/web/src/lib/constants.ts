@@ -149,6 +149,15 @@ export const ORDER_PAYMENT_METHOD_EMOJI: Record<string, string> = {
 export const BUSINESS_WHATSAPP_DISPLAY = '+54 9 11 6987-8641';
 export const BUSINESS_WHATSAPP_LINK = 'https://wa.me/5491169878641';
 
+// ─── Agregados (extras) ──────────────────────────────────────────────────────
+// Categoría interna con los agregados que se cobran ("huevo", "doble muzzarella").
+// NO se muestra en el menú del cliente: se carga a mano desde el admin y sirve
+// para que el bot de WhatsApp le ponga precio solo al extra de un ítem.
+export const EXTRAS_CATEGORY_SLUG = 'extras';
+
+/** Categorías que existen para uso interno y no se listan en el menú público. */
+export const HIDDEN_MENU_CATEGORY_SLUGS = [EXTRAS_CATEGORY_SLUG];
+
 // ─── Zona de reparto ─────────────────────────────────────────────────────────
 // Ciudades habilitadas para delivery. Por ahora solo San Vicente.
 export const DELIVERY_ZONE_CITIES = ['San Vicente'];

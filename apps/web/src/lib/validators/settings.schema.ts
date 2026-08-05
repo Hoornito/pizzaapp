@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 export const businessHoursSchema = z.object({
   dayOfWeek: z.coerce.number().int().min(0).max(6),
+  // 0 = mediodía, 1 = noche. Por compatibilidad con lo que había, si no viene
+  // se asume el turno 0.
+  shift: z.coerce.number().int().min(0).max(1).default(0),
   openTime: z.string().regex(/^\d{2}:\d{2}$/, 'Formato HH:MM'),
   closeTime: z.string().regex(/^\d{2}:\d{2}$/, 'Formato HH:MM'),
   isOpen: z.boolean(),

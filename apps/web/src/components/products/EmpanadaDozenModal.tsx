@@ -22,7 +22,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { DOZEN_SIZE, type EmpanadaDozen } from '@/types/product.types';
 import type { ProductWithCategory } from '@/types/product.types';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, toNumber } from '@/lib/utils';
+import { ProductDetailModal } from './ProductDetailModal';
 
 /** Composición de una docena: productId -> cantidad. */
 type Composition = Record<string, number>;
@@ -53,6 +54,8 @@ export function EmpanadaDozenModal({
   const [dozenCount, setDozenCount] = useState(1);
   const [compositions, setCompositions] = useState<Composition[]>([{}]);
   const [activeIndex, setActiveIndex] = useState(0);
+  // Ficha del gusto (se abre tocando la foto), sin perder la docena armada.
+  const [detail, setDetail] = useState<ProductWithCategory | null>(null);
 
   // Reinicia el estado cada vez que se abre el modal.
   useEffect(() => {
@@ -60,6 +63,7 @@ export function EmpanadaDozenModal({
       setDozenCount(1);
       setCompositions([{}]);
       setActiveIndex(0);
+      setDetail(null);
     }
   }, [open]);
 
@@ -212,8 +216,10 @@ export function EmpanadaDozenModal({
             // pequeño margen para que el scrollbar no tape el borde de las cards
             mx: -0.5,
             px: 0.5,
+            // Nunca scroll horizontal: si no entran dos por fila, se apilan.
+            overflowX: 'hidden',
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
             gap: 1,
             alignContent: 'start',
           }}
@@ -235,20 +241,38 @@ export function EmpanadaDozenModal({
                   gap: 1,
                 }}
               >
+                {/* Foto: abre la ficha del gusto con la descripción completa. */}
                 <Avatar
                   src={emp.image || undefined}
                   variant="rounded"
-                  sx={{ width: 36, height: 36, bgcolor: 'grey.100', fontSize: '1.1rem' }}
+                  onClick={() => setDetail(emp)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Ver detalle de ${emp.name}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail(emp); }
+                  }}
+                  sx={{ width: 52, height: 52, bgcolor: 'grey.100', fontSize: '1.4rem', cursor: 'pointer', flexShrink: 0 }}
                 >
                   🥟
                 </Avatar>
-                <Typography
-                  variant="body2"
-                  fontWeight={600}
-                  sx={{ flexGrow: 1, minWidth: 0, lineHeight: 1.2 }}
-                >
-                  {emp.name}
-                </Typography>
+                <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                  <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.2 }}>
+                    {emp.name}
+                  </Typography>
+                  {emp.description && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden', lineHeight: 1.25,
+                      }}
+                    >
+                      {emp.description}
+                    </Typography>
+                  )}
+                </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
                   <IconButton
                     size="small"
@@ -306,6 +330,20 @@ export function EmpanadaDozenModal({
           </Button>
         )}
       </DialogActions>
+
+      {/* Ficha del gusto: informativa, la cantidad se maneja con los contadores. */}
+      <ProductDetailModal
+        open={!!detail}
+        onClose={() => setDetail(null)}
+        name={detail?.name ?? ''}
+        description={detail?.description}
+        image={detail?.image}
+        price={detail ? toNumber(detail.price) : null}
+        priceNote="precio suelta · en la docena va al precio de la promo"
+        addLabel={activeTotal >= DOZEN_SIZE ? 'La docena ya está completa' : 'Agregar a la docena'}
+        addDisabled={activeTotal >= DOZEN_SIZE}
+        onAdd={() => detail && changeFlavor(detail.id, 1)}
+      />
     </Dialog>
   );
 }

@@ -7,22 +7,17 @@ import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Chip from '@mui/material/Chip';
-import Stepper from '@mui/material/Stepper';
-import Step from '@mui/material/Step';
-import StepLabel from '@mui/material/StepLabel';
 import Divider from '@mui/material/Divider';
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import RadioGroup from '@mui/material/RadioGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Radio from '@mui/material/Radio';
-import useMediaQuery from '@mui/material/useMediaQuery';
-import { useTheme } from '@mui/material/styles';
-import type { StepIconProps } from '@mui/material/StepIcon';
 import { useSocket } from '@/hooks/useSocket';
 import { useCart } from '@/hooks/useCart';
 import { useSnackbar } from '@/app/snackbar-context';
-import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, orderStatusSteps, TRANSFER_INFO } from '@/lib/constants';
+import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, TRANSFER_INFO } from '@/lib/constants';
+import { OrderProgress } from '@/components/orders/OrderProgress';
 import { CopyButton } from '@/components/ui/CopyButton';
 import { isPizzaItemNotes } from '@/lib/pizza';
 import { formatCurrency, formatDate, formatOrderPayment } from '@/lib/utils';
@@ -30,37 +25,6 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 interface Props {
   params: Promise<{ id: string }>;
-}
-
-// Ícono de paso con "respiración" en el estado actual: indica al cliente que la
-// vista se actualiza sola sin recargar.
-function BreathingStepIcon({ active, completed, icon }: StepIconProps) {
-  const done = completed;
-  return (
-    <Box
-      sx={{
-        width: 30,
-        height: 30,
-        borderRadius: '50%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '0.85rem',
-        fontWeight: 700,
-        color: '#fff',
-        bgcolor: done || active ? 'primary.main' : 'grey.400',
-        ...(active && {
-          animation: 'orderPulse 1.6s ease-in-out infinite',
-          '@keyframes orderPulse': {
-            '0%, 100%': { opacity: 1, boxShadow: '0 0 0 0 rgba(0,0,0,0)' },
-            '50%': { opacity: 0.45, boxShadow: '0 0 0 6px rgba(0,0,0,0.06)' },
-          },
-        }),
-      }}
-    >
-      {done ? '✓' : icon}
-    </Box>
-  );
 }
 
 function OrderDetailContent({ params }: Props) {
@@ -78,8 +42,6 @@ function OrderDetailContent({ params }: Props) {
   const { socket } = useSocket();
   const { clearCart } = useCart();
   const { showError } = useSnackbar();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   // Al volver de un pago (MercadoPago), vaciamos el carrito de forma confiable
   // (la limpieza previa a la redirección puede no haberse persistido a tiempo).
@@ -195,9 +157,6 @@ function OrderDetailContent({ params }: Props) {
     </Container>
   );
 
-  const steps = orderStatusSteps(order.deliveryType);
-  const currentStepIndex = steps.indexOf(order.status);
-
   // En retiro en local, mientras no esté pagado ni cerrado, el cliente puede
   // alternar entre efectivo y transferencia.
   const canChangePayment =
@@ -262,24 +221,30 @@ function OrderDetailContent({ params }: Props) {
       {order.status !== 'CANCELADO' && (
         <Paper sx={{ p: 3, mb: 3, overflowX: 'hidden' }}>
           <Typography variant="h6" fontWeight={600} gutterBottom>Estado del pedido</Typography>
-          <Stepper
-            activeStep={currentStepIndex}
-            orientation={isMobile ? 'vertical' : 'horizontal'}
-            alternativeLabel={!isMobile}
-          >
-            {steps.map((step) => (
-              <Step key={step}>
-                <StepLabel StepIconComponent={BreathingStepIcon}>
-                  {ORDER_STATUS_LABELS[step as keyof typeof ORDER_STATUS_LABELS]}
-                </StepLabel>
-              </Step>
-            ))}
-          </Stepper>
-          {order.estimatedTime > 0 && order.status !== 'ENTREGADO' && (
-            <Alert severity="info" icon={false} sx={{ mt: 2 }}>
-              🕒 Tiempo estimado: <strong>~{order.estimatedTime} min</strong>
-              {order.deliveryType === 'DELIVERY' ? ' para la entrega' : ' para el retiro'} (aproximado, según la cantidad de pedidos)
-            </Alert>
+          <OrderProgress status={order.status} deliveryType={order.deliveryType} />
+
+          {order.status !== 'ENTREGADO' && (
+            <>
+              {/* Programado: manda el horario que eligió el cliente. */}
+              {order.scheduledFor ? (
+                <Alert severity="info" icon={false} sx={{ mt: 2 }}>
+                  🕒 Pedido programado para las{' '}
+                  <strong>
+                    {new Date(order.scheduledFor).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                  </strong>
+                  {order.deliveryType === 'DELIVERY' ? ' (entrega)' : ' (retiro)'}
+                </Alert>
+              ) : order.estimatedTime > 0 ? (
+                <Alert severity="info" icon={false} sx={{ mt: 2 }}>
+                  🕒 Tiempo estimado: <strong>~{order.estimatedTime} min</strong>
+                  {order.deliveryType === 'DELIVERY' ? ' para la entrega' : ' para el retiro'}
+                </Alert>
+              ) : (
+                <Alert severity="info" icon={false} sx={{ mt: 2 }}>
+                  🕒 En cuanto el local tome tu pedido te confirmamos el tiempo estimado.
+                </Alert>
+              )}
+            </>
           )}
         </Paper>
       )}

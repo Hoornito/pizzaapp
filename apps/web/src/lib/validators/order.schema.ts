@@ -45,6 +45,10 @@ export const createOrderSchema = z
     notes: z.string().optional(),
     phone: z.string().optional(),
     whatsappToken: z.string().optional(),
+    // Pedido programado: ISO del inicio de la franja elegida. Ausente = "lo
+    // antes posible". La validación de que la franja siga siendo válida se hace
+    // en el servidor al crear el pedido (schedule.service).
+    scheduledFor: z.string().datetime().optional(),
     items: z.array(orderItemSchema).min(1, 'El pedido debe tener al menos un ítem'),
   })
   .refine((d) => d.deliveryType === 'PICKUP' || !!d.addressId || !!d.address, {

@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { logMessage } from './whatsapp.service';
 import { handleAIOrder } from './wa-order-flow.service';
 import { getConversationView } from './whatsapp-inbox.service';
+import type { AIProvider } from '@/lib/ai-provider';
 
 /**
  * Simulador local: inyecta un mensaje "de cliente" y corre el mismo flujo de IA
@@ -9,7 +10,7 @@ import { getConversationView } from './whatsapp-inbox.service';
  * respuestas del bot no salen a ningún lado (no hay número), pero quedan en el
  * hilo, así se ve todo el armado del pedido, verde/rojo y "Tomar pedido".
  */
-export async function simulateCustomerMessage(phone: string, text: string) {
+export async function simulateCustomerMessage(phone: string, text: string, provider?: AIProvider) {
   const convo = await prisma.whatsAppConversation.upsert({
     where: { phone },
     update: {},
@@ -30,7 +31,7 @@ export async function simulateCustomerMessage(phone: string, text: string) {
     await handleAIOrder(
       { id: fresh.id, phone: fresh.phone, context: fresh.context },
       text,
-      { skipStoreCheck: true }
+      { skipStoreCheck: true, provider }
     );
   }
 

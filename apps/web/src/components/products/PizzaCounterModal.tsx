@@ -14,9 +14,10 @@ import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
 import CloseIcon from '@mui/icons-material/Close';
-import { PIZZA_SIZES, type PizzaSize, type ProductWithCategory } from '@/types/product.types';
+import { PIZZA_SIZES, type PizzaSize, type PizzaSelection, type ProductWithCategory } from '@/types/product.types';
 import { flavorPrice, flavorsForSize, pizzaPrice, formatPizzaName, formatPizzaNotes } from '@/lib/pizza';
 import { formatCurrency } from '@/lib/utils';
+import { ProductDetailModal } from './ProductDetailModal';
 
 /** Una línea lista para agregar al carrito del mostrador. */
 export interface PizzaCartLine {
@@ -25,9 +26,15 @@ export interface PizzaCartLine {
   unitPrice: number;
   quantity: number;
   notes: string;
+  /** Composición de la pizza. El mostrador la ignora; el carrito del cliente la
+   *  usa para mostrar "Mitad y mitad: X / Y" y no fusionar líneas distintas. */
+  pizza: PizzaSelection;
 }
 
-type Mode = PizzaSize | 'HALF';
+export type PizzaMode = PizzaSize | 'HALF';
+type Mode = PizzaMode;
+
+const PLACEHOLDER = '/images/placeholder-pizza.jpg';
 
 const SHORT_LABEL: Record<PizzaSize, string> = { SMALL: 'Individual', MEDIUM: 'Mediana', LARGE: 'Grande' };
 const emptyBySize = (): Record<PizzaSize, Record<string, number>> => ({ SMALL: {}, MEDIUM: {}, LARGE: {} });
@@ -38,6 +45,13 @@ interface Props {
   /** Todos los productos-pizza (con precios por tamaño). */
   pizzas: ProductWithCategory[];
   onConfirm: (lines: PizzaCartLine[]) => void;
+  /**
+   * Fija el modo y oculta el selector de arriba. Lo usa el menú del cliente,
+   * donde cada tamaño (y "Mitad y mitad") es su propia card.
+   */
+  lockedMode?: Mode;
+  title?: string;
+  confirmLabel?: string;
 }
 
 /**
@@ -46,21 +60,32 @@ interface Props {
  * como las empanadas. Cada tamaño guarda su propio conteo. "Mitad y mitad" tiene
  * su propio sub-selector de tamaño y cuenta MITADES (el total debe ser par).
  */
-export function PizzaCounterModal({ open, onClose, pizzas, onConfirm }: Props) {
-  const [mode, setMode] = useState<Mode>('LARGE');
+export function PizzaCounterModal({
+  open,
+  onClose,
+  pizzas,
+  onConfirm,
+  lockedMode,
+  title,
+  confirmLabel = 'Agregar al carrito',
+}: Props) {
+  const [mode, setMode] = useState<Mode>(lockedMode ?? 'LARGE');
   const [halfSize, setHalfSize] = useState<PizzaSize>('LARGE');
   // Enteras: pizzas completas por tamaño. Mitades: mitades por tamaño.
   const [wholeQty, setWholeQty] = useState<Record<PizzaSize, Record<string, number>>>(emptyBySize);
   const [halfQty, setHalfQty] = useState<Record<PizzaSize, Record<string, number>>>(emptyBySize);
+  // Ficha del gusto (se abre tocando la foto), sin perder lo que ya contaste.
+  const [detail, setDetail] = useState<ProductWithCategory | null>(null);
 
   useEffect(() => {
     if (open) {
-      setMode('LARGE');
+      setMode(lockedMode ?? 'LARGE');
       setHalfSize('LARGE');
       setWholeQty(emptyBySize());
       setHalfQty(emptyBySize());
+      setDetail(null);
     }
-  }, [open]);
+  }, [open, lockedMode]);
 
   const isHalf = mode === 'HALF';
   const currentSize: PizzaSize = isHalf ? halfSize : (mode as PizzaSize);
@@ -126,7 +151,7 @@ export function PizzaCounterModal({ open, onClose, pizzas, onConfirm }: Props) {
         if (q <= 0) continue;
         const price = flavorPrice(f, size) ?? 0;
         const sel = { size, flavors: [{ productId: f.id, name: f.name }], price };
-        out.push({ productId: f.id, name: formatPizzaName(sel), unitPrice: price, quantity: q, notes: formatPizzaNotes(sel) });
+        out.push({ productId: f.id, name: formatPizzaName(sel), unitPrice: price, quantity: q, notes: formatPizzaNotes(sel), pizza: sel });
       }
     }
     // Mitad y mitad: aplanamos las mitades por tamaño y las emparejamos de a 2.
@@ -148,7 +173,7 @@ export function PizzaCounterModal({ open, onClose, pizzas, onConfirm }: Props) {
         };
         const notes = formatPizzaNotes(sel);
         if (grouped[notes]) grouped[notes].quantity += 1;
-        else grouped[notes] = { productId: a.id, name: formatPizzaName(sel), unitPrice: sel.price, quantity: 1, notes };
+        else grouped[notes] = { productId: a.id, name: formatPizzaName(sel), unitPrice: sel.price, quantity: 1, notes, pizza: sel };
       }
       out.push(...Object.values(grouped));
     }
@@ -182,20 +207,23 @@ export function PizzaCounterModal({ open, onClose, pizzas, onConfirm }: Props) {
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
       <DialogTitle sx={{ pr: 6 }}>
-        🍕 Pizzas
+        {title ?? '🍕 Pizzas'}
         <IconButton onClick={onClose} size="small" sx={{ position: 'absolute', right: 12, top: 12 }}>
           <CloseIcon />
         </IconButton>
       </DialogTitle>
 
       <DialogContent dividers>
-        {/* Selector de tamaño */}
-        <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-          {sizeBtn('SMALL', 'Individual')}
-          {sizeBtn('MEDIUM', 'Mediana')}
-          {sizeBtn('LARGE', 'Grande')}
-          {sizeBtn('HALF', 'Mitad y mitad')}
-        </Box>
+        {/* Selector de tamaño. Con lockedMode no va: el tamaño ya lo eligió el
+            cliente al tocar la card del menú. */}
+        {!lockedMode && (
+          <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+            {sizeBtn('SMALL', 'Individual')}
+            {sizeBtn('MEDIUM', 'Mediana')}
+            {sizeBtn('LARGE', 'Grande')}
+            {sizeBtn('HALF', 'Mitad y mitad')}
+          </Box>
+        )}
 
         {/* Sub-selector de tamaño para mitad y mitad */}
         {isHalf && (
@@ -226,8 +254,11 @@ export function PizzaCounterModal({ open, onClose, pizzas, onConfirm }: Props) {
           sx={{
             maxHeight: { xs: '42vh', sm: 340 },
             overflowY: 'auto',
+            // Nunca scroll horizontal: si no entran dos por fila, va una debajo
+            // de la otra. auto-fill + minmax lo resuelve solo según el ancho.
+            overflowX: 'hidden',
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
             gap: 1,
             alignContent: 'start',
           }}
@@ -244,9 +275,38 @@ export function PizzaCounterModal({ open, onClose, pizzas, onConfirm }: Props) {
                   borderColor: n > 0 ? 'primary.main' : 'divider', bgcolor: n > 0 ? 'action.hover' : 'background.paper',
                 }}
               >
+                {/* Foto: abre la ficha del gusto con la descripción completa. */}
+                <Box
+                  component="img"
+                  src={f.image || PLACEHOLDER}
+                  alt={f.name}
+                  onClick={() => setDetail(f)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Ver detalle de ${f.name}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail(f); }
+                  }}
+                  sx={{
+                    width: 52, height: 52, borderRadius: 1.5, objectFit: 'cover',
+                    flexShrink: 0, cursor: 'pointer',
+                  }}
+                />
                 <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                   <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.2 }} noWrap>{f.name}</Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  {f.description && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden', lineHeight: 1.25,
+                      }}
+                    >
+                      {f.description}
+                    </Typography>
+                  )}
+                  <Typography variant="caption" color="primary.main" fontWeight={700} sx={{ display: 'block' }}>
                     {isHalf ? `½ ${formatCurrency(price / 2)}` : formatCurrency(price)}
                   </Typography>
                 </Box>
@@ -263,15 +323,35 @@ export function PizzaCounterModal({ open, onClose, pizzas, onConfirm }: Props) {
 
       <DialogActions sx={{ px: 3, py: 2, justifyContent: 'space-between' }}>
         <Box>
+          {/* Con el modo fijado mostramos solo lo que aplica: en la card de un
+              tamaño no tiene sentido hablar de mitad y mitad, y viceversa. */}
           <Typography variant="caption" color="text.secondary" display="block">
-            {wholeSummary.count} enteras · {halfSummary.pairs} mitad y mitad
+            {lockedMode === 'HALF'
+              ? `${halfSummary.pairs} ${halfSummary.pairs === 1 ? 'pizza' : 'pizzas'} mitad y mitad`
+              : lockedMode
+                ? `${wholeSummary.count} ${wholeSummary.count === 1 ? 'pizza' : 'pizzas'}`
+                : `${wholeSummary.count} enteras · ${halfSummary.pairs} mitad y mitad`}
           </Typography>
           <Typography variant="h6" fontWeight={700} color="primary.main">{formatCurrency(totalPrice)}</Typography>
         </Box>
         <Button variant="contained" size="large" disabled={!canConfirm} onClick={() => onConfirm(buildLines())}>
-          Agregar al carrito
+          {confirmLabel}
         </Button>
       </DialogActions>
+
+      {/* Ficha del gusto. Agregar acá suma 1 al contador de atrás (una mitad si
+          estamos en mitad y mitad), así el panel sigue siendo la única cuenta. */}
+      <ProductDetailModal
+        open={!!detail}
+        onClose={() => setDetail(null)}
+        name={detail?.name ?? ''}
+        description={detail?.description}
+        image={detail?.image}
+        price={detail ? (flavorPrice(detail, currentSize) ?? null) : null}
+        priceNote={isHalf ? `en ${SHORT_LABEL[currentSize].toLowerCase()} · se cobra la mitad` : SHORT_LABEL[currentSize]}
+        addLabel={isHalf ? 'Agregar esta mitad' : 'Agregar al pedido'}
+        onAdd={() => detail && change(detail.id, 1)}
+      />
     </Dialog>
   );
 }

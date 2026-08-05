@@ -7,6 +7,8 @@ import { simulateCustomerMessage } from '@/services/wa-sim.service';
 const bodySchema = z.object({
   phone: z.string().min(3).max(20),
   text: z.string().min(1).max(4096),
+  // Con qué IA responder este chat (para comparar Claude vs Gemini).
+  provider: z.enum(['anthropic', 'gemini']).optional(),
 });
 
 // Simulador local: manda un mensaje como si fuera un cliente por WhatsApp.
@@ -20,7 +22,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 });
   }
   try {
-    const view = await simulateCustomerMessage(parsed.data.phone.trim(), parsed.data.text.trim());
+    const view = await simulateCustomerMessage(
+      parsed.data.phone.trim(),
+      parsed.data.text.trim(),
+      parsed.data.provider
+    );
     return NextResponse.json(
       { success: true, id: view.id, data: view.messages, flow: view.flow, readyOrder: view.readyOrder, addonOf: view.addonOf, humanReason: view.humanReason, botPaused: view.botPaused },
       { headers: { 'Cache-Control': 'no-store' } }

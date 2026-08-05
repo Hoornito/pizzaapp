@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { toNumber } from '@/lib/utils';
+import { EXTRAS_CATEGORY_SLUG } from '@/lib/constants';
 import { type ProductWithCategory } from '@/types/product.types';
 
 const PIZZAS_SLUG = 'pizzas';
@@ -11,6 +12,11 @@ export interface WAMenu {
   pizzas: ProductWithCategory[];
   /** Productos sueltos no-pizza (empanadas, bebidas, fainá, postres…). */
   products: ProductWithCategory[];
+  /**
+   * Agregados que se cobran (categoría interna "extras"): no son ítems sueltos
+   * del menú, son el precio del extra de otro ítem ("+ huevo", "doble muzzarella").
+   */
+  extras: ProductWithCategory[];
   /** Promociones activas. */
   promotions: { id: string; name: string; price: number; description: string | null }[];
 }
@@ -45,7 +51,10 @@ export async function getWAMenu(force = false): Promise<WAMenu> {
   ]);
 
   const pizzas = allProducts.filter((p) => p.category.slug === PIZZAS_SLUG);
-  const products = allProducts.filter((p) => p.category.slug !== PIZZAS_SLUG);
+  const extras = allProducts.filter((p) => p.category.slug === EXTRAS_CATEGORY_SLUG);
+  const products = allProducts.filter(
+    (p) => p.category.slug !== PIZZAS_SLUG && p.category.slug !== EXTRAS_CATEGORY_SLUG
+  );
   const promotions = promos.map((p) => ({
     id: p.id,
     name: p.name,
@@ -53,9 +62,9 @@ export async function getWAMenu(force = false): Promise<WAMenu> {
     description: p.description,
   }));
 
-  const menuText = buildMenuText(pizzas, products, promotions);
+  const menuText = buildMenuText(pizzas, products, extras, promotions);
 
-  const data: WAMenu = { menuText, pizzas, products, promotions };
+  const data: WAMenu = { menuText, pizzas, products, extras, promotions };
   cache = { at: Date.now(), data };
   return data;
 }
@@ -65,6 +74,7 @@ export async function getWAMenu(force = false): Promise<WAMenu> {
 function buildMenuText(
   pizzas: ProductWithCategory[],
   products: ProductWithCategory[],
+  extras: ProductWithCategory[],
   promotions: WAMenu['promotions']
 ): string {
   const parts: string[] = [];
@@ -85,6 +95,14 @@ function buildMenuText(
   for (const [catName, items] of byCat) {
     parts.push(`\n# ${catName.toUpperCase()}`);
     for (const p of items) parts.push(`- ${p.name}`);
+  }
+
+  // Agregados: NO son ítems del menú, son lo que se puede sumar a un ítem. Van
+  // aparte para que el modelo use el nombre exacto en el campo "extra" y el
+  // sistema le pueda poner precio solo.
+  if (extras.length) {
+    parts.push('\n# AGREGADOS (no son ítems sueltos: se suman a un ítem con el campo "extra")');
+    for (const e of extras) parts.push(`- ${e.name}`);
   }
 
   if (promotions.length) {

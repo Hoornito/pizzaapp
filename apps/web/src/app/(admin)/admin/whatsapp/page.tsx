@@ -19,6 +19,7 @@ import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import { useSnackbar } from '@/app/snackbar-context';
 import OrderReviewDialog, { type ReadyOrder } from './OrderReviewDialog';
 
@@ -226,6 +227,9 @@ export default function WhatsAppInboxPage() {
         </Button>
         <Button component={Link} href="/admin/whatsapp/sim" variant="outlined" size="small" startIcon={<SmartToyIcon />}>
           Simulador
+        </Button>
+        <Button component={Link} href="/admin/whatsapp/bot" variant="outlined" size="small" startIcon={<AutoFixHighIcon />}>
+          Entrenar al bot
         </Button>
       </Box>
       <Paper variant="outlined" sx={{ display: 'flex', height: { xs: 'calc(100vh - 200px)', md: '72vh' }, overflow: 'hidden' }}>

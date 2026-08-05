@@ -3,14 +3,21 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { isStaff } from '@/lib/roles';
 import { isAIGloballyDisabled, setAIGloballyDisabled } from '@/services/wa-order-flow.service';
+import { availableProviders, defaultProvider, modelFor } from '@/lib/ai-provider';
 
-// Estado del kill-switch global de la IA.
+// Estado del kill-switch global + qué proveedores de IA hay configurados.
 export async function GET() {
   const session = await auth();
   if (!session || !isStaff(session.user.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
-  return NextResponse.json({ success: true, disabled: await isAIGloballyDisabled() });
+  const providers = availableProviders();
+  return NextResponse.json({
+    success: true,
+    disabled: await isAIGloballyDisabled(),
+    providers: providers.map((p) => ({ id: p, model: modelFor(p, 'parser') })),
+    defaultProvider: defaultProvider(),
+  });
 }
 
 const bodySchema = z.object({ disabled: z.boolean() });

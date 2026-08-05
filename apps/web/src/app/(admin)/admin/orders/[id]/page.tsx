@@ -220,6 +220,28 @@ export default function AdminOrderDetailPage({ params }: Props) {
                 <Typography color="text.secondary">Envío</Typography>
                 <Typography>{order.deliveryFee > 0 ? formatCurrency(order.deliveryFee) : 'Gratis'}</Typography>
               </Box>
+              {Number(order.tip) > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography color="text.secondary">🛵 Propina repartidor</Typography>
+                  <Typography>{formatCurrency(order.tip)}</Typography>
+                </Box>
+              )}
+              {/* Descuento aplicado: se muestra explícito porque el Total ya lo
+                  tiene descontado y si no, no se ve por ningún lado. */}
+              {Number(order.discount) > 0 && (() => {
+                const base = Number(order.subtotal) + Number(order.deliveryFee) + Number(order.tip || 0);
+                const pct = base > 0 ? Math.round((Number(order.discount) / base) * 100) : 0;
+                return (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography color="success.main" fontWeight={600}>
+                      Descuento{pct > 0 ? ` (${pct}%)` : ''}
+                    </Typography>
+                    <Typography color="success.main" fontWeight={700}>
+                      −{formatCurrency(order.discount)}
+                    </Typography>
+                  </Box>
+                );
+              })()}
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="h6" fontWeight={700}>Total</Typography>
                 <Typography variant="h6" fontWeight={700} color="primary">

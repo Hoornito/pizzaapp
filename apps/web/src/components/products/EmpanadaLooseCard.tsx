@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardActions from '@mui/material/CardActions';
@@ -15,6 +15,7 @@ import { useCart } from '@/hooks/useCart';
 import { useUIStore } from '@/store/uiStore';
 import { formatCurrency, toNumber } from '@/lib/utils';
 import { EmpanadaLooseModal } from './EmpanadaLooseModal';
+import { ProductDetailModal } from './ProductDetailModal';
 
 interface EmpanadaLooseCardProps {
   empanadas: ProductWithCategory[];
@@ -25,6 +26,8 @@ export function EmpanadaLooseCard({ empanadas }: EmpanadaLooseCardProps) {
   const { addItem } = useCart();
   const { openCart } = useUIStore();
   const [open, setOpen] = useState(false);
+  // Ficha: se abre al tocar la foto.
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const available = empanadas.filter((e) => e.available);
   if (available.length === 0) return null;
@@ -48,7 +51,14 @@ export function EmpanadaLooseCard({ empanadas }: EmpanadaLooseCardProps) {
           component="img"
           image="/images/placeholder-pizza.jpg"
           alt="Empanadas sueltas"
-          sx={{ objectFit: 'cover', height: { xs: 110, sm: 180 } }}
+          onClick={() => setDetailOpen(true)}
+          role="button"
+          tabIndex={0}
+          aria-label="Ver detalle de Empanadas sueltas"
+          onKeyDown={(e: KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailOpen(true); }
+          }}
+          sx={{ objectFit: 'cover', height: { xs: 110, sm: 180 }, cursor: 'pointer' }}
         />
         <CardContent sx={{ flexGrow: 1, p: { xs: 1.25, sm: 2 } }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1, gap: 0.5 }}>
@@ -79,6 +89,18 @@ export function EmpanadaLooseCard({ empanadas }: EmpanadaLooseCardProps) {
           </Button>
         </CardActions>
       </Card>
+
+      <ProductDetailModal
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        name="Empanadas sueltas"
+        description="Elegí la cantidad de cada gusto y armá tu combinación. Se cobran por unidad."
+        image="/images/placeholder-pizza.jpg"
+        price={unitPrice}
+        priceNote="c/u"
+        addLabel="Elegir gustos"
+        onAdd={() => setOpen(true)}
+      />
 
       <EmpanadaLooseModal
         open={open}

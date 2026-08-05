@@ -6,6 +6,9 @@ import { z } from 'zod';
 
 const schema = z.object({
   status: z.enum(['PENDIENTE_PAGO', 'RECIBIDO', 'CONFIRMADO', 'PREPARANDO', 'EN_HORNO', 'LISTO', 'EN_REPARTO', 'ENTREGADO', 'CANCELADO']),
+  // Tiempo estimado que carga el local a mano. OJO: si no se declara acá, zod lo
+  // descarta del body y nunca llega al servicio (el pedido se guardaba sin ETA).
+  estimatedTime: z.coerce.number().int().min(0).optional(),
 });
 
 export async function PATCH(

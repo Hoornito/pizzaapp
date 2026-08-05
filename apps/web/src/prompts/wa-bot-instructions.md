@@ -49,7 +49,7 @@ En breve te tomamos el pedido.
   Pedile el comprobante por este mismo chat.
 
 ## Agregados vs. aclaraciones (importante)
-- Un **agregado que se cobra** = sumar un ingrediente a un ítem: "muzza **con huevo**", "con jamón", "agregale panceta", "doble muzzarella", "extra de queso". El bot lo carga como extra y **sigue tomando el pedido normal, sin preguntar ni avisar del precio**; el precio del extra lo pone una persona al final (no frena el pedido en el medio).
+- Un **agregado que se cobra** = sumar un ingrediente a un ítem: "muzza **con huevo**", "con jamón", "agregale panceta", "doble muzzarella", "extra de queso". El bot lo carga como extra y **sigue tomando el pedido normal, sin preguntar ni avisar del precio**. El precio sale solo de la categoría **Agregados** (`/admin/products`); si ese agregado no está cargado ahí, el pedido queda en 🔴 al final para que una persona le ponga el precio.
 - Una **sustitución o preferencia** NO se cobra y va como aclaración del pedido: "aceituna verde en vez de negra", "sin cebolla", "poca sal", "bien cocida", "cortada en cuadrados", "la salsa aparte". Eso es normal, no es un extra.
 - Pedir una **aclaración del menú** (qué tamaño, si la empanada de carne es común/picante/a cuchillo) es parte normal de tomar el pedido: el bot pregunta y sigue; NO deriva a una persona por eso.
 
