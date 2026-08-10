@@ -35,8 +35,10 @@ import { toNumber } from '@/lib/utils';
 /** La docena se arma desde su propia card (categoría Empanadas), no como promo suelta. */
 const DOZEN_PROMO_ID = 'promo-docena-empanadas';
 const PROMOS_ID = 'promociones';
-/** Alto de la barra superior de la app: los tabs se pegan justo debajo. */
-const HEADER_H = { xs: 56, sm: 64 };
+/** Alto real del Toolbar de CustomerHeader: los tabs se pegan justo debajo. */
+const HEADER_H = { xs: 68, sm: 72 };
+/** El mismo valor, para calcular scroll (no hay breakpoints en JS puro). */
+const headerPx = () => (typeof window !== 'undefined' && window.innerWidth < 600 ? HEADER_H.xs : HEADER_H.sm);
 
 interface Section {
   id: string;
@@ -113,14 +115,13 @@ export function ProductGrid() {
   // ── Scroll-spy: marca el tab de la sección que estás mirando ──────────────
   useEffect(() => {
     if (debouncedSearch || sections.length === 0) return;
-    const headerOffset = window.innerWidth < 600 ? 56 : 64;
     const onScroll = () => {
       if (jumpingRef.current) return;
       // La sección activa es la última cuyo inicio ya pasó la barra pegajosa.
       let current = sections[0].id;
       for (const s of sections) {
         const el = document.getElementById(`sec-${s.id}`);
-        if (el && el.getBoundingClientRect().top <= headerOffset + 90) current = s.id;
+        if (el && el.getBoundingClientRect().top <= headerPx() + 90) current = s.id;
       }
       setActiveId(current);
     };
@@ -134,8 +135,8 @@ export function ProductGrid() {
     if (!el) return;
     setActiveId(id);
     jumpingRef.current = true;
-    const headerOffset = window.innerWidth < 600 ? 56 : 64;
-    window.scrollTo({ top: el.offsetTop - headerOffset - 64, behavior: 'smooth' });
+    // Descontamos el header + la barra de tabs, que también queda fija arriba.
+    window.scrollTo({ top: el.offsetTop - headerPx() - 64, behavior: 'smooth' });
     // El smooth scroll dispara muchos eventos: reactivamos el spy al terminar.
     window.setTimeout(() => { jumpingRef.current = false; }, 700);
   };
@@ -212,7 +213,8 @@ export function ProductGrid() {
     if (pizza && sizes.length === 0) return null;
 
     return (
-      <Grid item xs={6} sm={6} md={4} lg={3} key={p.id}>
+      // En celular ocupa el ancho completo (una entrada por fila).
+      <Grid item xs={12} sm={6} md={4} lg={3} key={p.id}>
         <MenuItemCard
           name={p.name}
           description={p.description}

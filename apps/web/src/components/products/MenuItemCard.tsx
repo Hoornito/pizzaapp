@@ -53,7 +53,10 @@ export function MenuItemCard({
         if (!disabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(); }
       }}
       sx={{
-        height: '100%', display: 'flex', flexDirection: 'column',
+        height: '100%', display: 'flex',
+        // En celular: una entrada por fila, texto a la izquierda y foto a la
+        // derecha. En pantallas grandes vuelve a la card vertical en grilla.
+        flexDirection: { xs: 'row-reverse', sm: 'column' },
         cursor: disabled ? 'default' : 'pointer',
         opacity: disabled ? 0.55 : 1,
         filter: disabled ? 'grayscale(1)' : 'none',
@@ -61,12 +64,17 @@ export function MenuItemCard({
         '&:hover': disabled ? {} : { transform: 'translateY(-3px)', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' },
       }}
     >
-      <Box sx={{ position: 'relative' }}>
+      <Box sx={{ position: 'relative', flexShrink: 0, width: { xs: 132, sm: '100%' } }}>
         <Box
           component="img"
           src={image || PLACEHOLDER}
           alt={name}
-          sx={{ display: 'block', width: '100%', height: { xs: 130, sm: 168 }, objectFit: 'cover' }}
+          sx={{
+            display: 'block', width: '100%',
+            height: { xs: '100%', sm: 168 },
+            minHeight: { xs: 118, sm: 'auto' },
+            objectFit: 'cover',
+          }}
         />
         {badge && (
           <Chip
@@ -82,14 +90,24 @@ export function MenuItemCard({
             color="primary"
             aria-label={`Agregar ${name}`}
             onClick={(e) => { e.stopPropagation(); onOpen(); }}
-            sx={{ position: 'absolute', right: 8, bottom: -18, boxShadow: 3 }}
+            sx={{
+              position: 'absolute', right: 8,
+              bottom: { xs: 8, sm: -18 },
+              boxShadow: 3,
+            }}
           >
             <AddIcon />
           </Fab>
         )}
       </Box>
 
-      <Box sx={{ p: { xs: 1.25, sm: 1.75 }, pt: { xs: 2, sm: 2.25 }, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+      <Box
+        sx={{
+          p: { xs: 1.25, sm: 1.75 },
+          pt: { xs: 1.25, sm: 2.25 },
+          flexGrow: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
+        }}
+      >
         <Typography
           variant="subtitle2"
           fontWeight={700}
