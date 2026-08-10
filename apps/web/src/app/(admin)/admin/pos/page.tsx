@@ -38,6 +38,7 @@ import { formatCurrency, formatDozensNotes } from '@/lib/utils';
 import { flavorsForSize, formatPizzaName, formatPizzaNotes, isPizzaItemNotes } from '@/lib/pizza';
 import { promoEmpanadaCount, formatPromoNotes } from '@/lib/promos';
 import { PIZZA_SIZES, PIZZA_SIZE_LABELS, type PizzaSize } from '@/types/product.types';
+import { controlsStock } from '@/lib/constants';
 
 /** Empanada especial que no es un "gusto" para docenas/sueltas. */
 const isDobleCambalache = (name: string) => /doble cambalache/i.test(name);
@@ -89,6 +90,9 @@ interface PosItem {
   extra?: PosExtra;
   // Pizza al molde (se marca en el ticket de cocina).
   alMolde?: boolean;
+  // Promos con empanadas "a elección": qué gustos se eligieron, con su id, para
+  // poder reportar qué salió dentro de la promo.
+  promoChoices?: { productId: string; quantity: number }[];
 }
 
 /** Precio de una línea = (precio + extra) × cantidad. */
@@ -249,11 +253,15 @@ export default function PosPage() {
   };
 
   // Postres controlan stock: cuánto hay de cada uno y cuánto ya cargamos al pedido.
-  const postresStockById = useMemo(() => {
+  const stockById = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const p of products) if (p.categoryId === postresCategoryId) m[p.id] = p.stock ?? 0;
+    // Postres y bebidas: no dejamos pasar del stock disponible.
+    for (const p of products) {
+      const slug = categories.find((c) => c.id === p.categoryId)?.slug;
+      if (controlsStock(slug)) m[p.id] = p.stock ?? 0;
+    }
     return m;
-  }, [products, postresCategoryId]);
+  }, [products, categories]);
   const cartQtyByProduct = useMemo(() => {
     const m: Record<string, number> = {};
     for (const i of items) if (i.productId) m[i.productId] = (m[i.productId] ?? 0) + i.quantity;
@@ -266,9 +274,9 @@ export default function PosPage() {
         .map((i) => {
           if (i.key !== key) return i;
           let quantity = i.quantity + delta;
-          // En postres no dejamos pasar del stock disponible.
-          if (delta > 0 && i.productId && postresStockById[i.productId] != null) {
-            quantity = Math.min(quantity, postresStockById[i.productId]);
+          // En categorías con stock no dejamos pasar del disponible.
+          if (delta > 0 && i.productId && stockById[i.productId] != null) {
+            quantity = Math.min(quantity, stockById[i.productId]);
           }
           return { ...i, quantity };
         })
@@ -413,6 +421,7 @@ export default function PosPage() {
           quantity: i.quantity,
           unitPrice: i.unitPrice + extraAmt,
           notes: composed || undefined,
+          promoChoices: i.promoChoices,
         };
       }),
     };
@@ -912,6 +921,7 @@ export default function PosPage() {
         onClose={() => setDrinkCat(null)}
         title={DRINK_CATS.find((c) => c.key === drinkCat)?.label ?? 'Bebidas'}
         drinks={drinksInCat}
+        stockById={stockById}
         onConfirm={(picks) => {
           picks.forEach((p) => addItem({ productId: p.productId, name: p.name, unitPrice: p.unitPrice, quantity: p.quantity }));
           setDrinkCat(null);
@@ -932,6 +942,9 @@ export default function PosPage() {
               quantity: 1,
               notes: formatPromoNotes(promoPick.id, chosen) || undefined,
               extraEligible: true,
+              promoChoices: chosen.flavors
+                .filter((f) => f.quantity > 0)
+                .map((f) => ({ productId: f.productId, quantity: f.quantity })),
             });
           }
           setPromoPick(null);

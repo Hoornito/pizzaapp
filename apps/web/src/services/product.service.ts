@@ -110,6 +110,43 @@ export async function adjustStock(
   });
 }
 
+/**
+ * Carga stock de varios productos de una misma categoría de una sola vez, como
+ * la pantalla de Postres. Cada entrada genera su movimiento de ENTRADA, así el
+ * historial queda igual que si se cargaran de a uno.
+ */
+export async function loadStockBulk(
+  categoryId: string,
+  entries: { productId: string; quantity: number }[],
+  userId?: string
+): Promise<number> {
+  const valid = entries
+    .map((e) => ({ productId: e.productId, quantity: Math.floor(Number(e.quantity)) }))
+    .filter((e) => e.productId && e.quantity > 0);
+  if (valid.length === 0) throw new Error('Ingresá al menos una cantidad');
+
+  // Solo productos de esa categoría: evita que un id de otra categoría se cuele.
+  const allowed = new Set(
+    (
+      await prisma.product.findMany({
+        where: { id: { in: valid.map((e) => e.productId) }, categoryId },
+        select: { id: true },
+      })
+    ).map((p) => p.id)
+  );
+
+  const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { name: true } });
+
+  let applied = 0;
+  for (const e of valid) {
+    if (!allowed.has(e.productId)) continue;
+    await adjustStock(e.productId, 'ENTRADA', e.quantity, `Carga de stock (${category?.name ?? 'categoría'})`, userId);
+    applied++;
+  }
+  if (applied === 0) throw new Error('Ninguno de los productos pertenece a esa categoría');
+  return applied;
+}
+
 /** Movimientos de stock de un producto (más recientes primero). */
 export async function getStockMovements(productId: string, limit = 50) {
   return prisma.stockMovement.findMany({

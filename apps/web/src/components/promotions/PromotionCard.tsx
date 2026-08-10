@@ -54,6 +54,11 @@ export function PromotionCard({ promotion }: PromotionCardProps) {
       unitPrice: Number(promotion.promotionalPrice),
       quantity: 1,
       notes: formatPromoNotes(promotion.id, chosen) || undefined,
+      // Además del texto de las notas (que es lo que ve la cocina), mandamos los
+      // gustos con su id para poder reportar qué se vendió dentro de la promo.
+      promoChoices: chosen?.flavors
+        .filter((f) => f.quantity > 0)
+        .map((f) => ({ productId: f.productId, quantity: f.quantity })),
     });
   };
 

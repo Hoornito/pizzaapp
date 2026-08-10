@@ -139,9 +139,15 @@ function OrderDetailContent({ params }: Props) {
   useEffect(() => {
     if (!socket || !order) return;
     socket.emit('join:order', order.id);
-    const handler = (data: { orderId: string; status: string }) => {
+    const handler = (data: { orderId: string; status: string; estimatedTime?: number | null }) => {
       if (data.orderId === order.id) {
-        setOrder((prev: any) => ({ ...prev, status: data.status }));
+        setOrder((prev: any) => ({
+          ...prev,
+          status: data.status,
+          // El local puede cargar o corregir el tiempo estimado sin cambiar el
+          // estado: si viene en el evento, lo reflejamos al toque.
+          ...(data.estimatedTime !== undefined ? { estimatedTime: data.estimatedTime } : {}),
+        }));
       }
     };
     socket.on('order:status', handler);

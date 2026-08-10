@@ -100,23 +100,68 @@ export async function getReportData(period: Period, date?: Date | string, shift?
     .sort((a, b) => b.quantity - a.quantity)
     .slice(0, 5);
 
+  // ── Lo que salió DENTRO de promociones ────────────────────────────────────
+  // Una promo se cobra como un solo ítem, así que sus pizzas y empanadas no
+  // aparecían por ningún lado. Acá las contamos aparte: sirve para compras y
+  // producción, y no se mezcla con la facturación (esa la lleva la promo).
+  const orderIds = orders.map((o) => o.id);
+  const promoRows = orderIds.length
+    ? await prisma.orderPromotionItem.findMany({
+        where: { orderId: { in: orderIds } },
+        select: { orderId: true, productId: true, quantity: true },
+      })
+    : [];
+
+  const inPromo: Record<string, number> = {};
+  for (const r of promoRows) inPromo[r.productId] = (inPromo[r.productId] ?? 0) + r.quantity;
+
+  // Pedidos anteriores a que se registrara la composición: derivamos los
+  // componentes FIJOS desde la definición de la promo. Los "a elección" de esos
+  // pedidos no se pueden recuperar (quedaron sólo como texto en las notas).
+  const withSnapshot = new Set(promoRows.map((r) => r.orderId));
+  const legacyOrders = orders.filter(
+    (o) => !withSnapshot.has(o.id) && o.items.some((i) => i.promotionId)
+  );
+  if (legacyOrders.length > 0) {
+    const legacyPromoIds = [
+      ...new Set(legacyOrders.flatMap((o) => o.items.map((i) => i.promotionId).filter(Boolean) as string[])),
+    ];
+    const defs = await prisma.promotionItem.findMany({
+      where: { promotionId: { in: legacyPromoIds } },
+      select: { promotionId: true, productId: true, quantity: true },
+    });
+    for (const o of legacyOrders) {
+      for (const it of o.items) {
+        if (!it.promotionId) continue;
+        for (const d of defs) {
+          if (d.promotionId !== it.promotionId) continue;
+          inPromo[d.productId] = (inPromo[d.productId] ?? 0) + d.quantity * it.quantity;
+        }
+      }
+    }
+  }
+
   // Todos los productos con lo vendido en el período (incluye los que NO se
-  // vendieron, para ver qué sale y qué no). Nota: las empanadas elegidas dentro
-  // de una promo cuentan como parte de la promo, no como producto suelto.
+  // vendieron, para ver qué sale y qué no). `quantity` es lo vendido suelto y
+  // `inPromo` lo que salió dentro de una promoción; `totalUnits` es lo que
+  // realmente salió de la cocina.
   const productsCatalog = await prisma.product.findMany({
     select: { id: true, name: true, category: { select: { name: true } } },
   });
   const allProducts = productsCatalog
     .map((p) => {
       const s = productSales[p.id];
+      const promo = inPromo[p.id] ?? 0;
       return {
         name: p.name,
         category: p.category?.name ?? '—',
         quantity: s?.quantity ?? 0,
         revenue: s?.revenue ?? 0,
+        inPromo: promo,
+        totalUnits: (s?.quantity ?? 0) + promo,
       };
     })
-    .sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name));
+    .sort((a, b) => b.totalUnits - a.totalUnits || a.name.localeCompare(b.name));
 
   // Revenue by day
   const days = eachDayOfInterval({ start: from, end: to });

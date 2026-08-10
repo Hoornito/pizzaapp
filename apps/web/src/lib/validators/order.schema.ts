@@ -9,6 +9,17 @@ export const orderItemSchema = z.object({
   quantity: z.coerce.number().int().min(1),
   unitPrice: z.coerce.number().positive(),
   notes: z.string().nullish(),
+  // Solo en promos con productos "a elección" (p. ej. las empanadas): qué eligió
+  // el cliente. No afecta el precio —lo fija la promo—, se guarda para saber qué
+  // salió de verdad en los reportes.
+  promoChoices: z
+    .array(
+      z.object({
+        productId: z.string(),
+        quantity: z.coerce.number().int().min(1),
+      })
+    )
+    .optional(),
 });
 
 export const orderAddressSchema = z.object({

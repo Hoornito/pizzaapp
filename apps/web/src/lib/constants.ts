@@ -59,7 +59,9 @@ export const NEXT_STATUSES: Record<string, string[]> = {
   // así ningún pedido queda trabado sin acciones.
   PREPARANDO: ['LISTO', 'CANCELADO'],
   EN_HORNO: ['LISTO', 'CANCELADO'],
-  LISTO: ['EN_REPARTO', 'ENTREGADO'],
+  // Un pedido ya listo todavía se puede cancelar: el cliente se arrepiente o no
+  // aparece a retirarlo. Al cancelar se devuelve el stock de postres.
+  LISTO: ['EN_REPARTO', 'ENTREGADO', 'CANCELADO'],
   EN_REPARTO: ['ENTREGADO'],
   ENTREGADO: [],
   CANCELADO: [],
@@ -148,6 +150,17 @@ export const ORDER_PAYMENT_METHOD_EMOJI: Record<string, string> = {
 // Contacto público del negocio (footer + comprobantes de transferencia).
 export const BUSINESS_WHATSAPP_DISPLAY = '+54 9 11 6987-8641';
 export const BUSINESS_WHATSAPP_LINK = 'https://wa.me/5491169878641';
+
+// ─── Control de stock ────────────────────────────────────────────────────────
+// Categorías cuyo stock se descuenta solo al vender y bloquean la compra cuando
+// se agotan. El resto (pizzas, empanadas, fainá…) se hace al momento y se
+// habilita/deshabilita a mano, así que no lleva cuenta de unidades.
+export const STOCK_CONTROLLED_CATEGORY_SLUGS = ['postres', 'bebidas'];
+
+/** ¿Esa categoría descuenta stock al vender? */
+export function controlsStock(slug: string | null | undefined): boolean {
+  return !!slug && STOCK_CONTROLLED_CATEGORY_SLUGS.includes(slug);
+}
 
 // ─── Agregados (extras) ──────────────────────────────────────────────────────
 // Categoría interna con los agregados que se cobran ("huevo", "doble muzzarella").

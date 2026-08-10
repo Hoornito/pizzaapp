@@ -14,6 +14,7 @@ import type { ProductWithCategory } from '@/types/product.types';
 import { useCart } from '@/hooks/useCart';
 import { formatCurrency } from '@/lib/utils';
 import { useSnackbar } from '@/app/snackbar-context';
+import { controlsStock } from '@/lib/constants';
 import { DobleCambalacheDialog } from './DobleCambalacheDialog';
 import { ProductDetailModal } from './ProductDetailModal';
 
@@ -30,18 +31,18 @@ export function ProductCard({ product }: ProductCardProps) {
   // Ficha del producto: se abre al tocar la foto (desktop y mobile).
   const [detailOpen, setDetailOpen] = useState(false);
 
-  // Solo los postres controlan stock. No mostramos la cantidad al cliente, pero
+  // Postres y bebidas controlan stock. No mostramos la cantidad al cliente, pero
   // no dejamos agregar más de lo disponible (el servidor igual valida al cobrar).
-  const isPostre = product.category?.slug === 'postres';
+  const tracksStock = controlsStock(product.category?.slug);
   const stock = product.stock ?? 0;
-  const inCart = isPostre ? items.filter((i) => i.productId === product.id).reduce((s, i) => s + i.quantity, 0) : 0;
-  const outOfStock = isPostre && stock <= 0;
-  const noMoreStock = isPostre && inCart >= stock;
+  const inCart = tracksStock ? items.filter((i) => i.productId === product.id).reduce((s, i) => s + i.quantity, 0) : 0;
+  const outOfStock = tracksStock && stock <= 0;
+  const noMoreStock = tracksStock && inCart >= stock;
   const canAdd = product.available && !outOfStock && !noMoreStock;
 
   const addToCart = (notes?: string) => {
-    if (isPostre && inCart + 1 > stock) {
-      showError('No quedan más de este postre por ahora.');
+    if (tracksStock && inCart + 1 > stock) {
+      showError(`No quedan más de ${product.name} por ahora.`);
       return;
     }
     addItemAndOpen({

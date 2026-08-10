@@ -281,10 +281,15 @@ export async function getFinanceTotals(from: Date, to: Date, shift?: CashShift |
       // Con turno: solo los movimientos manuales de esas cajas.
       where: shift ? { cashRegisterId: { in: registerIds } } : { createdAt: { gte: from, lte: to } },
       select: {
+        id: true,
         type: true,
         amount: true,
         cashAmount: true,
         category: true,
+        // Para el detalle de gastos: sin esto solo se ve el total y no en qué
+        // se gastó.
+        description: true,
+        createdAt: true,
         paymentMethod: true,
         employeeId: true,
         employee: { select: { firstName: true, lastName: true } },
@@ -350,6 +355,19 @@ export async function getFinanceTotals(from: Date, to: Date, shift?: CashShift |
   let adelantosEfectivo = 0;
   let adelantosVirtual = 0;
   let sobres = 0;
+  // Detalle de cada egreso, para poder responder "¿en qué se gastó?" y no solo
+  // "cuánto". Es lo mismo que ya se hace con adelantos/varios en Empleados.
+  const expenses: {
+    id: string;
+    at: string;
+    category: string;
+    description: string | null;
+    employee: string | null;
+    paymentMethod: string;
+    amount: number;
+    cash: number;
+    virtual: number;
+  }[] = [];
   for (const t of txns) {
     const amt = toNumber(t.amount);
     // Porciones efectivo / virtual (MIXTO se reparte; el resto va entero a una).
@@ -370,6 +388,18 @@ export async function getFinanceTotals(from: Date, to: Date, shift?: CashShift |
     } else {
       cashExpense += cashPart;
       virtualExpense += virtualPart;
+
+      expenses.push({
+        id: t.id,
+        at: t.createdAt.toISOString(),
+        category: t.category,
+        description: t.description ?? null,
+        employee: t.employee ? `${t.employee.firstName} ${t.employee.lastName}` : null,
+        paymentMethod: t.paymentMethod,
+        amount: amt,
+        cash: cashPart,
+        virtual: virtualPart,
+      });
 
       // Otros gastos = todo egreso menos sueldos.
       if (t.category !== FINANCE_CATEGORY_SUELDOS) {
@@ -457,6 +487,8 @@ export async function getFinanceTotals(from: Date, to: Date, shift?: CashShift |
     virtualExpense,
     otrosGastosEfectivo,
     otrosGastosVirtual,
+    // Detalle de cada egreso (más nuevo primero), para ver en qué se gastó.
+    expenses: expenses.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()),
     sueldosEfectivo,
     sueldosVirtual,
     adelantosEfectivo,

@@ -101,6 +101,26 @@ export function groupTicketItems(
   return [...map.values()];
 }
 
+/**
+ * Título de fainá para el ticket de cocina. En la carta la entera y la porción
+ * se llaman casi igual ("faina" vs "Porción Faina"), así que en la comanda una
+ * entera salía como "1x faina" y se confundía con una porción. Las enteras se
+ * destacan como "FAINA ENTERA" conservando la variante.
+ *
+ * Devuelve null si el producto no es una fainá entera (porciones y todo lo
+ * demás se imprimen como siempre). Se detecta por nombre: las porciones llevan
+ * el prefijo "Porción", las enteras arrancan directamente con "faina".
+ */
+export function wholeFainaTitle(name: string | null | undefined): string | null {
+  const n = (name ?? '').trim();
+  // Ojo con \b: en JS se basa en [A-Za-z0-9_], así que la "á" de "Fainá" no
+  // genera frontera de palabra y el nombre con tilde no matchearía. Por eso el
+  // corte se pide explícito: espacio o fin de texto.
+  if (!/^fain[aá](?=\s|$)/i.test(n)) return null;
+  const variant = n.replace(/^fain[aá]\s*/i, '').trim();
+  return variant ? `FAINA ENTERA ${variant.toUpperCase()}` : 'FAINA ENTERA';
+}
+
 export function formatCurrency(amount: number | string | null | undefined): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : (amount ?? 0);
   return `${CURRENCY_SYMBOL} ${num.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

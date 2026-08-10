@@ -4,7 +4,7 @@ import { isStaff } from '@/lib/roles';
 import { prisma } from '@/lib/prisma';
 import { isPizzaItemNotes } from '@/lib/pizza';
 import QRCode from 'qrcode';
-import { parseOrderCustomer, groupTicketItems, buildWazeUrl } from '@/lib/utils';
+import { parseOrderCustomer, groupTicketItems, buildWazeUrl, wholeFainaTitle } from '@/lib/utils';
 import { ORDER_PAYMENT_METHOD_LABELS } from '@/lib/constants';
 
 const esc = (s: unknown) =>
@@ -38,6 +38,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   const fmtMoney = (n: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(n);
   const fmtDate = (d: Date) =>
     new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(d));
+  const fmtTime = (d: Date) =>
+    new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit' }).format(new Date(d));
 
   // Agrupamos ítems idénticos (2 pizzas iguales -> "2x ..."). Las mitad-y-mitad
   // tienen notas distintas, así que quedan como líneas aparte.
@@ -51,7 +53,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
       // "AL MOLDE" viene como línea aparte en las notas: lo sacamos del título y
       // lo mostramos destacado.
       const molde = MOLDE_RE.test(g.title) || MOLDE_RE.test(g.notes || '');
-      const titleClean = (g.title || '').replace(/\n?\s*AL MOLDE\s*/i, '').trim();
+      const rawTitle = (g.title || '').replace(/\n?\s*AL MOLDE\s*/i, '').trim();
+      // Una fainá entera se destaca: si no, sale "1x faina" y en la cocina no se
+      // distingue de una porción.
+      const titleClean = wholeFainaTitle(rawTitle) ?? rawTitle;
       const notesClean = !g.isPizza && g.notes ? g.notes.replace(/\n?\s*AL MOLDE\s*/i, '').trim() : '';
       const moldeHtml = molde ? `<div class="item-notes big">** AL MOLDE **</div>` : '';
       // Extra de la pizza (p. ej. "EXTRA: HUEVO").
@@ -109,6 +114,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   .total { font-size:17px; font-weight:bold; display:flex; justify-content:space-between; }
   .status { margin-top:3px; text-align:center; font-weight:bold; padding:3px; border:2px solid #000; }
   .status.unpaid { background:#000; color:#fff; }
+  /* Pedido programado: tiene que verse de lejos, la cocina se organiza por esto. */
+  .scheduled { margin-top:4px; text-align:center; font-weight:bold; font-size:22px; padding:4px; border:3px solid #000; letter-spacing:1px; }
   .tip { display:flex; justify-content:space-between; font-size:14px; font-weight:bold; margin:4px 0; }
   .cash { font-size:12px; font-weight:bold; margin:3px 0; text-align:center; }
   .qr { text-align:center; margin-top:6px; }
@@ -142,6 +149,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
     <div class="status ${isPaid ? 'paid' : 'unpaid'}">
       ${isPaid ? `PAGADO (${esc(methodLabel)})` : `FALTA COBRAR - ${esc(methodLabel)}`}
     </div>
+    ${
+      order.scheduledFor
+        ? `<div class="scheduled">${order.deliveryType === 'DELIVERY' ? 'ENVIO' : 'RETIRA'} ${esc(fmtTime(order.scheduledFor))}</div>`
+        : ''
+    }
   </div>
   ${cleanNotes ? `<div class="sep"></div><div class="meta"><b>Obs:</b> ${esc(cleanNotes)}</div>` : ''}
   ${wazeQr ? `<div class="sep"></div><div class="qr"><img src="${wazeQr}" alt="Waze" /><div class="qr-label">Escaneá para ir con Waze</div></div>` : ''}

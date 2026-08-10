@@ -23,7 +23,8 @@ import AccordionDetails from '@mui/material/AccordionDetails';
 import Chip from '@mui/material/Chip';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { RevenueChart } from '@/components/admin/RevenueChart';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
+import { FINANCE_PAYMENT_METHOD_LABELS } from '@/lib/constants';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 export default function AdminReportsPage() {
@@ -188,6 +189,73 @@ export default function AdminReportsPage() {
             </Grid>
           )}
 
+          {/* Detalle de gastos: en qué se gastó, no solo cuánto */}
+          {report.finance?.expenses?.length > 0 && (
+            <Grid item xs={12}>
+              <Paper sx={{ p: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 1 }}>
+                  <Typography variant="h6" fontWeight={600}>Detalle de gastos</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    ({report.finance.expenses.length} movimiento{report.finance.expenses.length === 1 ? '' : 's'})
+                  </Typography>
+                </Box>
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell><strong>Fecha</strong></TableCell>
+                        <TableCell><strong>Categoría</strong></TableCell>
+                        <TableCell><strong>Detalle</strong></TableCell>
+                        <TableCell><strong>Forma</strong></TableCell>
+                        <TableCell align="right"><strong>Efectivo</strong></TableCell>
+                        <TableCell align="right"><strong>Virtual</strong></TableCell>
+                        <TableCell align="right"><strong>Total</strong></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {report.finance.expenses.map((e: any) => (
+                        <TableRow key={e.id} hover>
+                          <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(e.at)}</TableCell>
+                          <TableCell>{e.category}</TableCell>
+                          <TableCell>
+                            {e.description || <Typography variant="caption" color="text.disabled">—</Typography>}
+                            {e.employee && (
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                👤 {e.employee}
+                              </Typography>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {FINANCE_PAYMENT_METHOD_LABELS[e.paymentMethod] || e.paymentMethod}
+                          </TableCell>
+                          <TableCell align="right">{e.cash > 0 ? formatCurrency(e.cash) : '—'}</TableCell>
+                          <TableCell align="right">{e.virtual > 0 ? formatCurrency(e.virtual) : '—'}</TableCell>
+                          <TableCell align="right">
+                            <strong>{formatCurrency(e.amount)}</strong>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow>
+                        <TableCell colSpan={4}><strong>Total gastado</strong></TableCell>
+                        <TableCell align="right">
+                          <strong>{formatCurrency(report.finance.cashExpense)}</strong>
+                        </TableCell>
+                        <TableCell align="right">
+                          <strong>{formatCurrency(report.finance.virtualExpense)}</strong>
+                        </TableCell>
+                        <TableCell align="right">
+                          <strong>
+                            {formatCurrency(report.finance.cashExpense + report.finance.virtualExpense)}
+                          </strong>
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            </Grid>
+          )}
+
           {/* Pagos por empleado */}
           {report.finance?.byEmployee?.length > 0 && (
             <Grid item xs={12}>
@@ -307,15 +375,17 @@ export default function AdminReportsPage() {
                 {report.allProducts && (
                   <Box sx={{ display: 'flex', gap: 1, ml: 2, alignItems: 'center', flexWrap: 'wrap' }}>
                     <Chip size="small" color="success" variant="outlined"
-                      label={`${report.allProducts.filter((p: any) => p.quantity > 0).length} con ventas`} />
+                      label={`${report.allProducts.filter((p: any) => p.totalUnits > 0).length} con salida`} />
                     <Chip size="small" color="default" variant="outlined"
-                      label={`${report.allProducts.filter((p: any) => p.quantity === 0).length} sin ventas`} />
+                      label={`${report.allProducts.filter((p: any) => p.totalUnits === 0).length} sin salida`} />
                   </Box>
                 )}
               </AccordionSummary>
               <AccordionDetails>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                  Las empanadas elegidas dentro de una promo cuentan como parte de la promo, no como producto suelto.
+                  <b>Suelto</b> es lo que se vendió como producto (y factura). <b>En promos</b> es lo que salió dentro
+                  de una promoción: no suma ingresos acá (los cobra la promo), pero sí salió de la cocina. Para saber
+                  cuánto se consumió de verdad, mirá <b>Total</b>.
                 </Typography>
                 <TableContainer sx={{ maxHeight: 480 }}>
                   <Table size="small" stickyHeader>
@@ -323,28 +393,42 @@ export default function AdminReportsPage() {
                       <TableRow>
                         <TableCell><strong>Producto</strong></TableCell>
                         <TableCell><strong>Categoría</strong></TableCell>
-                        <TableCell align="right"><strong>Cantidad</strong></TableCell>
+                        <TableCell align="right"><strong>Suelto</strong></TableCell>
+                        <TableCell align="right"><strong>En promos</strong></TableCell>
+                        <TableCell align="right"><strong>Total</strong></TableCell>
                         <TableCell align="right"><strong>Ingresos</strong></TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {(report.allProducts || []).map((item: any, i: number) => {
-                        const sold = item.quantity > 0;
+                        const salio = item.totalUnits > 0;
                         return (
                           <TableRow
                             key={i}
-                            sx={{ borderLeft: '3px solid', borderLeftColor: sold ? 'success.main' : 'grey.300' }}
+                            sx={{ borderLeft: '3px solid', borderLeftColor: salio ? 'success.main' : 'grey.300' }}
                           >
-                            <TableCell sx={{ color: sold ? 'text.primary' : 'text.disabled' }}>{item.name}</TableCell>
+                            <TableCell sx={{ color: salio ? 'text.primary' : 'text.disabled' }}>{item.name}</TableCell>
                             <TableCell sx={{ color: 'text.secondary' }}>{item.category}</TableCell>
+                            <TableCell align="right" sx={{ color: item.quantity > 0 ? 'text.primary' : 'text.disabled' }}>
+                              {item.quantity || '—'}
+                            </TableCell>
                             <TableCell align="right">
-                              {sold ? (
-                                <Typography component="span" fontWeight={700} color="success.main">{item.quantity}</Typography>
+                              {item.inPromo > 0 ? (
+                                <Typography component="span" fontWeight={600} color="secondary.main">
+                                  {item.inPromo}
+                                </Typography>
                               ) : (
-                                <Chip size="small" color="warning" variant="outlined" label="Sin ventas" />
+                                <Typography component="span" color="text.disabled">—</Typography>
                               )}
                             </TableCell>
-                            <TableCell align="right" sx={{ color: sold ? 'text.primary' : 'text.disabled' }}>
+                            <TableCell align="right">
+                              {salio ? (
+                                <Typography component="span" fontWeight={700} color="success.main">{item.totalUnits}</Typography>
+                              ) : (
+                                <Chip size="small" color="warning" variant="outlined" label="Sin salida" />
+                              )}
+                            </TableCell>
+                            <TableCell align="right" sx={{ color: item.revenue > 0 ? 'text.primary' : 'text.disabled' }}>
                               {formatCurrency(item.revenue)}
                             </TableCell>
                           </TableRow>

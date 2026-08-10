@@ -228,6 +228,7 @@ export default function CheckoutPage() {
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           notes: item.notes,
+          promoChoices: item.promoChoices,
         })),
       };
 

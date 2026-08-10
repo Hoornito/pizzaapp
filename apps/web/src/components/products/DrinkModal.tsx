@@ -29,20 +29,25 @@ interface Props {
   onClose: () => void;
   title: string;
   drinks: ProductWithCategory[];
+  /** Stock disponible por producto. Las bebidas lo controlan: no se puede pasar. */
+  stockById?: Record<string, number>;
   onConfirm: (picks: DrinkPick[]) => void;
 }
 
 /** Selección de bebidas de una categoría de tamaño, con cantidad y precio por unidad. */
-export function DrinkModal({ open, onClose, title, drinks, onConfirm }: Props) {
+export function DrinkModal({ open, onClose, title, drinks, stockById, onConfirm }: Props) {
   const [qty, setQty] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (open) setQty({});
   }, [open]);
 
+  /** Tope disponible del producto (sin control de stock, sin tope). */
+  const maxOf = (id: string) => stockById?.[id] ?? Infinity;
+
   const change = (id: string, delta: number) =>
     setQty((prev) => {
-      const next = Math.max(0, (prev[id] ?? 0) + delta);
+      const next = Math.min(maxOf(id), Math.max(0, (prev[id] ?? 0) + delta));
       const copy = { ...prev };
       if (next === 0) delete copy[id];
       else copy[id] = next;
@@ -83,6 +88,7 @@ export function DrinkModal({ open, onClose, title, drinks, onConfirm }: Props) {
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1, alignContent: 'start' }}>
             {drinks.map((d) => {
               const n = qty[d.id] ?? 0;
+              const max = maxOf(d.id);
               return (
                 <Paper
                   key={d.id}
@@ -96,11 +102,20 @@ export function DrinkModal({ open, onClose, title, drinks, onConfirm }: Props) {
                   <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                     <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.2 }}>{d.name}</Typography>
                     <Typography variant="caption" color="text.secondary">{formatCurrency(toNumber(d.price))}</Typography>
+                    {max !== Infinity && (
+                      <Typography
+                        variant="caption"
+                        sx={{ display: 'block' }}
+                        color={max <= 0 ? 'error.main' : n >= max ? 'warning.main' : 'text.secondary'}
+                      >
+                        {max <= 0 ? 'Sin stock' : `Quedan ${max}`}
+                      </Typography>
+                    )}
                   </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
                     <IconButton size="small" onClick={() => change(d.id, -1)} disabled={n === 0} sx={{ bgcolor: 'grey.100' }}><RemoveIcon fontSize="small" /></IconButton>
                     <Typography variant="body2" sx={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{n}</Typography>
-                    <IconButton size="small" onClick={() => change(d.id, 1)} sx={{ bgcolor: 'grey.100' }}><AddIcon fontSize="small" /></IconButton>
+                    <IconButton size="small" onClick={() => change(d.id, 1)} disabled={n >= max} sx={{ bgcolor: 'grey.100' }}><AddIcon fontSize="small" /></IconButton>
                   </Box>
                 </Paper>
               );

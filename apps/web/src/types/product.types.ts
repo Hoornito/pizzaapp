@@ -73,6 +73,12 @@ export interface CartItemLocal {
   dozens?: EmpanadaDozen[];
   /** Presente sólo en el flujo de pizzas por tamaño (cada línea = 1 pizza). */
   pizza?: PizzaSelection;
+  /**
+   * Sólo en promos con productos "a elección" (las empanadas): qué eligió el
+   * cliente, con el id del producto. Viaja al pedido para poder reportar qué
+   * salió de verdad; no afecta el precio, que lo fija la promo.
+   */
+  promoChoices?: { productId: string; quantity: number }[];
 }
 
 export interface CartState {

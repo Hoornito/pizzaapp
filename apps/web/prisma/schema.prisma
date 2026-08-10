@@ -168,6 +168,7 @@ model Product {
   cartItems      CartItem[]
   orderItems     OrderItem[]
   promotionItems PromotionItem[]
+  promoSales     OrderPromotionItem[]
   stockMovements StockMovement[]
 
   @@index([categoryId])
@@ -241,6 +242,7 @@ model Promotion {
   items      PromotionItem[]
   cartItems  CartItem[]
   orderItems OrderItem[]
+  promoSales OrderPromotionItem[]
 
   @@index([available])
   @@index([startDate, endDate])
@@ -256,6 +258,35 @@ model PromotionItem {
   product   Product   @relation(fields: [productId], references: [id])
 
   @@unique([promotionId, productId])
+  @@index([promotionId])
+}
+
+// Composición real de cada promoción vendida: qué productos llevó puestos.
+// Sin esto, una promo se guarda como un solo ítem y los gustos elegidos quedan
+// como TEXTO en las notas, así que no hay forma de saber cuántas empanadas de
+// carne salieron de verdad.
+//
+// Es un SNAPSHOT del momento de la venta: si mañana cambia la definición de la
+// promo, los pedidos viejos siguen mostrando lo que realmente se entregó.
+// NO afecta precios ni totales: la plata la sigue llevando el OrderItem de la
+// promo. Esto es solo composición, para reportes y compras.
+model OrderPromotionItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  promotionId String
+  productId   String
+  quantity    Int
+  // true = lo eligió el cliente ("empanadas a elección").
+  // false = viene fijo en la promo.
+  chosen      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  promotion Promotion @relation(fields: [promotionId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
   @@index([promotionId])
 }
 
@@ -333,6 +364,7 @@ model Order {
   address          Address?   @relation(fields: [addressId], references: [id])
   deliveryEmployee Employee?  @relation("OrderDeliveryEmployee", fields: [deliveryEmployeeId], references: [id])
   items            OrderItem[]
+  promoItems       OrderPromotionItem[]
   payment          Payment?
 
   @@index([userId])

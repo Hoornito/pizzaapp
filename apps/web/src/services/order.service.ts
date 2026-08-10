@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { eventBus } from '@/lib/event-bus';
 import { emitOrderCreated, emitOrderStatusChanged, emitNotification, emitPrintOrder } from '@/lib/socket-server';
 import { getOpenCashRegister } from '@/services/finance.service';
+import { controlsStock } from '@/lib/constants';
 import { isValidSlot } from '@/services/schedule.service';
 import { sendText } from '@/lib/whatsapp';
 import { sanitizePhone } from '@/lib/utils';
@@ -23,19 +24,19 @@ const ORDER_INCLUDE = {
 } satisfies Prisma.OrderInclude;
 
 /**
- * Ajusta el stock de los POSTRES de un pedido. Solo la categoría "postres" lleva
- * control de stock; el resto (pizzas/empanadas/bebidas) se habilita/deshabilita
- * a mano y no descuenta.
+ * Ajusta el stock de las categorías que lo controlan (ver
+ * STOCK_CONTROLLED_CATEGORY_SLUGS: postres y bebidas). El resto
+ * (pizzas/empanadas/fainá) se hace al momento, se habilita a mano y no descuenta.
  *   - 'sell'    → descuenta (venta), sin bajar de 0.
  *   - 'restore' → devuelve al stock (cancelación de un pedido ya vendido).
  */
-async function adjustPostresStockForOrder(orderId: string, direction: 'sell' | 'restore') {
+async function adjustStockForOrder(orderId: string, direction: 'sell' | 'restore') {
   const items = await prisma.orderItem.findMany({
     where: { orderId, productId: { not: null } },
     include: { product: { include: { category: true } } },
   });
   for (const it of items) {
-    if (!it.productId || it.product?.category?.slug !== 'postres') continue;
+    if (!it.productId || !it.product || !controlsStock(it.product.category?.slug)) continue;
     if (direction === 'sell') {
       const newStock = Math.max(0, it.product.stock - it.quantity);
       await prisma.product.update({ where: { id: it.productId }, data: { stock: newStock } });
@@ -49,10 +50,10 @@ async function adjustPostresStockForOrder(orderId: string, direction: 'sell' | '
 }
 
 /**
- * Valida que haya stock suficiente de los POSTRES pedidos. Lanza si algún postre
- * no alcanza. No afecta a las demás categorías.
+ * Valida que haya stock suficiente de los productos con control de stock. Lanza
+ * si alguno no alcanza. No afecta a las demás categorías.
  */
-async function assertPostresStock(items: CreateOrderInput['items']) {
+async function assertStock(items: CreateOrderInput['items']) {
   const reqQty = new Map<string, number>();
   for (const i of items) {
     if (i.productId) reqQty.set(i.productId, (reqQty.get(i.productId) ?? 0) + i.quantity);
@@ -63,7 +64,7 @@ async function assertPostresStock(items: CreateOrderInput['items']) {
     include: { category: true },
   });
   for (const p of products) {
-    if (p.category?.slug !== 'postres') continue;
+    if (!controlsStock(p.category?.slug)) continue;
     const qty = reqQty.get(p.id) ?? 0;
     if (qty > 0 && p.stock < qty) {
       throw new Error(`Sin stock suficiente de ${p.name} (quedan ${p.stock})`);
@@ -188,8 +189,8 @@ export async function createOrder(
   // Pedido de simulación (caja test): no controla ni descuenta stock real.
   const isTest = !!options?.isTest;
 
-  // No permitir vender postres sin stock suficiente (las demás categorías no controlan stock).
-  if (!isTest) await assertPostresStock(data.items);
+  // No permitir vender sin stock suficiente (postres y bebidas; el resto no controla).
+  if (!isTest) await assertStock(data.items);
 
   // Pedido programado: validamos contra las franjas vigentes AHORA. El cliente
   // pudo dejar el checkout abierto un rato largo y la franja que eligió ya puede
@@ -296,12 +297,14 @@ export async function createOrder(
   };
   const order = await createWithRetry();
 
+  await savePromotionComposition(order.id, data.items);
+
   // Si está esperando pago (MercadoPago), no avisamos a la cocina todavía ni
   // descontamos stock: ambas cosas se disparan al acreditarse el pago
   // (ver promoteOrderAfterPayment).
   if (initialStatus !== 'PENDIENTE_PAGO') {
     // La simulación no toca el stock real.
-    if (!isTest) await adjustPostresStockForOrder(order.id, 'sell');
+    if (!isTest) await adjustStockForOrder(order.id, 'sell');
     notifyOrderReceived(order);
     // Pedidos de mostrador: imprimir cocina + comanda al crearlos.
     if (options?.printOnCreate) {
@@ -310,6 +313,46 @@ export async function createOrder(
   }
 
   return order;
+}
+
+/**
+ * Guarda QUÉ productos llevó cada promoción del pedido: los fijos (según la
+ * definición de la promo en ese momento) y los que eligió el cliente.
+ *
+ * Es solo composición para reportes y compras: no toca precios ni totales, que
+ * los sigue llevando el OrderItem de la promo. Si falla, no rompemos el pedido:
+ * perder una estadística no justifica perder una venta.
+ */
+async function savePromotionComposition(orderId: string, items: CreateOrderInput['items']) {
+  const promoItems = items.filter((i) => i.promotionId);
+  if (!promoItems.length) return;
+
+  try {
+    // Componentes fijos declarados en cada promo.
+    const promotionIds = [...new Set(promoItems.map((i) => i.promotionId!))];
+    const fixed = await prisma.promotionItem.findMany({
+      where: { promotionId: { in: promotionIds } },
+      select: { promotionId: true, productId: true, quantity: true },
+    });
+
+    const rows: { orderId: string; promotionId: string; productId: string; quantity: number; chosen: boolean }[] = [];
+    for (const item of promoItems) {
+      const promotionId = item.promotionId!;
+      // Si se llevaron 2 promos iguales, la composición va por 2.
+      const times = Math.max(1, item.quantity);
+
+      for (const f of fixed.filter((f) => f.promotionId === promotionId)) {
+        rows.push({ orderId, promotionId, productId: f.productId, quantity: f.quantity * times, chosen: false });
+      }
+      for (const c of item.promoChoices ?? []) {
+        rows.push({ orderId, promotionId, productId: c.productId, quantity: c.quantity * times, chosen: true });
+      }
+    }
+
+    if (rows.length) await prisma.orderPromotionItem.createMany({ data: rows });
+  } catch (e) {
+    console.error('[order] no se pudo guardar la composición de la promo:', e instanceof Error ? e.message : e);
+  }
 }
 
 /** Aviso de "nuevo pedido" a la cocina (tiempo real + notificación persistida). */
@@ -348,8 +391,8 @@ export async function promoteOrderAfterPayment(orderId: string) {
     include: ORDER_INCLUDE,
   });
 
-  // Recién ahora (pago acreditado) descontamos el stock de postres.
-  await adjustPostresStockForOrder(orderId, 'sell');
+  // Recién ahora (pago acreditado) descontamos el stock.
+  await adjustStockForOrder(orderId, 'sell');
   await notifyOrderReceived(order);
   emitOrderStatusChanged(orderId, 'RECIBIDO', order);
   eventBus.emit('order:status_changed', order as never);
@@ -376,13 +419,13 @@ export async function updateOrderStatus(
   });
 
   // Al cancelar un pedido que ya había descontado stock (todo menos los que
-  // seguían en PENDIENTE_PAGO, que nunca descontaron), devolvemos los postres.
+  // seguían en PENDIENTE_PAGO, que nunca descontaron), devolvemos el stock.
   if (
     data.status === 'CANCELADO' &&
     existing.status !== 'CANCELADO' &&
     existing.status !== 'PENDIENTE_PAGO'
   ) {
-    await adjustPostresStockForOrder(orderId, 'restore');
+    await adjustStockForOrder(orderId, 'restore');
   }
 
   if (actorId) {
@@ -423,7 +466,9 @@ export async function updateOrderStatus(
     emitPrintOrder(orderId);
   }
 
-  emitOrderStatusChanged(orderId, data.status, order);
+  // Mandamos también el tiempo estimado: si el local acaba de cargarlo, el
+  // cliente que está mirando su pedido lo ve al instante.
+  emitOrderStatusChanged(orderId, data.status, order, order.estimatedTime);
   eventBus.emit('order:status_changed', order as never);
 
   return order;

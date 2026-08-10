@@ -65,10 +65,17 @@ export function emitOrderCreated(order: unknown) {
   } catch {}
 }
 
-export function emitOrderStatusChanged(orderId: string, status: string, order: unknown) {
+export function emitOrderStatusChanged(
+  orderId: string,
+  status: string,
+  order: unknown,
+  // Tiempo estimado que cargó el local. Viaja junto al estado para que el
+  // cliente lo vea al instante en su pedido, sin recargar.
+  estimatedTime?: number | null
+) {
   try {
     const io = getIO();
-    io.to(`order:${orderId}`).emit('order:status', { orderId, status } as never);
+    io.to(`order:${orderId}`).emit('order:status', { orderId, status, estimatedTime } as never);
     io.to('admin').emit('order:status_updated', order as never);
   } catch {}
 }

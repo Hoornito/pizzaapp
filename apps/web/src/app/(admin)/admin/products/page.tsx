@@ -24,7 +24,9 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
+import Alert from '@mui/material/Alert';
 import { formatCurrency } from '@/lib/utils';
+import { controlsStock } from '@/lib/constants';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useSnackbar } from '@/app/snackbar-context';
 
@@ -71,6 +73,39 @@ export default function AdminProductsPage() {
       }
     } catch {
       showError('Error al actualizar producto');
+    }
+  };
+
+  // Carga masiva de stock de la categoría elegida (postres, bebidas…): un
+  // renglón por producto, como la pantalla de Postres.
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkQty, setBulkQty] = useState<Record<string, string>>({});
+  const [savingBulk, setSavingBulk] = useState(false);
+
+  const selectedCategory = categories.find((c) => c.id === categoryFilter);
+  const categoryTracksStock = controlsStock(selectedCategory?.slug);
+
+  const handleBulkStock = async () => {
+    const entries = Object.entries(bulkQty)
+      .map(([productId, q]) => ({ productId, quantity: Math.floor(Number(q)) }))
+      .filter((e) => Number.isFinite(e.quantity) && e.quantity > 0);
+    if (entries.length === 0) { showError('Ingresá al menos una cantidad'); return; }
+    setSavingBulk(true);
+    try {
+      const res = await fetch('/api/products/stock/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categoryId: categoryFilter, entries }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { showError(json.error || 'Error al cargar stock'); return; }
+      showSuccess(`Stock cargado en ${json.applied} producto${json.applied === 1 ? '' : 's'}`);
+      setBulkOpen(false);
+      loadProducts();
+    } catch {
+      showError('Error de conexión');
+    } finally {
+      setSavingBulk(false);
     }
   };
 
@@ -138,6 +173,14 @@ export default function AdminProductsPage() {
               {categories.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
             </Select>
           </FormControl>
+          {categoryFilter && products.length > 0 && (
+            <Button
+              variant="outlined"
+              onClick={() => { setBulkQty({}); setBulkOpen(true); }}
+            >
+              📦 Cargar stock de {selectedCategory?.name}
+            </Button>
+          )}
           <Button variant="contained" onClick={() => router.push('/admin/products/new')}>
             + Nuevo producto
           </Button>
@@ -222,6 +265,57 @@ export default function AdminProductsPage() {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {/* Carga de stock de toda una categoría, de una sola vez */}
+      <Dialog open={bulkOpen} onClose={() => !savingBulk && setBulkOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          📦 Cargar stock · {selectedCategory?.name}
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Poné cuántas unidades entraron. Se suman al stock actual y queda registrado el movimiento.
+          </Typography>
+        </DialogTitle>
+        <DialogContent dividers>
+          {!categoryTracksStock && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Esta categoría no descuenta stock al vender: podés llevar la cuenta igual, pero no
+              bloquea la venta cuando llega a cero.
+            </Alert>
+          )}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {products.map((p) => (
+              <Box
+                key={p.id}
+                sx={{
+                  display: 'flex', alignItems: 'center', gap: 1.5, p: 1,
+                  border: '1px solid', borderColor: 'divider', borderRadius: 1,
+                }}
+              >
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body2" fontWeight={600}>{p.name}</Typography>
+                  <Typography variant="caption" color={p.stock <= 0 ? 'error.main' : 'text.secondary'}>
+                    Stock actual: <strong>{p.stock}</strong>
+                  </Typography>
+                </Box>
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Entran"
+                  value={bulkQty[p.id] ?? ''}
+                  onChange={(e) => setBulkQty((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                  inputProps={{ min: 0, step: 1 }}
+                  sx={{ width: 110 }}
+                />
+              </Box>
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkOpen(false)} disabled={savingBulk}>Cancelar</Button>
+          <Button variant="contained" onClick={handleBulkStock} disabled={savingBulk}>
+            {savingBulk ? 'Cargando…' : 'Cargar stock'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Diálogo de movimiento de stock */}
       <Dialog open={stockCtx !== null} onClose={() => setStockCtx(null)} maxWidth="xs" fullWidth>
