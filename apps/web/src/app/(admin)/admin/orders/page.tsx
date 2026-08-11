@@ -229,12 +229,21 @@ export default function AdminOrdersPage() {
       return;
     }
     // Al confirmar un pedido "lo antes posible" mandamos el tiempo estimado que
-    // cargó el local: es lo que va a ver el cliente en su pedido.
+    // cargó el local: es lo que va a ver el cliente y lo que sale en la comanda.
     const eta =
       next.status === 'CONFIRMADO' && !order.scheduledFor
         ? parseInt(etaDraft[order.id] ?? '', 10)
         : NaN;
-    changeStatus(order.id, next.status, `${next.label} ✓`, Number.isFinite(eta) && eta > 0 ? eta : undefined);
+    const etaOk = Number.isFinite(eta) && eta > 0;
+
+    // Sin tiempo estimado no se confirma: la cocina necesita saber para cuándo
+    // es. Los programados ya tienen su horario, así que no hace falta.
+    if (next.status === 'CONFIRMADO' && !order.scheduledFor && !etaOk && !(order.estimatedTime > 0)) {
+      showError('Poné el tiempo estimado antes de confirmar el pedido.');
+      return;
+    }
+
+    changeStatus(order.id, next.status, `${next.label} ✓`, etaOk ? eta : undefined);
   };
 
   // Reenvía el pedido a la estación de impresión (QZ Tray). Requiere tener la

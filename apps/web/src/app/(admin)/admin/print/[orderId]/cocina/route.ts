@@ -149,11 +149,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
     <div class="status ${isPaid ? 'paid' : 'unpaid'}">
       ${isPaid ? `PAGADO (${esc(methodLabel)})` : `FALTA COBRAR - ${esc(methodLabel)}`}
     </div>
-    ${
-      order.scheduledFor
-        ? `<div class="scheduled">${order.deliveryType === 'DELIVERY' ? 'ENVIO' : 'RETIRA'} ${esc(fmtTime(order.scheduledFor))}</div>`
-        : ''
-    }
+    ${(() => {
+      // Para cuándo es el pedido. Programado manda el horario elegido; si no,
+      // el tiempo estimado que cargó el local (y la hora a la que cae).
+      const verbo = order.deliveryType === 'DELIVERY' ? 'ENVIO' : 'RETIRA';
+      if (order.scheduledFor) {
+        return `<div class="scheduled">${verbo} ${esc(fmtTime(order.scheduledFor))}</div>`;
+      }
+      if (order.estimatedTime && order.estimatedTime > 0) {
+        const listo = new Date(new Date(order.createdAt).getTime() + order.estimatedTime * 60000);
+        return `<div class="scheduled">${verbo} ~${esc(fmtTime(listo))}<span style="font-size:14px"> (${esc(order.estimatedTime)} MIN)</span></div>`;
+      }
+      return '';
+    })()}
   </div>
   ${cleanNotes ? `<div class="sep"></div><div class="meta"><b>Obs:</b> ${esc(cleanNotes)}</div>` : ''}
   ${wazeQr ? `<div class="sep"></div><div class="qr"><img src="${wazeQr}" alt="Waze" /><div class="qr-label">Escaneá para ir con Waze</div></div>` : ''}

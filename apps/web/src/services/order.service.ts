@@ -236,8 +236,9 @@ export async function createOrder(
     userId,
     addressId,
     isTest,
-    // Sin tiempo estimado al crear: lo carga el local a mano al confirmar.
-    estimatedTime: null,
+    // El mostrador lo carga al tomar el pedido; los pedidos web nacen sin él y
+    // se completa desde la tarjeta al confirmar.
+    estimatedTime: data.estimatedTime ?? null,
     scheduledFor,
     // Inicio del pedido (para medir la demora real hasta la entrega).
     startedAt: new Date(),

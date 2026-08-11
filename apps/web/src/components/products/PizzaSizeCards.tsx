@@ -25,6 +25,11 @@ import { ProductDetailModal } from './ProductDetailModal';
 interface PizzaSizeCardsProps {
   /** Productos de la categoría Pizzas (los "gustos"). */
   pizzas: ProductWithCategory[];
+  /**
+   * Mostrar solo la card de "Mitad y mitad". Los tamaños sueltos ya no hacen
+   * falta en el menú: cada gusto tiene su card y el tamaño se elige adentro.
+   */
+  onlyHalf?: boolean;
 }
 
 /** Una card por tamaño + la de mitad y mitad. */
@@ -46,7 +51,7 @@ const SIZE_DESCRIPTION: Record<PizzaSize, string> = {
 
 const PLACEHOLDER = '/images/placeholder-pizza.jpg';
 
-export function PizzaSizeCards({ pizzas }: PizzaSizeCardsProps) {
+export function PizzaSizeCards({ pizzas, onlyHalf }: PizzaSizeCardsProps) {
   const { addItem } = useCart();
   const { openCart } = useUIStore();
   // Panel de armado abierto (con el tamaño ya fijado por la card).
@@ -58,7 +63,7 @@ export function PizzaSizeCards({ pizzas }: PizzaSizeCardsProps) {
   const sizes = PIZZA_SIZES.filter((s) => sizeRange(pizzas, s) !== null);
   if (sizes.length === 0) return null;
 
-  const entries: PizzaEntry[] = sizes.map((size) => {
+  const entries: PizzaEntry[] = (onlyHalf ? [] : sizes).map((size) => {
     const range = sizeRange(pizzas, size)!;
     return {
       mode: size,

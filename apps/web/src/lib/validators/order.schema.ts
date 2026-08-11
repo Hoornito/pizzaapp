@@ -60,6 +60,9 @@ export const createOrderSchema = z
     // antes posible". La validación de que la franja siga siendo válida se hace
     // en el servidor al crear el pedido (schedule.service).
     scheduledFor: z.string().datetime().optional(),
+    // Minutos que carga el local al tomar el pedido (mostrador). En los pedidos
+    // programados no aplica: manda el horario elegido.
+    estimatedTime: z.coerce.number().int().min(0).optional(),
     items: z.array(orderItemSchema).min(1, 'El pedido debe tener al menos un ítem'),
   })
   .refine((d) => d.deliveryType === 'PICKUP' || !!d.addressId || !!d.address, {

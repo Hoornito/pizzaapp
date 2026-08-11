@@ -54,6 +54,9 @@ export function ProductGrid() {
   const [dobleOpen, setDobleOpen] = useState<ProductWithCategory | null>(null);
   // Al saltar por tab, apagamos el scroll-spy un momento para que no titile.
   const jumpingRef = useRef(false);
+  // Para centrar solas las píldoras mientras se scrollea.
+  const pillsRef = useRef<HTMLDivElement | null>(null);
+  const pillRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const { categories: allCategories } = useCategories();
   const { products: allProducts, loading } = useProducts({ available: true });
@@ -130,6 +133,16 @@ export function ProductGrid() {
     return () => window.removeEventListener('scroll', onScroll);
   }, [sections, debouncedSearch]);
 
+  // La píldora marcada tiene que verse sin scrollear la barra a mano.
+  useEffect(() => {
+    const cont = pillsRef.current;
+    const pill = activeId ? pillRefs.current[activeId] : null;
+    if (!cont || !pill) return;
+    const target = pill.offsetLeft - cont.clientWidth / 2 + pill.clientWidth / 2;
+    const max = cont.scrollWidth - cont.clientWidth;
+    cont.scrollTo({ left: Math.max(0, Math.min(target, max)), behavior: 'smooth' });
+  }, [activeId]);
+
   const goToSection = (id: string) => {
     const el = document.getElementById(`sec-${id}`);
     if (!el) return;
@@ -168,10 +181,18 @@ export function ProductGrid() {
     else setOpened(p);
   };
 
-  const handleAdd = (p: ProductWithCategory, quantity: number, option: OrderOption | null) => {
+  const handleAdd = (
+    p: ProductWithCategory,
+    quantity: number,
+    option: OrderOption | null,
+    variant: string | null
+  ) => {
     if (isPizza(p) && option) {
       const size = option.id as PizzaSize;
       const sel = { size, flavors: [{ productId: p.id, name: p.name }], price: option.price };
+      // "AL MOLDE" va en su propia línea: así lo detecta el ticket de cocina.
+      const notes =
+        variant === 'molde' ? `${formatPizzaNotes(sel)}\nAL MOLDE` : formatPizzaNotes(sel);
       addItem({
         type: 'product',
         productId: p.id,
@@ -179,7 +200,7 @@ export function ProductGrid() {
         image: p.image,
         unitPrice: option.price,
         quantity,
-        notes: formatPizzaNotes(sel),
+        notes,
         pizza: sel,
       });
       openCart();
@@ -205,7 +226,9 @@ export function ProductGrid() {
   const renderProduct = (p: ProductWithCategory) => {
     const pizza = isPizza(p);
     const sizes = pizza ? sizeOptions(p) : [];
-    const price = pizza ? Math.min(...sizes.map((s) => s.price)) : toNumber(p.price);
+    // En pizzas mostramos el precio MAS ALTO (la grande): adentro se ve el de
+    // cada tamaño. Así el cliente no se encuentra con un precio mayor al entrar.
+    const price = pizza ? Math.max(...sizes.map((s) => s.price)) : toNumber(p.price);
     const available = availableFor(p);
     const outOfStock = available != null && available <= 0;
 
@@ -220,7 +243,7 @@ export function ProductGrid() {
           description={p.description}
           image={p.image}
           price={price}
-          priceNote={pizza && sizes.length > 1 ? 'desde' : null}
+          priceNote={pizza && sizes.length > 1 ? 'hasta' : null}
           disabled={!p.available || outOfStock}
           disabledLabel={outOfStock ? 'Sin stock' : 'No disponible'}
           onOpen={() => openProduct(p)}
@@ -269,6 +292,7 @@ export function ProductGrid() {
           }}
         >
           <Box
+            ref={pillsRef}
             sx={{
               display: 'flex', gap: 1, overflowX: 'auto', pb: 0.5,
               '&::-webkit-scrollbar': { display: 'none' },
@@ -280,6 +304,7 @@ export function ProductGrid() {
               return (
                 <Button
                   key={s.id}
+                  ref={(el: HTMLButtonElement | null) => { pillRefs.current[s.id] = el; }}
                   onClick={() => goToSection(s.id)}
                   disableElevation
                   sx={{
@@ -296,6 +321,11 @@ export function ProductGrid() {
               );
             })}
           </Box>
+
+          {/* Título de la sección donde estás parado, anclado con las píldoras. */}
+          <Typography variant="h6" fontWeight={800} sx={{ mt: 1, mb: 0.25 }}>
+            {sections.find((s) => s.id === activeId)?.label ?? sections[0].label}
+          </Typography>
         </Box>
       )}
 
@@ -312,11 +342,7 @@ export function ProductGrid() {
         )
       ) : (
         sections.map((s) => (
-          <Box key={s.id} id={`sec-${s.id}`} sx={{ scrollMarginTop: 140, mb: 5 }}>
-            <Typography variant="h5" fontWeight={800} sx={{ mb: 1.5 }}>
-              {s.label}
-            </Typography>
-
+          <Box key={s.id} id={`sec-${s.id}`} sx={{ scrollMarginTop: 140, mb: 5, pt: 1 }}>
             <Grid container spacing={{ xs: 1.5, sm: 3 }}>
               {s.id === PROMOS_ID &&
                 promosForTab.map((promo) => (
@@ -325,8 +351,9 @@ export function ProductGrid() {
                   </Grid>
                 ))}
 
-              {/* Pizzas: primero armar por tamaño y mitad y mitad, después los gustos. */}
-              {s.id === pizzasCategoryId && <PizzaSizeCards pizzas={pizzas} />}
+              {/* Pizzas: solo la card de mitad y mitad; cada gusto tiene la suya
+                  y el tamaño se elige adentro de la ficha. */}
+              {s.id === pizzasCategoryId && <PizzaSizeCards pizzas={pizzas} onlyHalf />}
 
               {/* Empanadas: sueltas y docena arman la selección de gustos. */}
               {s.id === empanadasCategoryId && empanadas.length > 0 && (
@@ -360,7 +387,16 @@ export function ProductGrid() {
           optionsLabel={isPizza(opened) ? 'Tamaño' : undefined}
           options={isPizza(opened) ? sizeOptions(opened) : undefined}
           maxQuantity={availableFor(opened)}
-          onAdd={({ quantity, option }) => handleAdd(opened, quantity, option)}
+          variantLabel={isPizza(opened) ? 'Cocción' : undefined}
+          variants={
+            isPizza(opened)
+              ? [
+                  { id: 'piedra', label: 'A la piedra' },
+                  { id: 'molde', label: 'Al molde' },
+                ]
+              : undefined
+          }
+          onAdd={({ quantity, option, variant }) => handleAdd(opened, quantity, option, variant)}
         />
       )}
 

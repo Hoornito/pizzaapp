@@ -41,8 +41,11 @@ export interface ProductOrderModalProps {
   options?: OrderOption[];
   /** Tope de unidades (stock). Sin definir, no hay tope. */
   maxQuantity?: number;
-  /** Se llama con la cantidad y la opción elegida (si había). */
-  onAdd: (result: { quantity: number; option: OrderOption | null }) => void;
+  /** Segundo grupo de opciones que NO cambia el precio (p. ej. la cocción). */
+  variantLabel?: string;
+  variants?: { id: string; label: string }[];
+  /** Se llama con la cantidad, la opción elegida y la variante. */
+  onAdd: (result: { quantity: number; option: OrderOption | null; variant: string | null }) => void;
 }
 
 /**
@@ -62,21 +65,27 @@ export function ProductOrderModal({
   optionsLabel = 'Elegí una opción',
   options,
   maxQuantity,
+  variantLabel,
+  variants,
   onAdd,
 }: ProductOrderModalProps) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [quantity, setQuantity] = useState(1);
   const [optionId, setOptionId] = useState<string | null>(null);
+  const [variantId, setVariantId] = useState<string | null>(null);
 
   const hasOptions = !!options && options.length > 0;
+  const hasVariants = !!variants && variants.length > 0;
   // Con una sola opción no tiene sentido hacer elegir: viene marcada.
+  // La variante (cocción) arranca en la primera, que es la forma habitual.
   useEffect(() => {
     if (open) {
       setQuantity(1);
       setOptionId(hasOptions && options!.length === 1 ? options![0].id : null);
+      setVariantId(hasVariants ? variants![0].id : null);
     }
-  }, [open, hasOptions, options]);
+  }, [open, hasOptions, options, hasVariants, variants]);
 
   const selected = hasOptions ? (options!.find((o) => o.id === optionId) ?? null) : null;
   const unitPrice = selected ? selected.price : (price ?? 0);
@@ -176,6 +185,36 @@ export function ProductOrderModal({
           </Box>
         )}
 
+        {hasVariants && (
+          <Box sx={{ mt: 2.5 }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+              {variantLabel ?? 'Cómo la querés'}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              {variants!.map((v) => {
+                const isSel = variantId === v.id;
+                return (
+                  <Button
+                    key={v.id}
+                    onClick={() => setVariantId(v.id)}
+                    disableElevation
+                    sx={{
+                      flex: 1, textTransform: 'none', borderRadius: 2, py: 1,
+                      border: '2px solid',
+                      borderColor: isSel ? 'primary.main' : 'divider',
+                      bgcolor: isSel ? 'action.selected' : 'transparent',
+                      color: 'text.primary',
+                      fontWeight: isSel ? 700 : 500,
+                    }}
+                  >
+                    {v.label}
+                  </Button>
+                );
+              })}
+            </Box>
+          </Box>
+        )}
+
         {maxQuantity != null && maxQuantity > 0 && maxQuantity <= 5 && (
           <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 2 }}>
             Quedan {maxQuantity} unidades
@@ -209,7 +248,7 @@ export function ProductOrderModal({
           fullWidth
           disabled={missingOption || soldOut}
           onClick={() => {
-            onAdd({ quantity, option: selected });
+            onAdd({ quantity, option: selected, variant: variantId });
             onClose();
           }}
           sx={{ borderRadius: 999, py: 1.25, textTransform: 'none', fontWeight: 700 }}

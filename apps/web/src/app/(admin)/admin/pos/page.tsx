@@ -117,6 +117,11 @@ export default function PosPage() {
   const [cajaTest, setCajaTest] = useState(false);
   const [pizzaOpen, setPizzaOpen] = useState(false);
   const [fainaOpen, setFainaOpen] = useState(false);
+  // Cuándo se entrega: ya mismo (con tiempo estimado) o programado a una franja.
+  const [when, setWhen] = useState<'asap' | 'scheduled'>('asap');
+  const [eta, setEta] = useState('');
+  const [slots, setSlots] = useState<{ value: string; from: string; to: string }[]>([]);
+  const [slot, setSlot] = useState('');
   const [dozenOpen, setDozenOpen] = useState(false);
   const [looseOpen, setLooseOpen] = useState(false);
   const [drinkCat, setDrinkCat] = useState<DrinkCat | null>(null);
@@ -346,6 +351,9 @@ export default function PosPage() {
     setDiscount('');
     setPaymentMethod('EFECTIVO');
     setDeliveryType('PICKUP');
+    setWhen('asap');
+    setEta('');
+    setSlot('');
     try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ }
   };
 
@@ -363,12 +371,28 @@ export default function PosPage() {
     else { setTransferAmount(value === '' ? '' : String(amount)); setCashAmount(String(other)); }
   };
 
+  // Franjas para programar: las calcula el servidor con los horarios del local.
+  useEffect(() => {
+    fetch('/api/schedule/slots', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setSlots(d.data || []))
+      .catch(() => setSlots([]));
+  }, []);
+
+  const etaNum = parseInt(eta, 10);
+  const etaOk = Number.isFinite(etaNum) && etaNum > 0;
+  // Para cerrar el pedido hace falta saber cuándo se entrega: o un horario
+  // programado, o un tiempo estimado. Sin eso la cocina no sabe para cuándo es.
+  const tiempoDefinido = when === 'scheduled' ? !!slot : etaOk;
+
   const finalize = async () => {
     if (cajaAbierta === false) {
       showError('La caja está cerrada. Abrí la caja en Finanzas para tomar pedidos.');
       return;
     }
     if (items.length === 0) { showError('Agregá al menos un producto'); return; }
+    if (when === 'scheduled' && !slot) { showError('Elegí el horario del pedido programado'); return; }
+    if (when === 'asap' && !etaOk) { showError('Poné el tiempo estimado (en minutos)'); return; }
     if (deliveryType === 'DELIVERY' && (!address.street || !address.number)) {
       showError('Completá la dirección de entrega'); return;
     }
@@ -389,6 +413,7 @@ export default function PosPage() {
       total,
       // "A definir" nunca puede quedar marcado como pagado.
       paid: paymentMethod === 'A_DEFINIR' ? false : paid,
+      ...(when === 'scheduled' ? { scheduledFor: slot } : { estimatedTime: etaNum }),
       ...(paymentMethod === 'MIXTO' ? { cashAmount: cash, transferAmount: transfer } : {}),
       ...(paymentMethod === 'EFECTIVO' && pagaCon !== '' && Number(pagaCon) > 0
         ? { cashReceived: Number(pagaCon) }
@@ -823,6 +848,68 @@ export default function PosPage() {
 
           <Divider sx={{ my: 1.5 }} />
 
+          {/* Cuándo se entrega. Sin esto no se puede finalizar: es lo que sale
+              en la comanda para que la cocina sepa para cuándo es. */}
+          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.75 }}>
+            ¿Para cuándo es?
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+            {([
+              { key: 'asap' as const, label: 'Cuanto antes' },
+              { key: 'scheduled' as const, label: 'Programado' },
+            ]).map((o) => (
+              <Button
+                key={o.key}
+                size="small"
+                variant={when === o.key ? 'contained' : 'outlined'}
+                onClick={() => setWhen(o.key)}
+                disabled={o.key === 'scheduled' && slots.length === 0}
+                sx={{ flex: 1, textTransform: 'none' }}
+              >
+                {o.label}
+              </Button>
+            ))}
+          </Box>
+
+          {when === 'asap' ? (
+            <TextField
+              label="Tiempo estimado (min) *"
+              type="number"
+              size="small"
+              fullWidth
+              value={eta}
+              onChange={(e) => setEta(e.target.value)}
+              inputProps={{ min: 1, step: 5 }}
+              error={eta !== '' && !etaOk}
+              helperText={etaOk ? `Listo aprox. ${new Date(Date.now() + etaNum * 60000).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}` : 'Sale en la comanda de cocina'}
+            />
+          ) : slots.length === 0 ? (
+            <Alert severity="warning" sx={{ py: 0.5 }}>
+              No hay horarios disponibles para hoy.
+            </Alert>
+          ) : (
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                Horarios de hoy (mínimo 30 min desde ahora)
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxHeight: 150, overflowY: 'auto' }}>
+                {slots.map((s) => (
+                  <Button
+                    key={s.value}
+                    size="small"
+                    variant={slot === s.value ? 'contained' : 'outlined'}
+                    onClick={() => setSlot(s.value)}
+                    sx={{ textTransform: 'none', minWidth: 0, px: 1 }}
+                  >
+                    {s.from}
+                  </Button>
+                ))}
+              </Box>
+            </Box>
+          )}
+
+          <Divider sx={{ my: 1.5 }} />
+
           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
             <Typography color="text.secondary">Subtotal</Typography>
             <Typography>{formatCurrency(subtotal)}</Typography>
@@ -848,8 +935,18 @@ export default function PosPage() {
             <Typography variant="caption">Al finalizar se confirma e imprime en la estación (cocina + comanda).</Typography>
           </Alert>
 
-          <Button variant="contained" size="large" fullWidth sx={{ mt: 1.5, py: 1.5 }} disabled={submitting || items.length === 0 || cajaAbierta === false} onClick={finalize}>
-            {cajaAbierta === false ? 'Caja cerrada' : submitting ? 'Cargando…' : `Finalizar · ${formatCurrency(total)}`}
+          <Button
+            variant="contained" size="large" fullWidth sx={{ mt: 1.5, py: 1.5 }}
+            disabled={submitting || items.length === 0 || cajaAbierta === false || !tiempoDefinido}
+            onClick={finalize}
+          >
+            {cajaAbierta === false
+              ? 'Caja cerrada'
+              : submitting
+                ? 'Cargando…'
+                : !tiempoDefinido
+                  ? (when === 'scheduled' ? 'Elegí el horario' : 'Falta el tiempo estimado')
+                  : `Finalizar · ${formatCurrency(total)}`}
           </Button>
           {items.length > 0 && (
             <Button fullWidth size="small" color="inherit" sx={{ mt: 0.5 }} onClick={clearCart} disabled={submitting}>
