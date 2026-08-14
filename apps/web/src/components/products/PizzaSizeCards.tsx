@@ -31,6 +31,8 @@ interface PizzaSizeCardsProps {
    * falta en el menú: cada gusto tiene su card y el tamaño se elige adentro.
    */
   onlyHalf?: boolean;
+  /** Foto de la tarjeta de mitad y mitad (Configuración → Imágenes del menú). */
+  halfImage?: string | null;
 }
 
 /** Una card por tamaño + la de mitad y mitad. */
@@ -38,6 +40,7 @@ interface PizzaEntry {
   mode: PizzaMode;
   title: string;
   description: string;
+  image: string;
   /** Precio de referencia y su aclaración. */
   price: number | null;
   priceNote: string | null;
@@ -51,8 +54,10 @@ const SIZE_DESCRIPTION: Record<PizzaSize, string> = {
 };
 
 const PLACEHOLDER = '/images/placeholder-pizza.jpg';
+/** Foto por defecto de "mitad y mitad" si no cargaron una desde el admin. */
+const HALF_IMAGE = '/images/pizza-mitad-y-mitad.jpg';
 
-export function PizzaSizeCards({ pizzas, onlyHalf }: PizzaSizeCardsProps) {
+export function PizzaSizeCards({ pizzas, onlyHalf, halfImage }: PizzaSizeCardsProps) {
   const { addItem } = useCart();
   const { openCart } = useUIStore();
   // Panel de armado abierto (con el tamaño ya fijado por la card).
@@ -70,6 +75,7 @@ export function PizzaSizeCards({ pizzas, onlyHalf }: PizzaSizeCardsProps) {
       mode: size,
       title: PIZZA_SIZE_LABELS[size],
       description: SIZE_DESCRIPTION[size],
+      image: PLACEHOLDER,
       price: range.min,
       priceNote: range.min === range.max ? null : 'desde, según el gusto',
       action: 'Armar',
@@ -82,6 +88,7 @@ export function PizzaSizeCards({ pizzas, onlyHalf }: PizzaSizeCardsProps) {
   entries.push({
     mode: 'HALF',
     title: 'Mitad y mitad',
+    image: halfImage || HALF_IMAGE,
     description:
       'Combiná dos gustos en una misma pizza. Elegí el tamaño y después las mitades: cada 2 mitades forman una pizza.',
     price: cheapest,
@@ -109,7 +116,7 @@ export function PizzaSizeCards({ pizzas, onlyHalf }: PizzaSizeCardsProps) {
             <Box sx={{ flexShrink: 0, width: { xs: 132, sm: '100%' } }}>
               <CardMedia
                 component="img"
-                image={PLACEHOLDER}
+                image={entry.image}
                 alt={entry.title}
                 onClick={() => setDetail(entry)}
                 role="button"
@@ -174,7 +181,7 @@ export function PizzaSizeCards({ pizzas, onlyHalf }: PizzaSizeCardsProps) {
           onClose={() => setDetail(null)}
           name={detail.title}
           description={detail.description}
-          image={PLACEHOLDER}
+          image={detail.image}
           price={detail.price}
           priceNote={detail.priceNote}
           addLabel={detail.mode === 'HALF' ? 'Combinar gustos' : 'Armar mi pizza'}

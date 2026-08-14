@@ -448,6 +448,29 @@ model DeliveryFee {
   zone ShipmentZone? @relation(fields: [shipmentZoneId], references: [id])
 }
 
+// Foto de las tarjetas "armables" del menú (mitad y mitad, empanadas sueltas).
+// No son productos ni promos —se arman con varios— así que no tienen dónde
+// guardar la imagen: va acá, con la clave de la tarjeta.
+model MenuCardImage {
+  key       String   @id
+  image     String
+  updatedAt DateTime @updatedAt
+}
+
+// Descuento general de la app: se le aplica a los pedidos que hacen los
+// CLIENTES desde la web. Los que toma el local (mostrador/admin) no lo llevan.
+// Es una sola fila (id fijo APP_DISCOUNT_ID); se edita desde Configuración.
+model AppDiscount {
+  id         String   @id
+  // Porcentaje sobre el subtotal de productos (no sobre la propina).
+  percentage Decimal  @default(0) @db.Decimal(5, 2)
+  // Motivo visible para el cliente: "Promo lanzamiento".
+  label      String   @default("")
+  active     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
 model BusinessHours {
   id        String   @id @default(cuid())
   dayOfWeek Int

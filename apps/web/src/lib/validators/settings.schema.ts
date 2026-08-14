@@ -24,6 +24,14 @@ export const deliveryFeeSchema = z.object({
   isDefault: z.boolean().default(false),
 });
 
+/** Descuento general de la app (solo para pedidos de clientes por la web). */
+export const appDiscountSchema = z.object({
+  percentage: z.coerce.number().min(0, 'No puede ser negativo').max(100, 'No puede pasar de 100%'),
+  label: z.string().max(60, 'Máximo 60 caracteres'),
+  active: z.boolean(),
+});
+
+export type AppDiscountInput = z.infer<typeof appDiscountSchema>;
 export type BusinessHoursInput = z.infer<typeof businessHoursSchema>;
 export type ShipmentZoneInput = z.infer<typeof shipmentZoneSchema>;
 export type DeliveryFeeInput = z.infer<typeof deliveryFeeSchema>;

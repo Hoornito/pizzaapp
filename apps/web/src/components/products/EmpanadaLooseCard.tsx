@@ -17,12 +17,16 @@ import { formatCurrency, toNumber } from '@/lib/utils';
 import { EmpanadaLooseModal } from './EmpanadaLooseModal';
 import { ProductDetailModal } from './ProductDetailModal';
 
+const PLACEHOLDER = '/images/placeholder-pizza.jpg';
+
 interface EmpanadaLooseCardProps {
   empanadas: ProductWithCategory[];
+  /** Foto de la tarjeta (Configuración → Imágenes del menú). */
+  image?: string | null;
 }
 
 /** Card única "Empanadas sueltas" que abre el modal para sumar por unidad. */
-export function EmpanadaLooseCard({ empanadas }: EmpanadaLooseCardProps) {
+export function EmpanadaLooseCard({ empanadas, image }: EmpanadaLooseCardProps) {
   const { addItem } = useCart();
   const { openCart } = useUIStore();
   const [open, setOpen] = useState(false);
@@ -49,7 +53,7 @@ export function EmpanadaLooseCard({ empanadas }: EmpanadaLooseCardProps) {
       >
         <CardMedia
           component="img"
-          image="/images/placeholder-pizza.jpg"
+          image={image || PLACEHOLDER}
           alt="Empanadas sueltas"
           onClick={() => setDetailOpen(true)}
           role="button"
@@ -95,7 +99,7 @@ export function EmpanadaLooseCard({ empanadas }: EmpanadaLooseCardProps) {
         onClose={() => setDetailOpen(false)}
         name="Empanadas sueltas"
         description="Elegí la cantidad de cada gusto y armá tu combinación. Se cobran por unidad."
-        image="/images/placeholder-pizza.jpg"
+        image={image || PLACEHOLDER}
         price={unitPrice}
         priceNote="c/u"
         addLabel="Elegir gustos"

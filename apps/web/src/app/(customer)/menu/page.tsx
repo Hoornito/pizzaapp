@@ -2,6 +2,7 @@ import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import { ProductGrid } from '@/components/products/ProductGrid';
+import { DiscountBanner } from '@/components/ui/DiscountBanner';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -12,6 +13,7 @@ export const metadata: Metadata = {
 export default function MenuPage() {
   return (
     <Container maxWidth="xl">
+      <DiscountBanner />
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" fontWeight={700} gutterBottom>
           🍕 Nuestro Menú

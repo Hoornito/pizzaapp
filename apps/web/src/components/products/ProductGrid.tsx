@@ -68,6 +68,10 @@ export function ProductGrid() {
   const barRef = useRef<HTMLDivElement | null>(null);
   const pillRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
+  // Fotos de las tarjetas armables (mitad y mitad, empanadas sueltas): no son
+  // productos, así que su imagen se carga aparte desde Configuración.
+  const [cardImages, setCardImages] = useState<Record<string, string>>({});
+
   const { categories: allCategories } = useCategories();
   const { products: allProducts, loading } = useProducts({ available: true });
   const { promotions } = usePromotions(true);
@@ -126,6 +130,13 @@ export function ProductGrid() {
     }
     return out;
   }, [categories, products, promosForTab.length]);
+
+  useEffect(() => {
+    fetch('/api/settings/menu-images')
+      .then((r) => r.json())
+      .then((d) => setCardImages(d.data || {}))
+      .catch(() => setCardImages({}));
+  }, []);
 
   // ── Scroll-spy: marca el tab de la sección que estás mirando ──────────────
   useEffect(() => {
@@ -381,13 +392,15 @@ export function ProductGrid() {
 
               {/* Pizzas: solo la card de mitad y mitad; cada gusto tiene la suya
                   y el tamaño se elige adentro de la ficha. */}
-              {s.id === pizzasCategoryId && <PizzaSizeCards pizzas={pizzas} onlyHalf />}
+              {s.id === pizzasCategoryId && (
+                <PizzaSizeCards pizzas={pizzas} onlyHalf halfImage={cardImages['half']} />
+              )}
 
               {/* Empanadas: sueltas y docena arman la selección de gustos. */}
               {s.id === empanadasCategoryId && empanadas.length > 0 && (
                 <>
                   <Grid item xs={6} sm={6} md={4} lg={3}>
-                    <EmpanadaLooseCard empanadas={empanadas} />
+                    <EmpanadaLooseCard empanadas={empanadas} image={cardImages['empanadas-loose']} />
                   </Grid>
                   <Grid item xs={6} sm={6} md={4} lg={3}>
                     <EmpanadaDozenCard empanadas={empanadas} />

@@ -108,7 +108,7 @@ export default function DeliveryFeesPage() {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h4" fontWeight={700}>Tarifas de delivery</Typography>
+          <Typography variant="h5" fontWeight={700}>Tarifas de delivery</Typography>
           <Typography color="text.secondary">Configurá el costo de envío por zona y monto mínimo</Typography>
         </Box>
         <Button variant="contained" onClick={() => openDialog()}>+ Nueva tarifa</Button>

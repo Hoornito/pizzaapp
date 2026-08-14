@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { getOrders, createOrder } from '@/services/order.service';
 import { isStoreOpen } from '@/services/finance.service';
 import { createOrderSchema } from '@/lib/validators';
@@ -41,8 +42,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Datos inválidos', details: parsed.error.flatten() }, { status: 400 });
   }
 
+  // Sin teléfono no se puede coordinar la entrega. Los que se registran con
+  // mail ya lo cargan; los que entran con Google no, así que lo pedimos acá y
+  // lo guardamos en la cuenta para no volver a preguntarlo.
+  const phone = (parsed.data.phone ?? '').trim();
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { phone: true },
+  });
+  if (!user?.phone && !phone) {
+    return NextResponse.json(
+      { error: 'Necesitamos un teléfono de contacto para poder coordinar tu pedido.' },
+      { status: 400 }
+    );
+  }
+  if (!user?.phone && phone) {
+    // Puede chocar con el teléfono de otra cuenta (es único): si pasa, seguimos
+    // igual — el número queda en el pedido, que es lo que importa para entregarlo.
+    await prisma.user.update({ where: { id: session.user.id }, data: { phone } }).catch(() => null);
+  }
+
   try {
-    const order = await createOrder(session.user.id, parsed.data);
+    const order = await createOrder(session.user.id, parsed.data, {
+      // El descuento de la app es solo para clientes: los pedidos que toma el
+      // local (admin/mostrador) se cargan a precio de lista.
+      applyAppDiscount: session.user.role === 'CUSTOMER',
+    });
     return NextResponse.json({ success: true, data: order }, { status: 201 });
   } catch (e) {
     return NextResponse.json(

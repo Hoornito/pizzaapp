@@ -85,7 +85,7 @@ export default function DeliveryZonesPage() {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h4" fontWeight={700}>Zonas de delivery</Typography>
+          <Typography variant="h5" fontWeight={700}>Zonas de delivery</Typography>
           <Typography color="text.secondary">Definí las zonas de cobertura por radio</Typography>
         </Box>
         <Button variant="contained" onClick={() => openDialog()}>+ Nueva zona</Button>

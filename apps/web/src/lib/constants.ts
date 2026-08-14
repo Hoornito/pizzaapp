@@ -43,6 +43,17 @@ export const ORDER_STATUS_STEPS = [
   'ENTREGADO',
 ];
 
+// ─── Tarjetas armables del menú ──────────────────────────────────────────────
+// "Mitad y mitad" y "Empanadas sueltas" no son un producto ni una promo: se
+// arman eligiendo varios. Su foto se carga desde Configuración → Imágenes.
+export const MENU_CARD_KEYS = ['half', 'empanadas-loose'] as const;
+export type MenuCardKey = (typeof MENU_CARD_KEYS)[number];
+
+export const MENU_CARDS: { key: MenuCardKey; label: string; fallback: string }[] = [
+  { key: 'half', label: '🍕 Pizza mitad y mitad', fallback: '/images/pizza-mitad-y-mitad.jpg' },
+  { key: 'empanadas-loose', label: '🥟 Empanadas sueltas', fallback: '/images/placeholder-pizza.jpg' },
+];
+
 /** Etiqueta de cómo sale el pedido. Pedidos Ya es un canal aparte. */
 export const DELIVERY_TYPE_LABELS: Record<string, string> = {
   DELIVERY: '🛵 Delivery',

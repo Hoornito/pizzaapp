@@ -4,6 +4,7 @@ import { emitOrderCreated, emitOrderStatusChanged, emitNotification, emitPrintOr
 import { getOpenCashRegister } from '@/services/finance.service';
 import { controlsStock } from '@/lib/constants';
 import { isValidSlot } from '@/services/schedule.service';
+import { getActiveAppDiscount, discountAmount } from '@/services/discount.service';
 import { sendText } from '@/lib/whatsapp';
 import { sanitizePhone } from '@/lib/utils';
 import type { CreateOrderInput, UpdateOrderStatusInput } from '@/lib/validators';
@@ -184,6 +185,9 @@ export async function createOrder(
     // Número forzado (pedido "agregado" vinculado: #TM003-2). Si choca con la
     // restricción única, quien llama debe reintentar con el siguiente sufijo.
     explicitOrderNumber?: string;
+    // Pedido hecho por un CLIENTE desde la web: le corresponde el descuento
+    // general de la app (si hay uno activo). Los que carga el local, no.
+    applyAppDiscount?: boolean;
   }
 ) {
   // Pedido de simulación (caja test): no controla ni descuenta stock real.
@@ -235,6 +239,25 @@ export async function createOrder(
   // repartidor) y la venta cuenta como virtual, igual que tarjeta.
   const paid = data.paymentMethod === 'PEDIDOS_YA' ? true : !!data.paid;
 
+  // Descuento de la app. Se calcula ACÁ y pisa lo que haya mandado el cliente:
+  // el navegador no decide cuánta plata se descuenta. Si el front venía
+  // desactualizado, el pedido sale igual con el número correcto.
+  let discount = data.discount ?? 0;
+  let total = data.total;
+  let cashAmount = data.cashAmount;
+  let transferAmount = data.transferAmount;
+  if (options?.applyAppDiscount) {
+    const promo = await getActiveAppDiscount();
+    discount = promo ? discountAmount(data.subtotal, promo.percentage) : 0;
+    total = Math.max(0, Math.round((data.subtotal + data.deliveryFee + (data.tip ?? 0) - discount) * 100) / 100);
+    // El pago mixto se reparte sobre el total: si el descuento lo bajó, lo que
+    // se ingresó puede pasarse. Respetamos el efectivo y ajustamos el resto.
+    if (data.paymentMethod === 'MIXTO' && Math.abs((cashAmount ?? 0) + (transferAmount ?? 0) - total) >= 0.01) {
+      cashAmount = Math.min(cashAmount ?? 0, total);
+      transferAmount = Math.round((total - cashAmount) * 100) / 100;
+    }
+  }
+
   const orderData = (orderNumber: string) => ({
     orderNumber,
     userId,
@@ -251,11 +274,11 @@ export async function createOrder(
     paymentMethod: data.paymentMethod,
     subtotal: data.subtotal,
     deliveryFee: data.deliveryFee,
-    discount: data.discount ?? 0,
+    discount,
     tip: data.tip ?? 0,
-    total: data.total,
-    cashAmount: data.paymentMethod === 'MIXTO' ? data.cashAmount : null,
-    transferAmount: data.paymentMethod === 'MIXTO' ? data.transferAmount : null,
+    total,
+    cashAmount: data.paymentMethod === 'MIXTO' ? cashAmount : null,
+    transferAmount: data.paymentMethod === 'MIXTO' ? transferAmount : null,
     // "Paga con" solo aplica a pago en efectivo (para calcular el vuelto).
     cashReceived: data.paymentMethod === 'EFECTIVO' ? (data.cashReceived ?? null) : null,
     notes: data.notes,
@@ -278,7 +301,7 @@ export async function createOrder(
       create: {
         method: data.paymentMethod,
         status: (paid ? 'APPROVED' : 'PENDING') as 'APPROVED' | 'PENDING',
-        amount: data.total,
+        amount: total,
         paidAt: paid ? new Date() : null,
       },
     },

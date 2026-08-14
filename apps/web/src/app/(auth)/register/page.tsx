@@ -14,6 +14,7 @@ import FacebookIcon from '@mui/icons-material/Facebook';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { BrandLogo } from '@/components/layout/BrandLogo';
+import { DiscountBanner } from '@/components/ui/DiscountBanner';
 import type { RegisterInput } from '@/lib/validators';
 
 export default function RegisterPage() {
@@ -75,6 +76,9 @@ export default function RegisterPage() {
         <BrandLogo size={150} showText={false} />
         <Typography variant="h5" fontWeight={800} color="primary.main" sx={{ mt: 1 }}>Pizzería Cambalache</Typography>
       </Box>
+
+      {/* El descuento de la app se anuncia acá: es el motivo para registrarse. */}
+      <DiscountBanner />
 
       <Typography variant="h4" fontWeight={700} gutterBottom>
         Crear Cuenta

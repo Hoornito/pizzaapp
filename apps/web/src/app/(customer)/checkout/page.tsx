@@ -87,9 +87,14 @@ export default function CheckoutPage() {
     tip: '',
   });
 
+  // Descuento general de la app. Lo recalcula el servidor al crear el pedido:
+  // acá es para mostrarlo y para que el reparto del pago mixto cuadre.
+  const [promo, setPromo] = useState<{ percentage: number; label: string } | null>(null);
+
   // Propina para el repartidor (solo delivery). Se suma al total a pagar.
   const tipNum = form.deliveryType === 'DELIVERY' ? Math.max(parseFloat(form.tip) || 0, 0) : 0;
-  const payTotal = total + tipNum;
+  const discountNum = promo ? Math.round(subtotal * (promo.percentage / 100) * 100) / 100 : 0;
+  const payTotal = Math.max(0, Math.round((total + tipNum - discountNum) * 100) / 100);
 
   // Evita que, al vaciar el carrito tras crear el pedido, este efecto compita
   // con la navegación a la pantalla del pedido (o a MercadoPago).
@@ -102,6 +107,20 @@ export default function CheckoutPage() {
   useEffect(() => {
     setDeliveryFee(0); // El envío es sin cargo.
   }, [form.deliveryType]);
+
+  useEffect(() => {
+    fetch('/api/settings/discount', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setPromo(d.data ?? null))
+      .catch(() => setPromo(null));
+  }, []);
+
+  // El teléfono de la cuenta se completa solo. No alcanza con el valor inicial
+  // del form: en el primer render la sesión todavía puede estar cargando.
+  useEffect(() => {
+    const suyo = session?.user.phone;
+    if (suyo) setForm((prev) => (prev.phone ? prev : { ...prev, phone: suyo }));
+  }, [session?.user.phone]);
 
   // Franjas para programar. Las calcula el servidor (horarios del local + margen
   // mínimo), así no dependen del reloj del dispositivo.
@@ -177,6 +196,12 @@ export default function CheckoutPage() {
       return;
     }
 
+    // Sin teléfono no se puede coordinar la entrega.
+    if (form.phone.trim().length < 6) {
+      showError('Poné un teléfono de contacto para poder coordinar tu pedido');
+      return;
+    }
+
     const cashAmount = parseFloat(form.cashAmount) || 0;
     const transferAmount = parseFloat(form.transferAmount) || 0;
     if (form.paymentMethod === 'MIXTO' && Math.abs(cashAmount + transferAmount - payTotal) >= 0.01) {
@@ -204,6 +229,7 @@ export default function CheckoutPage() {
         subtotal,
         deliveryFee,
         tip: tipNum,
+        discount: discountNum,
         total: payTotal,
         ...(form.paymentMethod === 'MIXTO' ? { cashAmount, transferAmount } : {}),
         ...(form.deliveryType === 'DELIVERY'
@@ -501,12 +527,21 @@ export default function CheckoutPage() {
                 </>
               )}
 
+              {/* Viene cargado con el teléfono de la cuenta; es obligatorio
+                  porque sin él no se puede coordinar la entrega. */}
               <TextField
-                label="Teléfono de contacto"
+                label="Teléfono de contacto *"
                 fullWidth
+                required
                 value={form.phone}
                 onChange={(e) => handleChange('phone', e.target.value)}
                 sx={{ mt: 2 }}
+                error={form.phone !== '' && form.phone.trim().length < 6}
+                helperText={
+                  session?.user.phone
+                    ? 'Lo tomamos de tu cuenta; podés cambiarlo para este pedido'
+                    : 'Lo necesitamos para avisarte cuando salga tu pedido'
+                }
               />
               <TextField
                 label="Observaciones del pedido"
@@ -666,12 +701,22 @@ export default function CheckoutPage() {
               </Alert>
             )}
             <CartSummary />
+            {discountNum > 0 && promo && (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                <Typography color="success.main" fontWeight={700}>
+                  🏷️ {promo.label} ({promo.percentage}%)
+                </Typography>
+                <Typography color="success.main" fontWeight={700}>− {formatCurrency(discountNum)}</Typography>
+              </Box>
+            )}
             {tipNum > 0 && (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                <Typography color="text.secondary">🛵 Propina repartidor</Typography>
+                <Typography>{formatCurrency(tipNum)}</Typography>
+              </Box>
+            )}
+            {(tipNum > 0 || discountNum > 0) && (
               <>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                  <Typography color="text.secondary">🛵 Propina repartidor</Typography>
-                  <Typography>{formatCurrency(tipNum)}</Typography>
-                </Box>
                 <Divider sx={{ my: 1 }} />
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="h6" fontWeight={700}>Total a pagar</Typography>

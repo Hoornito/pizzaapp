@@ -78,7 +78,7 @@ export default function BusinessHoursPage() {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h4" fontWeight={700}>Horarios de atención</Typography>
+          <Typography variant="h5" fontWeight={700}>Horarios de atención</Typography>
           <Typography color="text.secondary">
             Cada día tiene dos turnos. Con esto el cliente puede programar un pedido para el mediodía o para la noche.
           </Typography>
