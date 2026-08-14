@@ -4,8 +4,20 @@ import { eventBus } from '@/lib/event-bus';
 import { promoteOrderAfterPayment } from '@/services/order.service';
 import type { OrderWithRelations } from '@/types/order.types';
 
-export async function createMercadoPagoPreference(order: OrderWithRelations) {
-  const items = order.items.map((item) => ({
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Ítems que se le mandan a MercadoPago. Checkout Pro cobra la SUMA de los
+ * ítems, no un total suelto, así que tiene que coincidir con `order.total`.
+ *
+ * El detalle (cada producto, el envío, la propina) es lo lindo de mostrarle al
+ * comprador, pero no siempre se puede: un descuento no se puede expresar como
+ * ítem porque MercadoPago no acepta precios negativos. Cuando la suma no da,
+ * mandamos una sola línea por el total real del pedido — antes se cobraba la
+ * suma del detalle, o sea sin descuento y sin propina.
+ */
+export function buildPreferenceItems(order: OrderWithRelations) {
+  const detalle = order.items.map((item) => ({
     id: item.productId || item.promotionId || item.id,
     title: item.product?.name || item.promotion?.name || 'Producto',
     quantity: item.quantity,
@@ -14,7 +26,7 @@ export async function createMercadoPagoPreference(order: OrderWithRelations) {
   }));
 
   if (Number(order.deliveryFee) > 0) {
-    items.push({
+    detalle.push({
       id: 'delivery',
       title: 'Envío',
       quantity: 1,
@@ -22,6 +34,35 @@ export async function createMercadoPagoPreference(order: OrderWithRelations) {
       currency_id: 'ARS',
     });
   }
+
+  if (Number(order.tip) > 0) {
+    detalle.push({
+      id: 'tip',
+      title: 'Propina para el repartidor',
+      quantity: 1,
+      unit_price: Number(order.tip),
+      currency_id: 'ARS',
+    });
+  }
+
+  const total = Number(order.total);
+  const suma = round2(detalle.reduce((acc, i) => acc + i.unit_price * i.quantity, 0));
+  if (Math.abs(suma - total) < 0.01) return detalle;
+
+  const conDescuento = Number(order.discount) > 0;
+  return [
+    {
+      id: order.id,
+      title: `Pedido #${order.orderNumber}${conDescuento ? ' (con descuento)' : ''}`,
+      quantity: 1,
+      unit_price: total,
+      currency_id: 'ARS',
+    },
+  ];
+}
+
+export async function createMercadoPagoPreference(order: OrderWithRelations) {
+  const items = buildPreferenceItems(order);
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
   // MercadoPago rechaza auto_return con back_urls en localhost (HTTP 400),
