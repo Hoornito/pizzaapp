@@ -137,7 +137,12 @@ export function PromotionForm({ initialData, onSubmit }: PromotionFormProps) {
 
         <Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" fontWeight={600}>Productos incluidos *</Typography>
+            <Box>
+              <Typography variant="h6" fontWeight={600}>Productos incluidos</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Opcional · sirve para saber qué salió dentro de la promo en los reportes
+              </Typography>
+            </Box>
             <Button size="small" onClick={addItem}>+ Agregar producto</Button>
           </Box>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -164,9 +169,7 @@ export function PromotionForm({ initialData, onSubmit }: PromotionFormProps) {
                   onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))}
                   sx={{ width: 90 }}
                 />
-                {items.length > 1 && (
-                  <IconButton size="small" color="error" onClick={() => removeItem(i)}>✕</IconButton>
-                )}
+                <IconButton size="small" color="error" onClick={() => removeItem(i)}>✕</IconButton>
               </Box>
             ))}
           </Box>
@@ -188,7 +191,7 @@ export function PromotionForm({ initialData, onSubmit }: PromotionFormProps) {
             type="submit"
             variant="contained"
             size="large"
-            disabled={submitting || !form.name || !form.promotionalPrice || items.every((i) => !i.productId)}
+            disabled={submitting || !form.name || !form.promotionalPrice}
           >
             {submitting ? 'Guardando...' : initialData ? 'Actualizar promoción' : 'Crear promoción'}
           </Button>

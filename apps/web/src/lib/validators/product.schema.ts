@@ -5,7 +5,8 @@ export const productSchema = z.object({
   // nullish: el producto puede tener description/image en null (sin cargar).
   description: z.string().nullish(),
   price: z.coerce.number().positive('El precio debe ser positivo'),
-  categoryId: z.string().cuid('Categoría inválida'),
+  // Ver promotionItemSchema: hay categorías y productos con ids del seed.
+  categoryId: z.string().min(1, 'Categoría inválida'),
   stock: z.coerce.number().int().min(0).default(0),
   available: z.boolean().default(true),
   image: z.string().nullish(),

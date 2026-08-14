@@ -19,7 +19,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json();
   const parsed = promotionSchema.partial().safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 });
+    // Sin el detalle, un rechazo de validación es imposible de diagnosticar
+    // desde el admin (siempre decía "Datos inválidos" y nada más).
+    const detalle = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(' · ');
+    return NextResponse.json({ error: `Datos inválidos — ${detalle}` }, { status: 400 });
   }
   const promotion = await updatePromotion(id, parsed.data);
   return NextResponse.json({ success: true, data: promotion });
@@ -34,7 +37,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json();
   const parsed = promotionSchema.partial().safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 });
+    // Sin el detalle, un rechazo de validación es imposible de diagnosticar
+    // desde el admin (siempre decía "Datos inválidos" y nada más).
+    const detalle = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(' · ');
+    return NextResponse.json({ error: `Datos inválidos — ${detalle}` }, { status: 400 });
   }
   const promotion = await updatePromotion(id, parsed.data);
   return NextResponse.json({ success: true, data: promotion });

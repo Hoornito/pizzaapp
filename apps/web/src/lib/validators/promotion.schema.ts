@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
 export const promotionItemSchema = z.object({
-  productId: z.string().cuid(),
+  // No exigimos cuid: los productos del menú real vienen del seed con ids
+  // legibles ("prod-muzza"), así que el formato no dice nada de su validez.
+  productId: z.string().min(1),
   quantity: z.coerce.number().int().min(1),
 });
 
@@ -13,7 +15,9 @@ export const promotionSchema = z.object({
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
   image: z.string().optional(),
-  items: z.array(promotionItemSchema).min(1, 'Debe incluir al menos un producto'),
+  // Una promo puede no listar productos (p. ej. las que se arman a mano en el
+  // mostrador): lo único obligatorio es nombre y precio.
+  items: z.array(promotionItemSchema).default([]),
 });
 
 export type PromotionInput = z.infer<typeof promotionSchema>;
