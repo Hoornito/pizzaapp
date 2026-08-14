@@ -43,6 +43,10 @@ export function MenuItemCard({
   disabledLabel,
   onOpen,
 }: MenuItemCardProps) {
+  // "desde"/"hasta" son preposiciones: van ANTES del precio ("hasta $30.000").
+  // El resto ("c/u", "/ docena") va después.
+  const isPrefixNote = priceNote === 'desde' || priceNote === 'hasta';
+
   return (
     <Card
       onClick={() => !disabled && onOpen()}
@@ -94,6 +98,9 @@ export function MenuItemCard({
               position: 'absolute', right: 8,
               bottom: { xs: 8, sm: -18 },
               boxShadow: 3,
+              // MUI le pone zIndex 1050 al Fab: sin esto se monta encima de la
+              // barra de categorías al scrollear.
+              zIndex: 1,
             }}
           >
             <AddIcon />
@@ -137,8 +144,8 @@ export function MenuItemCard({
             </Typography>
           ) : (
             <>
-              {priceNote === 'desde' && (
-                <Typography variant="caption" color="text.secondary">desde</Typography>
+              {isPrefixNote && (
+                <Typography variant="caption" color="text.secondary">{priceNote}</Typography>
               )}
               <Typography variant="subtitle1" fontWeight={800} color="primary.main" sx={{ lineHeight: 1 }}>
                 {formatCurrency(price)}
@@ -148,7 +155,7 @@ export function MenuItemCard({
                   {formatCurrency(oldPrice)}
                 </Typography>
               )}
-              {priceNote && priceNote !== 'desde' && (
+              {priceNote && !isPrefixNote && (
                 <Typography variant="caption" color="text.secondary">{priceNote}</Typography>
               )}
             </>

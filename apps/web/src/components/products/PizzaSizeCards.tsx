@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type KeyboardEvent } from 'react';
+import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardActions from '@mui/material/CardActions';
@@ -91,36 +92,54 @@ export function PizzaSizeCards({ pizzas, onlyHalf }: PizzaSizeCardsProps) {
   return (
     <>
       {entries.map((entry) => (
-        <Grid item xs={6} sm={6} md={4} lg={3} key={entry.mode}>
+        <Grid item xs={12} sm={6} md={4} lg={3} key={entry.mode}>
           <Card
             sx={{
               height: '100%',
               display: 'flex',
-              flexDirection: 'column',
+              // En celular ocupa la fila entera, con la misma forma que las
+              // entradas del menú: texto a la izquierda y foto a la derecha.
+              flexDirection: { xs: 'row-reverse', sm: 'column' },
               border: '2px solid',
               borderColor: entry.mode === 'HALF' ? 'secondary.main' : 'primary.main',
               transition: 'transform 0.2s, box-shadow 0.2s',
               '&:hover': { transform: 'translateY(-4px)', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' },
             }}
           >
-            <CardMedia
-              component="img"
-              image={PLACEHOLDER}
-              alt={entry.title}
-              onClick={() => setDetail(entry)}
-              role="button"
-              tabIndex={0}
-              aria-label={`Ver detalle de ${entry.title}`}
-              onKeyDown={(e: KeyboardEvent) => {
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail(entry); }
-              }}
-              sx={{ objectFit: 'cover', height: { xs: 110, sm: 180 }, cursor: 'pointer' }}
-            />
+            <Box sx={{ flexShrink: 0, width: { xs: 132, sm: '100%' } }}>
+              <CardMedia
+                component="img"
+                image={PLACEHOLDER}
+                alt={entry.title}
+                onClick={() => setDetail(entry)}
+                role="button"
+                tabIndex={0}
+                aria-label={`Ver detalle de ${entry.title}`}
+                onKeyDown={(e: KeyboardEvent) => {
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail(entry); }
+                }}
+                sx={{
+                  objectFit: 'cover', width: '100%', cursor: 'pointer',
+                  height: { xs: '100%', sm: 180 },
+                  minHeight: { xs: 118, sm: 'auto' },
+                }}
+              />
+            </Box>
+            <Box sx={{ flexGrow: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             <CardContent sx={{ flexGrow: 1, p: { xs: 1.25, sm: 2 } }}>
               <Typography variant="h6" fontWeight={600} sx={{ fontSize: { xs: '0.9rem', sm: '1rem' } }} gutterBottom>
                 {entry.title}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, display: { xs: 'none', sm: 'block' } }}>
+              {/* En celular la descripción entra recortada a 2 líneas. */}
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{
+                  mb: 1.5,
+                  display: '-webkit-box', WebkitLineClamp: { xs: 2, sm: 'none' },
+                  WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                }}
+              >
                 {entry.description}
               </Typography>
               <Typography color="primary.main" fontWeight={700} sx={{ fontSize: { xs: '0.95rem', sm: '1.25rem' } }}>
@@ -144,6 +163,7 @@ export function PizzaSizeCards({ pizzas, onlyHalf }: PizzaSizeCardsProps) {
                 {entry.action}
               </Button>
             </CardActions>
+            </Box>
           </Card>
         </Grid>
       ))}

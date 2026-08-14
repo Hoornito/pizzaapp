@@ -107,7 +107,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   <div>
     ${customerName ? `<div><b>Cliente:</b> ${esc(customerName)}</div>` : ''}
     ${order.phone || order.user?.phone ? `<div><b>Tel:</b> ${esc(order.phone || order.user?.phone)}</div>` : ''}
-    <div><b>Tipo:</b> ${order.deliveryType === 'DELIVERY' ? 'DELIVERY' : 'RETIRO EN LOCAL'}</div>
+    <div><b>Tipo:</b> ${order.deliveryType === 'DELIVERY' ? 'DELIVERY' : order.deliveryType === 'PEDIDOS_YA' ? 'PEDIDOS YA' : 'RETIRO EN LOCAL'}</div>
     <div><b>Pago:</b> ${esc(formatOrderPayment(order, { emoji: false }))}</div>
   </div>
   ${order.address ? `<div class="sep"></div><div><div class="bold">DIRECCIÓN:</div><div>${esc(order.address.street)} ${esc(order.address.number)}${order.address.apartment ? ' ' + esc(order.address.apartment) : ''}</div><div>${esc(order.address.city)}</div>${order.address.reference ? `<div>Ref: ${esc(order.address.reference)}</div>` : ''}</div>` : ''}

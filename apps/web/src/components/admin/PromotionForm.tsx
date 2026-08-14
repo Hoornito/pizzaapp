@@ -14,6 +14,7 @@ import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Divider from '@mui/material/Divider';
+import { ImageUploadField } from './ImageUploadField';
 
 interface PromotionFormProps {
   initialData?: any;
@@ -96,23 +97,22 @@ export function PromotionForm({ initialData, onSubmit }: PromotionFormProps) {
           fullWidth
         />
 
-        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-          <TextField
-            label="Precio promocional ($) *"
-            type="number"
-            inputProps={{ min: 0, step: '0.01' }}
-            value={form.promotionalPrice}
-            onChange={(e) => handleChange('promotionalPrice', e.target.value)}
-            required
-            fullWidth
-          />
-          <TextField
-            label="URL de imagen"
-            value={form.image}
-            onChange={(e) => handleChange('image', e.target.value)}
-            fullWidth
-          />
-        </Box>
+        <TextField
+          label="Precio promocional ($) *"
+          type="number"
+          inputProps={{ min: 0, step: '0.01' }}
+          value={form.promotionalPrice}
+          onChange={(e) => handleChange('promotionalPrice', e.target.value)}
+          required
+          fullWidth
+        />
+
+        <ImageUploadField
+          label="Imagen de la promo"
+          value={form.image}
+          onChange={(url) => handleChange('image', url)}
+          placeholder="https://... o /api/uploads/promo.jpg"
+        />
 
         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
           <TextField

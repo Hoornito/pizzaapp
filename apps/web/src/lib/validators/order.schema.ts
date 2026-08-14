@@ -55,6 +55,8 @@ export const createOrderSchema = z
     paid: z.boolean().optional(),
     notes: z.string().optional(),
     phone: z.string().optional(),
+    // Pedidos Ya: repartidor de la plataforma que pasa a buscarlo.
+    courierName: z.string().optional(),
     whatsappToken: z.string().optional(),
     // Pedido programado: ISO del inicio de la franja elegida. Ausente = "lo
     // antes posible". La validación de que la franja siga siendo válida se hace
@@ -65,7 +67,8 @@ export const createOrderSchema = z
     estimatedTime: z.coerce.number().int().min(0).optional(),
     items: z.array(orderItemSchema).min(1, 'El pedido debe tener al menos un ítem'),
   })
-  .refine((d) => d.deliveryType === 'PICKUP' || !!d.addressId || !!d.address, {
+  // Solo el delivery propio necesita dirección (retiro y Pedidos Ya no).
+  .refine((d) => d.deliveryType !== 'DELIVERY' || !!d.addressId || !!d.address, {
     message: 'La dirección es requerida para delivery',
     path: ['addressId'],
   })

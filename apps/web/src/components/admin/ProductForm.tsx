@@ -13,6 +13,7 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import { EXTRAS_CATEGORY_SLUG } from '@/lib/constants';
+import { ImageUploadField } from './ImageUploadField';
 
 interface ProductFormProps {
   initialData?: any;
@@ -42,29 +43,8 @@ export function ProductForm({ initialData, onSubmit }: ProductFormProps) {
       .then((d) => setCategories(d.data || []));
   }, []);
 
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
-
   const handleChange = (field: string, value: any) => {
     setForm((prev: any) => ({ ...prev, [field]: value }));
-  };
-
-  const handleUpload = async (file: File | undefined) => {
-    if (!file) return;
-    setUploadError('');
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch('/api/uploads', { method: 'POST', body: fd });
-      const json = await res.json();
-      if (!res.ok) { setUploadError(json.error || 'No se pudo subir la imagen'); return; }
-      handleChange('image', json.data.url);
-    } catch {
-      setUploadError('Error de conexión al subir la imagen');
-    } finally {
-      setUploading(false);
-    }
   };
 
   const selectedCategory = categories.find((c) => c.id === form.categoryId);
@@ -185,39 +165,12 @@ export function ProductForm({ initialData, onSubmit }: ProductFormProps) {
           </Box>
         )}
 
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <TextField
-            label="URL de imagen"
-            value={form.image || ''}
-            onChange={(e) => handleChange('image', e.target.value)}
-            sx={{ flex: 1, minWidth: 240 }}
-            placeholder="https://... o /uploads/producto.jpg"
-            helperText={uploadError || 'Podés pegar una URL o subir un archivo (máx 5MB)'}
-            error={!!uploadError}
-          />
-          <Button component="label" variant="outlined" disabled={uploading} sx={{ mt: 1, whiteSpace: 'nowrap' }}>
-            {uploading ? 'Subiendo…' : '📤 Subir imagen'}
-            <input
-              type="file"
-              hidden
-              accept="image/jpeg,image/png,image/webp,image/avif"
-              onChange={(e) => handleUpload(e.target.files?.[0])}
-            />
-          </Button>
-        </Box>
-
-        {form.image && (
-          <Box>
-            <Typography variant="body2" color="text.secondary" gutterBottom>Vista previa:</Typography>
-            <Box
-              component="img"
-              src={form.image}
-              alt="preview"
-              sx={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}
-              onError={(e: any) => { e.target.style.display = 'none'; }}
-            />
-          </Box>
-        )}
+        <ImageUploadField
+          label="Imagen del producto"
+          value={form.image}
+          onChange={(url) => handleChange('image', url)}
+          placeholder="https://... o /api/uploads/producto.jpg"
+        />
 
         <FormControlLabel
           control={

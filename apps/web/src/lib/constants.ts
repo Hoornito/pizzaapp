@@ -43,9 +43,17 @@ export const ORDER_STATUS_STEPS = [
   'ENTREGADO',
 ];
 
-// Para retiro en local no existe la etapa "En reparto".
+/** Etiqueta de cómo sale el pedido. Pedidos Ya es un canal aparte. */
+export const DELIVERY_TYPE_LABELS: Record<string, string> = {
+  DELIVERY: '🛵 Delivery',
+  PICKUP: '🏪 Retiro',
+  PEDIDOS_YA: '🛵 Pedidos Ya',
+};
+
+// Solo el delivery propio pasa por "En reparto": lo que retiran en el local
+// (el cliente o el repartidor de la plataforma) va de LISTO a ENTREGADO.
 export function orderStatusSteps(deliveryType?: string): string[] {
-  if (deliveryType === 'PICKUP') {
+  if (deliveryType !== 'DELIVERY') {
     return ORDER_STATUS_STEPS.filter((s) => s !== 'EN_REPARTO');
   }
   return ORDER_STATUS_STEPS;
@@ -125,6 +133,7 @@ export const FINANCE_PAYMENT_METHOD_LABELS: Record<string, string> = {
   // métodos provenientes de pedidos (Order.paymentMethod)
   MERCADO_PAGO: 'Mercado Pago',
   MIXTO: 'Mixto',
+  PEDIDOS_YA: 'Pedidos Ya',
 };
 
 // Etiquetas e íconos para Order.paymentMethod (lo que elige el cliente al pagar)
@@ -135,6 +144,7 @@ export const ORDER_PAYMENT_METHOD_LABELS: Record<string, string> = {
   TRANSFERENCIA: 'Transferencia',
   TARJETA: 'QR o Tarjeta',
   A_DEFINIR: 'Paga al retirar',
+  PEDIDOS_YA: 'Pedidos Ya',
 };
 
 export const ORDER_PAYMENT_METHOD_EMOJI: Record<string, string> = {
@@ -144,6 +154,7 @@ export const ORDER_PAYMENT_METHOD_EMOJI: Record<string, string> = {
   TRANSFERENCIA: '🏦',
   TARJETA: '💳',
   A_DEFINIR: '⏳',
+  PEDIDOS_YA: '🛵',
 };
 
 // Datos de transferencia (MOCK — reemplazar por los reales del negocio).

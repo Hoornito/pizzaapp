@@ -41,9 +41,13 @@ export interface ProductOrderModalProps {
   options?: OrderOption[];
   /** Tope de unidades (stock). Sin definir, no hay tope. */
   maxQuantity?: number;
-  /** Segundo grupo de opciones que NO cambia el precio (p. ej. la cocción). */
+  /**
+   * Segundo grupo de opciones que NO cambia el precio (p. ej. la cocción).
+   * Es función de la opción elegida porque puede depender de ella: al molde
+   * solo existe en la pizza grande.
+   */
   variantLabel?: string;
-  variants?: { id: string; label: string }[];
+  variants?: (optionId: string | null) => { id: string; label: string }[];
   /** Se llama con la cantidad, la opción elegida y la variante. */
   onAdd: (result: { quantity: number; option: OrderOption | null; variant: string | null }) => void;
 }
@@ -76,16 +80,30 @@ export function ProductOrderModal({
   const [variantId, setVariantId] = useState<string | null>(null);
 
   const hasOptions = !!options && options.length > 0;
-  const hasVariants = !!variants && variants.length > 0;
+  // Variantes disponibles para lo que está elegido ahora mismo.
+  const currentVariants = variants ? variants(optionId) : [];
+  // Con una sola no hay nada que elegir: no mostramos el grupo.
+  const hasVariants = currentVariants.length > 1;
   // Con una sola opción no tiene sentido hacer elegir: viene marcada.
-  // La variante (cocción) arranca en la primera, que es la forma habitual.
   useEffect(() => {
     if (open) {
       setQuantity(1);
       setOptionId(hasOptions && options!.length === 1 ? options![0].id : null);
-      setVariantId(hasVariants ? variants![0].id : null);
     }
-  }, [open, hasOptions, options, hasVariants, variants]);
+  }, [open, hasOptions, options]);
+
+  // La variante (cocción) arranca en la primera, que es la forma habitual. Al
+  // cambiar de tamaño la elegida puede dejar de existir (venías en grande al
+  // molde y pasás a mediana): ahí también vuelve a la primera disponible.
+  useEffect(() => {
+    const ids = currentVariants.map((v) => v.id);
+    if (ids.length === 0) {
+      if (variantId !== null) setVariantId(null);
+    } else if (!variantId || !ids.includes(variantId)) {
+      setVariantId(ids[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionId, open]);
 
   const selected = hasOptions ? (options!.find((o) => o.id === optionId) ?? null) : null;
   const unitPrice = selected ? selected.price : (price ?? 0);
@@ -191,7 +209,7 @@ export function ProductOrderModal({
               {variantLabel ?? 'Cómo la querés'}
             </Typography>
             <Box sx={{ display: 'flex', gap: 1 }}>
-              {variants!.map((v) => {
+              {currentVariants.map((v) => {
                 const isSel = variantId === v.id;
                 return (
                   <Button

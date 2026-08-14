@@ -231,6 +231,10 @@ export async function createOrder(
         ? 'CONFIRMADO'
         : 'RECIBIDO';
 
+  // Pedidos Ya cobra la plataforma: el pedido nace pagado (nadie le cobra al
+  // repartidor) y la venta cuenta como virtual, igual que tarjeta.
+  const paid = data.paymentMethod === 'PEDIDOS_YA' ? true : !!data.paid;
+
   const orderData = (orderNumber: string) => ({
     orderNumber,
     userId,
@@ -256,6 +260,7 @@ export async function createOrder(
     cashReceived: data.paymentMethod === 'EFECTIVO' ? (data.cashReceived ?? null) : null,
     notes: data.notes,
     phone: data.phone,
+    courierName: data.courierName ?? null,
     whatsappToken: data.whatsappToken,
     items: {
       create: data.items.map((item) => ({
@@ -272,9 +277,9 @@ export async function createOrder(
       // de cocina imprime "PAGADO ✓" en vez de "FALTA COBRAR".
       create: {
         method: data.paymentMethod,
-        status: (data.paid ? 'APPROVED' : 'PENDING') as 'APPROVED' | 'PENDING',
+        status: (paid ? 'APPROVED' : 'PENDING') as 'APPROVED' | 'PENDING',
         amount: data.total,
-        paidAt: data.paid ? new Date() : null,
+        paidAt: paid ? new Date() : null,
       },
     },
   });

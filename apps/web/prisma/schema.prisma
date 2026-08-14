@@ -35,6 +35,9 @@ enum PaymentMethod {
   // Paga al retirar/recibir; el tipo real (efectivo/transferencia/mixto) se
   // define al registrar el cobro.
   A_DEFINIR
+  // Cobra la plataforma: no entra plata al local, se liquida aparte. Cuenta
+  // como venta "virtual" (igual que tarjeta o transferencia).
+  PEDIDOS_YA
 }
 
 enum PaymentStatus {
@@ -47,6 +50,9 @@ enum PaymentStatus {
 enum DeliveryType {
   DELIVERY
   PICKUP
+  // Lo retira el repartidor de la plataforma: no es delivery nuestro ni un
+  // retiro del cliente. No lleva dirección ni cobro en el local.
+  PEDIDOS_YA
 }
 
 // ─── Auth.js Models ───────────────────────────────────────────────────────────
@@ -114,18 +120,18 @@ model VerificationToken {
 // ─── Address ──────────────────────────────────────────────────────────────────
 
 model Address {
-  id         String   @id @default(cuid())
-  userId     String
-  street     String
-  number     String
-  apartment  String?
-  city       String
-  state      String
-  zipCode    String?
-  reference  String?
-  isDefault  Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String
+  street    String
+  number    String
+  apartment String?
+  city      String
+  state     String
+  zipCode   String?
+  reference String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   orders Order[]
@@ -136,14 +142,14 @@ model Address {
 // ─── Catalog ──────────────────────────────────────────────────────────────────
 
 model Category {
-  id          String    @id @default(cuid())
-  name        String    @unique
-  slug        String    @unique
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
   description String?
   icon        String?
-  sortOrder   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   products Product[]
 }
@@ -164,7 +170,7 @@ model Product {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  category       Category        @relation(fields: [categoryId], references: [id])
+  category       Category             @relation(fields: [categoryId], references: [id])
   cartItems      CartItem[]
   orderItems     OrderItem[]
   promotionItems PromotionItem[]
@@ -180,7 +186,7 @@ model Product {
 
 enum StockMovementKind {
   ENTRADA // ingreso de mercadería (suma stock)
-  SALIDA  // merma/ajuste negativo (resta stock)
+  SALIDA // merma/ajuste negativo (resta stock)
 }
 
 model StockMovement {
@@ -293,10 +299,10 @@ model OrderPromotionItem {
 // ─── Cart ─────────────────────────────────────────────────────────────────────
 
 model Cart {
-  id        String     @id @default(cuid())
-  userId    String     @unique
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   items CartItem[]
@@ -323,46 +329,48 @@ model CartItem {
 // ─── Orders ───────────────────────────────────────────────────────────────────
 
 model Order {
-  id             String        @id @default(cuid())
-  orderNumber    String        @unique
-  userId         String
-  addressId      String?
-  status         OrderStatus   @default(RECIBIDO)
-  deliveryType   DeliveryType  @default(DELIVERY)
-  paymentMethod  PaymentMethod
-  subtotal       Decimal       @db.Decimal(10, 2)
-  deliveryFee    Decimal       @db.Decimal(10, 2) @default(0)
+  id                 String        @id @default(cuid())
+  orderNumber        String        @unique
+  userId             String
+  addressId          String?
+  status             OrderStatus   @default(RECIBIDO)
+  deliveryType       DeliveryType  @default(DELIVERY)
+  paymentMethod      PaymentMethod
+  subtotal           Decimal       @db.Decimal(10, 2)
+  deliveryFee        Decimal       @default(0) @db.Decimal(10, 2)
   // Descuento aplicado al pedido (mostrador). total = subtotal + envío − descuento.
-  discount       Decimal       @db.Decimal(10, 2) @default(0)
+  discount           Decimal       @default(0) @db.Decimal(10, 2)
   // Propina para el repartidor (delivery, la deja el cliente). Se suma al total.
-  tip            Decimal       @db.Decimal(10, 2) @default(0)
-  total          Decimal       @db.Decimal(10, 2)
+  tip                Decimal       @default(0) @db.Decimal(10, 2)
+  total              Decimal       @db.Decimal(10, 2)
   // Sólo para paymentMethod = MIXTO: cuánto paga en efectivo y cuánto por transferencia.
-  cashAmount     Decimal?      @db.Decimal(10, 2)
-  transferAmount Decimal?      @db.Decimal(10, 2)
+  cashAmount         Decimal?      @db.Decimal(10, 2)
+  transferAmount     Decimal?      @db.Decimal(10, 2)
   // Efectivo con el que paga el cliente ("paga con"), para calcular el vuelto.
-  cashReceived   Decimal?      @db.Decimal(10, 2)
-  notes          String?
-  phone          String?
-  whatsappToken  String?
-  estimatedTime  Int?
+  cashReceived       Decimal?      @db.Decimal(10, 2)
+  notes              String?
+  phone              String?
+  // Repartidor que pasa a buscar el pedido (Pedidos Ya).
+  courierName        String?
+  whatsappToken      String?
+  estimatedTime      Int?
   // Pedido programado: horario elegido por el cliente ("Programar para después").
   // Null = "lo antes posible" (el local carga el tiempo estimado a mano).
-  scheduledFor   DateTime?
+  scheduledFor       DateTime?
   // Marcas de tiempo para medir la demora real: inicio (creación/entrada a
   // cocina) y fin (entregado). Sirven para calcular a futuro un tiempo estimado
   // por tipo de pedido (pizzas/empanadas/complejidad/envío).
-  startedAt      DateTime?
-  finishedAt     DateTime?
+  startedAt          DateTime?
+  finishedAt         DateTime?
   deliveryEmployeeId String?
   // Pedido de SIMULACIÓN (caja de entrenamiento): se borra al cerrar la caja test.
-  isTest         Boolean       @default(false)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  isTest             Boolean       @default(false)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
-  user             User       @relation(fields: [userId], references: [id])
-  address          Address?   @relation(fields: [addressId], references: [id])
-  deliveryEmployee Employee?  @relation("OrderDeliveryEmployee", fields: [deliveryEmployeeId], references: [id])
+  user             User                 @relation(fields: [userId], references: [id])
+  address          Address?             @relation(fields: [addressId], references: [id])
+  deliveryEmployee Employee?            @relation("OrderDeliveryEmployee", fields: [deliveryEmployeeId], references: [id])
   items            OrderItem[]
   promoItems       OrderPromotionItem[]
   payment          Payment?
@@ -428,14 +436,14 @@ model ShipmentZone {
 }
 
 model DeliveryFee {
-  id             String        @id @default(cuid())
+  id             String   @id @default(cuid())
   shipmentZoneId String?
   name           String
-  fee            Decimal       @db.Decimal(10, 2)
-  minOrderAmount Decimal?      @db.Decimal(10, 2)
-  isDefault      Boolean       @default(false)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  fee            Decimal  @db.Decimal(10, 2)
+  minOrderAmount Decimal? @db.Decimal(10, 2)
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   zone ShipmentZone? @relation(fields: [shipmentZoneId], references: [id])
 }
@@ -458,22 +466,22 @@ model BusinessHours {
 // ─── WhatsApp ─────────────────────────────────────────────────────────────────
 
 model WhatsAppConversation {
-  id          String   @id @default(cuid())
-  phone       String   @unique
-  waId        String
-  state       String   @default("MENU")
-  context     Json?
+  id            String    @id @default(cuid())
+  phone         String    @unique
+  waId          String
+  state         String    @default("MENU")
+  context       Json?
   // Nombre de perfil del cliente en WhatsApp (para el inbox).
-  contactName String?
+  contactName   String?
   // Takeover humano: si está en true, el bot NO responde (atendés a mano).
-  botPaused   Boolean  @default(false)
+  botPaused     Boolean   @default(false)
   // Para ordenar el inbox y marcar no leídos.
   lastMessageAt DateTime?
-  unread      Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  unread        Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  messages    WhatsAppMessage[]
+  messages WhatsAppMessage[]
 
   @@index([phone])
   @@index([lastMessageAt])
@@ -707,10 +715,10 @@ model Employee {
 }
 
 enum EmployeeMovementKind {
-  ADELANTO            // adelanto otorgado (suma al pendiente; normalmente desde Finanzas)
-  ADELANTO_DESCUENTO  // descuento del adelanto (resta del pendiente, sin tocar caja)
-  ACUMULADO_APORTE    // el empleado "guarda" sueldo (suma a favor)
-  ACUMULADO_RETIRO    // retiro del acumulado a favor
+  ADELANTO // adelanto otorgado (suma al pendiente; normalmente desde Finanzas)
+  ADELANTO_DESCUENTO // descuento del adelanto (resta del pendiente, sin tocar caja)
+  ACUMULADO_APORTE // el empleado "guarda" sueldo (suma a favor)
+  ACUMULADO_RETIRO // retiro del acumulado a favor
 }
 
 model EmployeeMovement {

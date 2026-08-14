@@ -116,6 +116,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   .status.unpaid { background:#000; color:#fff; }
   /* Pedido programado: tiene que verse de lejos, la cocina se organiza por esto. */
   .scheduled { margin-top:4px; text-align:center; font-weight:bold; font-size:22px; padding:4px; border:3px solid #000; letter-spacing:1px; }
+  /* Pedidos Ya: lo tiene que ver el que arma el pedido de una, para no cobrarle
+     al repartidor y saber que lo pasan a buscar. */
+  .pya { text-align:center; font-weight:bold; font-size:26px; padding:4px; margin:4px 0; background:#000; color:#fff; letter-spacing:2px; }
   .tip { display:flex; justify-content:space-between; font-size:14px; font-weight:bold; margin:4px 0; }
   .cash { font-size:12px; font-weight:bold; margin:3px 0; text-align:center; }
   .qr { text-align:center; margin-top:6px; }
@@ -127,9 +130,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   <div class="content">
   <div class="header">COCINA - PEDIDO #${esc(order.orderNumber)}</div>
   <div class="sub">${esc(fmtDate(order.createdAt))}</div>
+  ${order.deliveryType === 'PEDIDOS_YA' ? '<div class="pya">PEDIDOS YA</div>' : ''}
   <div class="sep"></div>
   <div class="meta">
-    <div><b>Tipo:</b> ${order.deliveryType === 'DELIVERY' ? 'DELIVERY' : 'RETIRO EN LOCAL'}</div>
+    <div><b>Tipo:</b> ${order.deliveryType === 'DELIVERY' ? 'DELIVERY' : order.deliveryType === 'PEDIDOS_YA' ? 'PEDIDOS YA' : 'RETIRO EN LOCAL'}</div>
+    ${order.courierName ? `<div><b>Repartidor:</b> ${esc(order.courierName)}</div>` : ''}
     ${customerName ? `<div><b>Cliente:</b> ${esc(customerName)}</div>` : ''}
     ${order.phone || order.user?.phone ? `<div><b>Tel:</b> ${esc(order.phone || order.user?.phone)}</div>` : ''}
     ${order.deliveryType === 'DELIVERY' && order.address ? `<div><b>Dirección:</b> ${esc(order.address.street)} ${esc(order.address.number)}${order.address.apartment ? ' ' + esc(order.address.apartment) : ''}, ${esc(order.address.city)}</div>` : ''}

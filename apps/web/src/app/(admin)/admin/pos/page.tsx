@@ -131,7 +131,10 @@ export default function PosPage() {
 
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
-  const [deliveryType, setDeliveryType] = useState<'PICKUP' | 'DELIVERY'>('PICKUP');
+  const [deliveryType, setDeliveryType] = useState<'PICKUP' | 'DELIVERY' | 'PEDIDOS_YA'>('PICKUP');
+  // Pedidos Ya: lo cobra la plataforma y lo retira su repartidor. No se elige
+  // forma de pago ni descuento; lo único propio es quién lo viene a buscar.
+  const [courier, setCourier] = useState('');
   // La ciudad es siempre San Vicente (zona de reparto).
   const [address, setAddress] = useState({ street: '', number: '', apartment: '', city: 'San Vicente', reference: '' });
   const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA' | 'MIXTO' | 'A_DEFINIR'>('EFECTIVO');
@@ -179,13 +182,18 @@ export default function PosPage() {
     [promotions]
   );
 
+  const isPedidosYa = deliveryType === 'PEDIDOS_YA';
+
   // Tab inicial: la primera categoría disponible.
   const activeTab = tab || categories[0]?.id || 'promos';
 
   const subtotal = items.reduce((s, i) => s + lineTotal(i), 0);
   const deliveryFee = deliveryType === 'DELIVERY' ? DELIVERY_FEE : 0;
-  // Descuento acotado: 0 ≤ descuento ≤ subtotal + envío.
-  const discountNum = Math.min(Math.max(parseFloat(discount) || 0, 0), subtotal + deliveryFee);
+  // Descuento acotado: 0 ≤ descuento ≤ subtotal + envío. En Pedidos Ya los
+  // precios los fija la plataforma: no se toca el total.
+  const discountNum = isPedidosYa
+    ? 0
+    : Math.min(Math.max(parseFloat(discount) || 0, 0), subtotal + deliveryFee);
   const total = subtotal + deliveryFee - discountNum;
 
   // Consultamos el estado de la caja al entrar (y se puede refrescar).
@@ -206,7 +214,8 @@ export default function PosPage() {
         if (Array.isArray(d.items)) setItems(d.items);
         if (typeof d.customerName === 'string') setCustomerName(d.customerName);
         if (typeof d.phone === 'string') setPhone(d.phone);
-        if (d.deliveryType === 'PICKUP' || d.deliveryType === 'DELIVERY') setDeliveryType(d.deliveryType);
+        if (['PICKUP', 'DELIVERY', 'PEDIDOS_YA'].includes(d.deliveryType)) setDeliveryType(d.deliveryType);
+        if (typeof d.courier === 'string') setCourier(d.courier);
         if (d.address && typeof d.address === 'object') setAddress((prev) => ({ ...prev, ...d.address }));
         if (typeof d.paymentMethod === 'string') setPaymentMethod(d.paymentMethod);
         if (typeof d.cashAmount === 'string') setCashAmount(d.cashAmount);
@@ -232,13 +241,13 @@ export default function PosPage() {
         localStorage.setItem(
           DRAFT_KEY,
           JSON.stringify({
-            items, customerName, phone, deliveryType, address,
+            items, customerName, phone, deliveryType, courier, address,
             paymentMethod, cashAmount, transferAmount, pagaCon, paid, discount, notes,
           })
         );
       }
     } catch { /* almacenamiento no disponible / lleno: seguimos sin persistir */ }
-  }, [hydrated, items, customerName, phone, deliveryType, address, paymentMethod, cashAmount, transferAmount, pagaCon, paid, discount, notes]);
+  }, [hydrated, items, customerName, phone, deliveryType, courier, address, paymentMethod, cashAmount, transferAmount, pagaCon, paid, discount, notes]);
 
   const addItem = (item: Omit<PosItem, 'key'>) => {
     setItems((prev) => {
@@ -351,6 +360,7 @@ export default function PosPage() {
     setDiscount('');
     setPaymentMethod('EFECTIVO');
     setDeliveryType('PICKUP');
+    setCourier('');
     setWhen('asap');
     setEta('');
     setSlot('');
@@ -381,9 +391,9 @@ export default function PosPage() {
 
   const etaNum = parseInt(eta, 10);
   const etaOk = Number.isFinite(etaNum) && etaNum > 0;
-  // Para cerrar el pedido hace falta saber cuándo se entrega: o un horario
-  // programado, o un tiempo estimado. Sin eso la cocina no sabe para cuándo es.
-  const tiempoDefinido = when === 'scheduled' ? !!slot : etaOk;
+  // El tiempo estimado es opcional: se puede cargar después desde Pedidos. Lo
+  // que sí hace falta es el horario cuando el pedido es programado.
+  const faltaHorario = when === 'scheduled' && !slot;
 
   const finalize = async () => {
     if (cajaAbierta === false) {
@@ -391,14 +401,13 @@ export default function PosPage() {
       return;
     }
     if (items.length === 0) { showError('Agregá al menos un producto'); return; }
-    if (when === 'scheduled' && !slot) { showError('Elegí el horario del pedido programado'); return; }
-    if (when === 'asap' && !etaOk) { showError('Poné el tiempo estimado (en minutos)'); return; }
+    if (faltaHorario) { showError('Elegí el horario del pedido programado'); return; }
     if (deliveryType === 'DELIVERY' && (!address.street || !address.number)) {
       showError('Completá la dirección de entrega'); return;
     }
     const cash = parseFloat(cashAmount) || 0;
     const transfer = parseFloat(transferAmount) || 0;
-    if (paymentMethod === 'MIXTO' && Math.abs(cash + transfer - total) >= 0.01) {
+    if (!isPedidosYa && paymentMethod === 'MIXTO' && Math.abs(cash + transfer - total) >= 0.01) {
       showError('El efectivo y la transferencia deben sumar el total'); return;
     }
 
@@ -406,16 +415,23 @@ export default function PosPage() {
 
     const payload = {
       deliveryType,
-      paymentMethod,
+      // Pedidos Ya no pasa por caja: cobra la plataforma y el pedido nace pagado.
+      paymentMethod: isPedidosYa ? 'PEDIDOS_YA' : paymentMethod,
       subtotal,
       deliveryFee,
       discount: discountNum,
       total,
       // "A definir" nunca puede quedar marcado como pagado.
-      paid: paymentMethod === 'A_DEFINIR' ? false : paid,
-      ...(when === 'scheduled' ? { scheduledFor: slot } : { estimatedTime: etaNum }),
-      ...(paymentMethod === 'MIXTO' ? { cashAmount: cash, transferAmount: transfer } : {}),
-      ...(paymentMethod === 'EFECTIVO' && pagaCon !== '' && Number(pagaCon) > 0
+      paid: isPedidosYa ? true : paymentMethod === 'A_DEFINIR' ? false : paid,
+      ...(isPedidosYa && courier.trim() ? { courierName: courier.trim() } : {}),
+      // Sin tiempo estimado el pedido igual se carga: se completa después.
+      ...(when === 'scheduled'
+        ? { scheduledFor: slot }
+        : etaOk
+          ? { estimatedTime: etaNum }
+          : {}),
+      ...(!isPedidosYa && paymentMethod === 'MIXTO' ? { cashAmount: cash, transferAmount: transfer } : {}),
+      ...(!isPedidosYa && paymentMethod === 'EFECTIVO' && pagaCon !== '' && Number(pagaCon) > 0
         ? { cashReceived: Number(pagaCon) }
         : {}),
       ...(deliveryType === 'DELIVERY'
@@ -740,10 +756,30 @@ export default function PosPage() {
               <TextField label="Teléfono" size="small" fullWidth value={phone} onChange={(e) => setPhone(e.target.value)} />
             </Box>
 
-            <RadioGroup row value={deliveryType} onChange={(e) => setDeliveryType(e.target.value as 'PICKUP' | 'DELIVERY')}>
+            <RadioGroup row value={deliveryType} onChange={(e) => setDeliveryType(e.target.value as typeof deliveryType)}>
               <FormControlLabel value="PICKUP" control={<Radio size="small" />} label="🏪 Retiro" />
               <FormControlLabel value="DELIVERY" control={<Radio size="small" />} label="🛵 Delivery" />
+              <FormControlLabel value="PEDIDOS_YA" control={<Radio size="small" />} label="🛵 Pedidos Ya" />
             </RadioGroup>
+
+            {/* Pedidos Ya: cobra la plataforma. Solo se carga quién lo retira. */}
+            {isPedidosYa && (
+              <>
+                <Alert severity="info" sx={{ py: 0.5 }}>
+                  <Typography variant="caption">
+                    Cobra <strong>Pedidos Ya</strong>: no se elige forma de pago ni descuento. El pedido queda como pagado y sale con <strong>PEDIDOS YA</strong> en la comanda de cocina.
+                  </Typography>
+                </Alert>
+                <TextField
+                  label="Repartidor (quien lo retira)"
+                  size="small"
+                  fullWidth
+                  value={courier}
+                  onChange={(e) => setCourier(e.target.value)}
+                  helperText="Opcional · sale en la comanda"
+                />
+              </>
+            )}
 
             {deliveryType === 'DELIVERY' && (
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
@@ -756,6 +792,7 @@ export default function PosPage() {
               </Box>
             )}
 
+            {!isPedidosYa && (
             <RadioGroup row value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}>
               <FormControlLabel value="EFECTIVO" control={<Radio size="small" />} label="💵 Efectivo" />
               <FormControlLabel value="TRANSFERENCIA" control={<Radio size="small" />} label="🏦 Transf." />
@@ -763,8 +800,9 @@ export default function PosPage() {
               <FormControlLabel value="MIXTO" control={<Radio size="small" />} label="🔀 Mixto" />
               <FormControlLabel value="A_DEFINIR" control={<Radio size="small" />} label="⏳ A definir" />
             </RadioGroup>
+            )}
 
-            {paymentMethod === 'MIXTO' && (
+            {!isPedidosYa && paymentMethod === 'MIXTO' && (
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
                 <TextField label="Efectivo" size="small" type="number" value={cashAmount} onChange={(e) => handleSplit('cash', e.target.value)} />
                 <TextField label="Transferencia" size="small" type="number" value={transferAmount} onChange={(e) => handleSplit('transfer', e.target.value)} />
@@ -772,7 +810,7 @@ export default function PosPage() {
             )}
 
             {/* Paga con → vuelto (solo efectivo). Vacío = paga justo. */}
-            {paymentMethod === 'EFECTIVO' && (
+            {!isPedidosYa && paymentMethod === 'EFECTIVO' && (
               <Box>
                 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                   <TextField
@@ -812,6 +850,7 @@ export default function PosPage() {
               </Box>
             )}
 
+            {!isPedidosYa && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
               <FormControlLabel
                 sx={{ ml: 0 }}
@@ -842,14 +881,16 @@ export default function PosPage() {
                 InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
               />
             </Box>
+            )}
 
             <TextField label="Observaciones" size="small" multiline value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Box>
 
           <Divider sx={{ my: 1.5 }} />
 
-          {/* Cuándo se entrega. Sin esto no se puede finalizar: es lo que sale
-              en la comanda para que la cocina sepa para cuándo es. */}
+          {/* Cuándo se entrega: es lo que sale en la comanda para que la cocina
+              sepa para cuándo es. El estimado es opcional (se puede cargar
+              después desde Pedidos); el horario del programado no. */}
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.75 }}>
             ¿Para cuándo es?
           </Typography>
@@ -873,7 +914,7 @@ export default function PosPage() {
 
           {when === 'asap' ? (
             <TextField
-              label="Tiempo estimado (min) *"
+              label="Tiempo estimado (min)"
               type="number"
               size="small"
               fullWidth
@@ -881,7 +922,11 @@ export default function PosPage() {
               onChange={(e) => setEta(e.target.value)}
               inputProps={{ min: 1, step: 5 }}
               error={eta !== '' && !etaOk}
-              helperText={etaOk ? `Listo aprox. ${new Date(Date.now() + etaNum * 60000).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}` : 'Sale en la comanda de cocina'}
+              helperText={
+                etaOk
+                  ? `Listo aprox. ${new Date(Date.now() + etaNum * 60000).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`
+                  : 'Opcional · si lo cargás sale en la comanda de cocina'
+              }
             />
           ) : slots.length === 0 ? (
             <Alert severity="warning" sx={{ py: 0.5 }}>
@@ -937,15 +982,15 @@ export default function PosPage() {
 
           <Button
             variant="contained" size="large" fullWidth sx={{ mt: 1.5, py: 1.5 }}
-            disabled={submitting || items.length === 0 || cajaAbierta === false || !tiempoDefinido}
+            disabled={submitting || items.length === 0 || cajaAbierta === false || faltaHorario}
             onClick={finalize}
           >
             {cajaAbierta === false
               ? 'Caja cerrada'
               : submitting
                 ? 'Cargando…'
-                : !tiempoDefinido
-                  ? (when === 'scheduled' ? 'Elegí el horario' : 'Falta el tiempo estimado')
+                : faltaHorario
+                  ? 'Elegí el horario'
                   : `Finalizar · ${formatCurrency(total)}`}
           </Button>
           {items.length > 0 && (

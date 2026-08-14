@@ -14,7 +14,7 @@ import InputLabel from '@mui/material/InputLabel';
 import Divider from '@mui/material/Divider';
 import Alert from '@mui/material/Alert';
 import Grid from '@mui/material/Grid';
-import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, NEXT_STATUSES } from '@/lib/constants';
+import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, NEXT_STATUSES, DELIVERY_TYPE_LABELS } from '@/lib/constants';
 import { isPizzaItemNotes } from '@/lib/pizza';
 import { PaymentDialog, type PaymentKind } from '@/components/admin/PaymentDialog';
 import { formatCurrency, formatDate, formatOrderPayment, groupTicketItems } from '@/lib/utils';
@@ -306,7 +306,7 @@ export default function AdminOrderDetailPage({ params }: Props) {
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               <Box>
                 <Typography variant="body2" color="text.secondary">Tipo</Typography>
-                <Typography>{order.deliveryType === 'DELIVERY' ? '🛵 Delivery' : '🏪 Retiro en local'}</Typography>
+                <Typography>{DELIVERY_TYPE_LABELS[order.deliveryType] || order.deliveryType}</Typography>
               </Box>
               <Box>
                 <Typography variant="body2" color="text.secondary">Pago</Typography>

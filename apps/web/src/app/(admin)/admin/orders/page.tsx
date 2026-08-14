@@ -38,6 +38,7 @@ import {
   NEXT_STATUSES,
   ORDER_PAYMENT_METHOD_LABELS,
   ORDER_PAYMENT_METHOD_EMOJI,
+  DELIVERY_TYPE_LABELS,
 } from '@/lib/constants';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { isPizzaItemNotes } from '@/lib/pizza';
@@ -235,13 +236,6 @@ export default function AdminOrdersPage() {
         ? parseInt(etaDraft[order.id] ?? '', 10)
         : NaN;
     const etaOk = Number.isFinite(eta) && eta > 0;
-
-    // Sin tiempo estimado no se confirma: la cocina necesita saber para cuándo
-    // es. Los programados ya tienen su horario, así que no hace falta.
-    if (next.status === 'CONFIRMADO' && !order.scheduledFor && !etaOk && !(order.estimatedTime > 0)) {
-      showError('Poné el tiempo estimado antes de confirmar el pedido.');
-      return;
-    }
 
     changeStatus(order.id, next.status, `${next.label} ✓`, etaOk ? eta : undefined);
   };
@@ -470,7 +464,7 @@ export default function AdminOrdersPage() {
                     )}
 
                     <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
-                      <Chip label={order.deliveryType === 'DELIVERY' ? '🛵 Delivery' : '🏪 Retiro'} size="small" variant="outlined" />
+                      <Chip label={DELIVERY_TYPE_LABELS[order.deliveryType] || order.deliveryType} size="small" variant="outlined" />
                       <Chip label={`${ORDER_PAYMENT_METHOD_EMOJI[order.paymentMethod] || ''} ${ORDER_PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}`} size="small" variant="outlined" />
                       <Chip label={paid ? 'Pagado' : 'Pago pendiente'} size="small" color={paid ? 'success' : 'warning'} />
                       {/* Programado: manda el horario del cliente, no hay estimado que cargar. */}
@@ -655,7 +649,7 @@ export default function AdminOrdersPage() {
                   <TableCell><Typography fontWeight={600}>#{order.orderNumber}</Typography></TableCell>
                   <TableCell>{formatDate(order.createdAt)}</TableCell>
                   <TableCell>{splitClientNote(order.notes).client || order.user?.name || order.user?.email || 'Cliente'}</TableCell>
-                  <TableCell align="center">{order.deliveryType === 'DELIVERY' ? '🛵' : '🏪'}</TableCell>
+                  <TableCell align="center">{order.deliveryType === 'PEDIDOS_YA' ? '🛵PY' : order.deliveryType === 'DELIVERY' ? '🛵' : '🏪'}</TableCell>
                   <TableCell>
                     {order.status === 'CANCELADO' ? (
                       <Chip label="Cancelado" size="small" color="warning" />

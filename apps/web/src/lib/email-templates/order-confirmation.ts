@@ -5,7 +5,9 @@ interface OrderConfirmationData {
   subtotal: number;
   deliveryFee: number;
   total: number;
-  deliveryType: 'DELIVERY' | 'PICKUP';
+  // Pedidos Ya nunca manda mail (no hay cliente nuestro), pero el tipo viene
+  // del pedido: lo aceptamos y cae en "retiro".
+  deliveryType: 'DELIVERY' | 'PICKUP' | 'PEDIDOS_YA';
   address?: string;
   paymentMethod: string;
   estimatedTime?: number;

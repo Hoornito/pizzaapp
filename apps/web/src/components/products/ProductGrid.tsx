@@ -43,7 +43,14 @@ const headerPx = () => (typeof window !== 'undefined' && window.innerWidth < 600
 interface Section {
   id: string;
   label: string;
+  /** Aclaración chica bajo el título (p. ej. cómo se hacen las pizzas). */
+  note?: string;
 }
+
+/** Aclaraciones por categoría, para el subtítulo de la sección. */
+const SECTION_NOTES: Record<string, string> = {
+  pizzas: 'A la piedra · al molde solo en tamaño grande',
+};
 
 export function ProductGrid() {
   const [search, setSearch] = useState('');
@@ -56,6 +63,9 @@ export function ProductGrid() {
   const jumpingRef = useRef(false);
   // Para centrar solas las píldoras mientras se scrollea.
   const pillsRef = useRef<HTMLDivElement | null>(null);
+  // La barra fija cambia de alto según la sección (algunas llevan aclaración):
+  // la medimos en vez de hardcodear el offset.
+  const barRef = useRef<HTMLDivElement | null>(null);
   const pillRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const { categories: allCategories } = useCategories();
@@ -110,7 +120,9 @@ export function ProductGrid() {
     if (promosForTab.length) out.push({ id: PROMOS_ID, label: '🏷️ Promociones' });
     for (const c of categories) {
       const hasProducts = products.some((p) => p.categoryId === c.id);
-      if (hasProducts) out.push({ id: c.id, label: `${c.icon || ''} ${c.name}`.trim() });
+      if (hasProducts) {
+        out.push({ id: c.id, label: `${c.icon || ''} ${c.name}`.trim(), note: SECTION_NOTES[c.slug] });
+      }
     }
     return out;
   }, [categories, products, promosForTab.length]);
@@ -124,7 +136,8 @@ export function ProductGrid() {
       let current = sections[0].id;
       for (const s of sections) {
         const el = document.getElementById(`sec-${s.id}`);
-        if (el && el.getBoundingClientRect().top <= headerPx() + 90) current = s.id;
+        const limit = headerPx() + (barRef.current?.offsetHeight ?? 64) + 24;
+        if (el && el.getBoundingClientRect().top <= limit) current = s.id;
       }
       setActiveId(current);
     };
@@ -149,7 +162,8 @@ export function ProductGrid() {
     setActiveId(id);
     jumpingRef.current = true;
     // Descontamos el header + la barra de tabs, que también queda fija arriba.
-    window.scrollTo({ top: el.offsetTop - headerPx() - 64, behavior: 'smooth' });
+    const bar = barRef.current?.offsetHeight ?? 64;
+    window.scrollTo({ top: el.offsetTop - headerPx() - bar, behavior: 'smooth' });
     // El smooth scroll dispara muchos eventos: reactivamos el spy al terminar.
     window.setTimeout(() => { jumpingRef.current = false; }, 700);
   };
@@ -282,8 +296,10 @@ export function ProductGrid() {
       {/* Tabs píldora, pegados debajo del header mientras se scrollea */}
       {!searching && sections.length > 0 && (
         <Box
+          ref={barRef}
           sx={{
-            position: 'sticky', top: HEADER_H, zIndex: 5,
+            // Por debajo del header (1100) pero por encima de cualquier card.
+            position: 'sticky', top: HEADER_H, zIndex: 1090,
             bgcolor: 'background.default',
             py: 1, mb: 1,
             // Tapa el contenido que pasa por detrás en los bordes del contenedor.
@@ -323,9 +339,21 @@ export function ProductGrid() {
           </Box>
 
           {/* Título de la sección donde estás parado, anclado con las píldoras. */}
-          <Typography variant="h6" fontWeight={800} sx={{ mt: 1, mb: 0.25 }}>
-            {sections.find((s) => s.id === activeId)?.label ?? sections[0].label}
-          </Typography>
+          {(() => {
+            const current = sections.find((s) => s.id === activeId) ?? sections[0];
+            return (
+              <Box sx={{ mt: 1, mb: 0.25 }}>
+                <Typography variant="h6" fontWeight={800} sx={{ lineHeight: 1.2 }}>
+                  {current.label}
+                </Typography>
+                {current.note && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    {current.note}
+                  </Typography>
+                )}
+              </Box>
+            );
+          })()}
         </Box>
       )}
 
@@ -390,10 +418,14 @@ export function ProductGrid() {
           variantLabel={isPizza(opened) ? 'Cocción' : undefined}
           variants={
             isPizza(opened)
-              ? [
-                  { id: 'piedra', label: 'A la piedra' },
-                  { id: 'molde', label: 'Al molde' },
-                ]
+              ? (sizeId) =>
+                  // Al molde solo se hace en la grande; las otras van a la piedra.
+                  sizeId === 'LARGE'
+                    ? [
+                        { id: 'piedra', label: 'A la piedra' },
+                        { id: 'molde', label: 'Al molde' },
+                      ]
+                    : [{ id: 'piedra', label: 'A la piedra' }]
               : undefined
           }
           onAdd={({ quantity, option, variant }) => handleAdd(opened, quantity, option, variant)}
