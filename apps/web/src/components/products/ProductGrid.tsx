@@ -5,9 +5,6 @@ import Grid from '@mui/material/Grid';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
-import TextField from '@mui/material/TextField';
-import InputAdornment from '@mui/material/InputAdornment';
-import SearchIcon from '@mui/icons-material/Search';
 import { MenuItemCard } from './MenuItemCard';
 import { ProductOrderModal, type OrderOption } from './ProductOrderModal';
 import { EmpanadaDozenCard } from './EmpanadaDozenCard';
@@ -16,9 +13,7 @@ import { PizzaSizeCards } from './PizzaSizeCards';
 import { DobleCambalacheDialog } from './DobleCambalacheDialog';
 import { PromotionCard } from '@/components/promotions/PromotionCard';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { useProducts, useCategories, usePromotions } from '@/hooks/useProducts';
-import { useDebounce } from '@/hooks/useDebounce';
 import { useCart } from '@/hooks/useCart';
 import { useUIStore } from '@/store/uiStore';
 import { useSnackbar } from '@/app/snackbar-context';
@@ -53,8 +48,6 @@ const SECTION_NOTES: Record<string, string> = {
 };
 
 export function ProductGrid() {
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 300);
   const [activeId, setActiveId] = useState<string>('');
   // Producto abierto en la ficha (elegir opciones y cantidad).
   const [opened, setOpened] = useState<ProductWithCategory | null>(null);
@@ -140,7 +133,7 @@ export function ProductGrid() {
 
   // ── Scroll-spy: marca el tab de la sección que estás mirando ──────────────
   useEffect(() => {
-    if (debouncedSearch || sections.length === 0) return;
+    if (sections.length === 0) return;
     const onScroll = () => {
       if (jumpingRef.current) return;
       // La sección activa es la última cuyo inicio ya pasó la barra pegajosa.
@@ -155,7 +148,7 @@ export function ProductGrid() {
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
-  }, [sections, debouncedSearch]);
+  }, [sections]);
 
   // La píldora marcada tiene que verse sin scrollear la barra a mano.
   useEffect(() => {
@@ -279,33 +272,10 @@ export function ProductGrid() {
 
   if (loading) return <LoadingSpinner message="Cargando menú..." />;
 
-  // ── Búsqueda: una sola lista de resultados, sin secciones ─────────────────
-  const searching = debouncedSearch.trim().length > 0;
-  const results = searching
-    ? products.filter(
-        (p) => !isRegularEmpanada(p) && p.name.toLowerCase().includes(debouncedSearch.toLowerCase())
-      )
-    : [];
-
   return (
     <Box>
-      <TextField
-        placeholder="Buscar producto..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        size="small"
-        sx={{ mb: 2, width: { xs: '100%', sm: 320 } }}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon fontSize="small" />
-            </InputAdornment>
-          ),
-        }}
-      />
-
       {/* Tabs píldora, pegados debajo del header mientras se scrollea */}
-      {!searching && sections.length > 0 && (
+      {sections.length > 0 && (
         <Box
           ref={barRef}
           sx={{
@@ -368,54 +338,41 @@ export function ProductGrid() {
         </Box>
       )}
 
-      {searching ? (
-        results.length === 0 ? (
-          <EmptyState icon="🍕" title="No hay productos" description={`No encontramos "${search}"`} />
-        ) : (
-          <>
-            <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
-              Resultados
-            </Typography>
-            <Grid container spacing={{ xs: 1.5, sm: 3 }}>{results.map(renderProduct)}</Grid>
-          </>
-        )
-      ) : (
-        sections.map((s) => (
-          <Box key={s.id} id={`sec-${s.id}`} sx={{ scrollMarginTop: 140, mb: 5, pt: 1 }}>
-            <Grid container spacing={{ xs: 1.5, sm: 3 }}>
-              {s.id === PROMOS_ID &&
-                promosForTab.map((promo) => (
-                  <Grid item xs={6} sm={6} md={4} lg={3} key={promo.id}>
-                    <PromotionCard promotion={promo} />
-                  </Grid>
-                ))}
+      {sections.map((s) => (
+        <Box key={s.id} id={`sec-${s.id}`} sx={{ scrollMarginTop: 140, mb: 5, pt: 1 }}>
+          <Grid container spacing={{ xs: 1.5, sm: 3 }}>
+            {s.id === PROMOS_ID &&
+              promosForTab.map((promo) => (
+                <Grid item xs={6} sm={6} md={4} lg={3} key={promo.id}>
+                  <PromotionCard promotion={promo} />
+                </Grid>
+              ))}
 
-              {/* Pizzas: solo la card de mitad y mitad; cada gusto tiene la suya
-                  y el tamaño se elige adentro de la ficha. */}
-              {s.id === pizzasCategoryId && (
-                <PizzaSizeCards pizzas={pizzas} onlyHalf halfImage={cardImages['half']} />
-              )}
+            {/* Pizzas: solo la card de mitad y mitad; cada gusto tiene la suya
+                y el tamaño se elige adentro de la ficha. */}
+            {s.id === pizzasCategoryId && (
+              <PizzaSizeCards pizzas={pizzas} onlyHalf halfImage={cardImages['half']} />
+            )}
 
-              {/* Empanadas: sueltas y docena arman la selección de gustos. */}
-              {s.id === empanadasCategoryId && empanadas.length > 0 && (
-                <>
-                  <Grid item xs={6} sm={6} md={4} lg={3}>
-                    <EmpanadaLooseCard empanadas={empanadas} image={cardImages['empanadas-loose']} />
-                  </Grid>
-                  <Grid item xs={6} sm={6} md={4} lg={3}>
-                    <EmpanadaDozenCard empanadas={empanadas} />
-                  </Grid>
-                </>
-              )}
+            {/* Empanadas: sueltas y docena arman la selección de gustos. */}
+            {s.id === empanadasCategoryId && empanadas.length > 0 && (
+              <>
+                <Grid item xs={6} sm={6} md={4} lg={3}>
+                  <EmpanadaLooseCard empanadas={empanadas} image={cardImages['empanadas-loose']} />
+                </Grid>
+                <Grid item xs={6} sm={6} md={4} lg={3}>
+                  <EmpanadaDozenCard empanadas={empanadas} />
+                </Grid>
+              </>
+            )}
 
-              {s.id !== PROMOS_ID &&
-                products
-                  .filter((p) => p.categoryId === s.id && !isRegularEmpanada(p))
-                  .map(renderProduct)}
-            </Grid>
-          </Box>
-        ))
-      )}
+            {s.id !== PROMOS_ID &&
+              products
+                .filter((p) => p.categoryId === s.id && !isRegularEmpanada(p))
+                .map(renderProduct)}
+          </Grid>
+        </Box>
+      ))}
 
       {opened && (
         <ProductOrderModal

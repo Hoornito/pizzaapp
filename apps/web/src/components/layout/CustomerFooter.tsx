@@ -2,9 +2,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Container from '@mui/material/Container';
 import Divider from '@mui/material/Divider';
-import Link from '@mui/material/Link';
-import WhatsAppIcon from '@mui/icons-material/WhatsApp';
-import { BUSINESS_WHATSAPP_DISPLAY, BUSINESS_WHATSAPP_LINK } from '@/lib/constants';
+import { WhatsAppContact } from './WhatsAppContact';
 
 export function CustomerFooter() {
   return (
@@ -40,21 +38,7 @@ export function CustomerFooter() {
             <Typography variant="subtitle2" fontWeight={600} gutterBottom>
               Contacto
             </Typography>
-            {/* Logo de WhatsApp: es lo que la gente busca para escribir. */}
-            <Link
-              href={BUSINESS_WHATSAPP_LINK}
-              target="_blank"
-              rel="noopener noreferrer"
-              underline="none"
-              aria-label={`Escribinos por WhatsApp al ${BUSINESS_WHATSAPP_DISPLAY}`}
-              sx={{
-                color: 'grey.300', display: 'inline-flex', alignItems: 'center', gap: 1,
-                '&:hover': { color: '#25D366' },
-              }}
-            >
-              <WhatsAppIcon sx={{ fontSize: 30, color: '#25D366' }} />
-              <Box component="span" sx={{ fontWeight: 600 }}>{BUSINESS_WHATSAPP_DISPLAY}</Box>
-            </Link>
+            <WhatsAppContact tone="dark" />
           </Box>
         </Box>
         <Divider sx={{ borderColor: 'grey.800', mb: 2 }} />
