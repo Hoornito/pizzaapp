@@ -581,11 +581,15 @@ export default function CheckoutPage() {
                   value={form.paymentMethod}
                   onChange={(e) => handleChange('paymentMethod', e.target.value)}
                 >
+                  {/* Nombres cortos y sin marca: "Mercado Pago" empujaba a pagar
+                      por ahí (nos cuesta más caro) cuando la transferencia hace
+                      lo mismo. El medio de abajo sigue siendo Checkout Pro, con
+                      tarjeta o dinero en cuenta. */}
                   <FormControlLabel value="EFECTIVO" control={<Radio />} label="💵 Efectivo al recibir" />
-                  <FormControlLabel value="A_DEFINIR" control={<Radio />} label="⏳ Pago al retirar (definís efectivo o transferencia al retirar)" />
-                  <FormControlLabel value="MERCADO_PAGO" control={<Radio />} label="💳 Mercado Pago (tarjeta / dinero en cuenta)" />
-                  <FormControlLabel value="TRANSFERENCIA" control={<Radio />} label="🏦 Transferencia bancaria" />
-                  <FormControlLabel value="MIXTO" control={<Radio />} label="🔀 Mixto (efectivo + transferencia)" />
+                  <FormControlLabel value="A_DEFINIR" control={<Radio />} label="⏳ Pago al retirar" />
+                  <FormControlLabel value="MERCADO_PAGO" control={<Radio />} label="💳 Tarjeta" />
+                  <FormControlLabel value="TRANSFERENCIA" control={<Radio />} label="🏦 Transferencia / MP" />
+                  <FormControlLabel value="MIXTO" control={<Radio />} label="🔀 Mixto" />
                 </RadioGroup>
               </FormControl>
 

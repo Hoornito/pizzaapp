@@ -135,6 +135,9 @@ export default function PosPage() {
   // Pedidos Ya: lo cobra la plataforma y lo retira su repartidor. No se elige
   // forma de pago ni descuento; lo único propio es quién lo viene a buscar.
   const [courier, setCourier] = useState('');
+  // Cómo entra la plata de un pedido de Pedidos Ya: el repartidor a veces paga
+  // en efectivo en el mostrador y ese dinero tiene que entrar a la caja.
+  const [pyaCobro, setPyaCobro] = useState<'EFECTIVO' | 'VIRTUAL'>('VIRTUAL');
   // La ciudad es siempre San Vicente (zona de reparto).
   const [address, setAddress] = useState({ street: '', number: '', apartment: '', city: 'San Vicente', reference: '' });
   const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA' | 'MIXTO' | 'A_DEFINIR'>('EFECTIVO');
@@ -361,6 +364,7 @@ export default function PosPage() {
     setPaymentMethod('EFECTIVO');
     setDeliveryType('PICKUP');
     setCourier('');
+    setPyaCobro('VIRTUAL');
     setWhen('asap');
     setEta('');
     setSlot('');
@@ -415,8 +419,10 @@ export default function PosPage() {
 
     const payload = {
       deliveryType,
-      // Pedidos Ya no pasa por caja: cobra la plataforma y el pedido nace pagado.
-      paymentMethod: isPedidosYa ? 'PEDIDOS_YA' : paymentMethod,
+      // Pedidos Ya entra siempre cobrado. Si el repartidor pagó en efectivo va
+      // como EFECTIVO para que sume al arqueo; si lo liquida la plataforma va
+      // como PEDIDOS_YA, que cuenta como venta virtual.
+      paymentMethod: isPedidosYa ? (pyaCobro === 'EFECTIVO' ? 'EFECTIVO' : 'PEDIDOS_YA') : paymentMethod,
       subtotal,
       deliveryFee,
       discount: discountNum,
@@ -767,9 +773,31 @@ export default function PosPage() {
               <>
                 <Alert severity="info" sx={{ py: 0.5 }}>
                   <Typography variant="caption">
-                    Cobra <strong>Pedidos Ya</strong>: no se elige forma de pago ni descuento. El pedido queda como pagado y sale con <strong>PEDIDOS YA</strong> en la comanda de cocina.
+                    Entra como <strong>pagado</strong> y sale con <strong>PEDIDOS YA</strong> en la comanda de cocina. Sin descuento ni dirección.
                   </Typography>
                 </Alert>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                    ¿Cómo entra la plata?
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    {([
+                      { key: 'EFECTIVO' as const, label: '💵 Efectivo', hint: 'suma al arqueo de caja' },
+                      { key: 'VIRTUAL' as const, label: '🛵 Lo liquida PedidosYa', hint: 'cuenta como virtual' },
+                    ]).map((o) => (
+                      <Button
+                        key={o.key}
+                        size="small"
+                        variant={pyaCobro === o.key ? 'contained' : 'outlined'}
+                        onClick={() => setPyaCobro(o.key)}
+                        sx={{ flex: 1, flexDirection: 'column', gap: 0, textTransform: 'none', lineHeight: 1.2, py: 1 }}
+                      >
+                        <Box component="span" sx={{ fontWeight: 700 }}>{o.label}</Box>
+                        <Box component="span" sx={{ fontSize: '0.65rem', opacity: 0.8 }}>{o.hint}</Box>
+                      </Button>
+                    ))}
+                  </Box>
+                </Box>
                 <TextField
                   label="Repartidor (quien lo retira)"
                   size="small"
@@ -857,17 +885,21 @@ export default function PosPage() {
                 control={
                   <Checkbox
                     size="small"
-                    checked={paid && paymentMethod !== 'A_DEFINIR'}
-                    disabled={paymentMethod === 'A_DEFINIR'}
+                    // La transferencia se da por cobrada (se verifica después),
+                    // así que no hay nada que tildar.
+                    checked={paymentMethod === 'TRANSFERENCIA' || (paid && paymentMethod !== 'A_DEFINIR')}
+                    disabled={paymentMethod === 'A_DEFINIR' || paymentMethod === 'TRANSFERENCIA'}
                     onChange={(e) => setPaid(e.target.checked)}
                   />
                 }
                 label={
-                  paymentMethod === 'A_DEFINIR'
-                    ? '💰 Pagó (elegí primero el método de pago)'
-                    : paid
-                      ? '✅ Pagó (el ticket sale sin «FALTA COBRAR»)'
-                      : '💰 Pagó'
+                  paymentMethod === 'TRANSFERENCIA'
+                    ? '🏦 Transferencia — entra como pagada (verificala después)'
+                    : paymentMethod === 'A_DEFINIR'
+                      ? '💰 Pagó (elegí primero el método de pago)'
+                      : paid
+                        ? '✅ Pagó (el ticket sale sin «FALTA COBRAR»)'
+                        : '💰 Pagó'
                 }
               />
               <TextField

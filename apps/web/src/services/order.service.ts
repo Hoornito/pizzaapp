@@ -79,16 +79,18 @@ async function assertStock(items: CreateOrderInput['items']) {
  * fuera de turno) cae al formato por día.
  *   Ej: 20260710-TM001, 20260710-TN001, 20260710-0001
  *
+ * La fecha es la de APERTURA de la caja, no la de hoy: un turno que arranca a
+ * las 20:00 y sigue después de medianoche mantiene su numeración hasta que la
+ * caja cierre, en vez de reiniciar a las 00:00 en medio del servicio.
+ *
  * El próximo número se deriva del MÁXIMO sufijo ya usado para esa fecha+prefijo
  * (no de un count()): así no colisiona ante cancelaciones, huecos o sesiones
  * repetidas del mismo turno. Como igual no es atómico contra el insert, quien
  * llama debe reintentar ante una colisión por concurrencia (ver createOrder).
  */
 async function generateOrderNumber(isTest: boolean): Promise<string> {
-  const today = new Date();
-  const dateStr = format(today, 'yyyyMMdd');
-
   const register = await getOpenCashRegister();
+  const dateStr = format(register?.openedAt ?? new Date(), 'yyyyMMdd');
   // Simulación: prefijo TT, así se distingue del real y no pisa su numeración.
   const prefix = isTest ? 'TT' : register?.shift ? (register.shift === 'MANANA' ? 'TM' : 'TN') : '';
   const pad = prefix ? 3 : 4;
@@ -105,9 +107,12 @@ async function generateOrderNumber(isTest: boolean): Promise<string> {
         { orderNumber: { startsWith: `${dateStr}-` }, NOT: { orderNumber: { startsWith: `${dateStr}-T` } } },
     select: { orderNumber: true },
   });
+  // \d+ y no \d{pad}: al pasar de 999 el número gana un dígito (TM1000) y con el
+  // patrón de largo fijo dejaba de matchear, así que la cuenta volvía a empezar
+  // de 1 y chocaba con los números ya usados.
   const re = prefix
-    ? new RegExp(`-${prefix}(\\d{${pad}})$`)
-    : new RegExp(`^${dateStr}-(\\d{${pad}})$`);
+    ? new RegExp(`-${prefix}(\\d+)$`)
+    : new RegExp(`^${dateStr}-(\\d+)$`);
   let lastNum = 0;
   for (const r of rows) {
     const m = r.orderNumber.match(re);
@@ -235,9 +240,13 @@ export async function createOrder(
         ? 'CONFIRMADO'
         : 'RECIBIDO';
 
-  // Pedidos Ya cobra la plataforma: el pedido nace pagado (nadie le cobra al
-  // repartidor) y la venta cuenta como virtual, igual que tarjeta.
-  const paid = data.paymentMethod === 'PEDIDOS_YA' ? true : !!data.paid;
+  // Nacen pagados:
+  //  · PEDIDOS_YA — cobra la plataforma, nadie le cobra al repartidor.
+  //  · TRANSFERENCIA — el cliente transfiere al confirmar; el local verifica
+  //    después que haya entrado. Así la comanda no sale con "FALTA COBRAR" ni
+  //    queda como pendiente en Pedidos.
+  const naceCobrado = data.paymentMethod === 'PEDIDOS_YA' || data.paymentMethod === 'TRANSFERENCIA';
+  const paid = naceCobrado ? true : !!data.paid;
 
   // Descuento de la app. Se calcula ACÁ y pisa lo que haya mandado el cliente:
   // el navegador no decide cuánta plata se descuenta. Si el front venía
@@ -745,6 +754,16 @@ export async function changePickupPaymentMethod(
     data: { paymentMethod, cashAmount: null, transferAmount: null },
     include: ORDER_INCLUDE,
   });
+
+  // Misma regla que al crear: la transferencia entra como cobrada y el local
+  // verifica después. Sin esto, cambiar el medio dejaba un pedido de
+  // transferencia figurando como pendiente en la comanda.
+  if (paymentMethod === 'TRANSFERENCIA') {
+    await prisma.payment.updateMany({
+      where: { orderId, status: 'PENDING' },
+      data: { status: 'APPROVED', paidAt: new Date() },
+    });
+  }
   emitOrderStatusChanged(orderId, order.status, order);
   eventBus.emit('order:status_changed', order as never);
   return order;

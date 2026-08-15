@@ -211,7 +211,8 @@ export function formatOrderPayment(order: PayableOrder, opts?: { emoji?: boolean
     const transfer = formatCurrency(toNumber(order.transferAmount));
     return `${emoji ? '🔀 ' : ''}Mixto (Efectivo ${cash} + Transferencia ${transfer})`;
   }
-  if (order.paymentMethod === 'MERCADO_PAGO') return `${emoji ? '💳 ' : ''}Mercado Pago`;
+  // Al cliente le decimos "Tarjeta": ver el checkout (evitamos empujar a MP).
+  if (order.paymentMethod === 'MERCADO_PAGO') return `${emoji ? '💳 ' : ''}Tarjeta`;
   if (order.paymentMethod === 'TRANSFERENCIA') return `${emoji ? '🏦 ' : ''}Transferencia`;
   return `${emoji ? '💵 ' : ''}Efectivo`;
 }

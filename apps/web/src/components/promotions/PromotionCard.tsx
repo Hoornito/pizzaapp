@@ -14,9 +14,10 @@ import type { PromotionWithItems, EmpanadaDozen } from '@/types/product.types';
 import { useCart } from '@/hooks/useCart';
 import { useProducts, useCategories } from '@/hooks/useProducts';
 import { formatCurrency } from '@/lib/utils';
-import { promoEmpanadaCount, formatPromoNotes } from '@/lib/promos';
+import { promoEmpanadaCount, promoHasLargePizza, formatPromoNotes } from '@/lib/promos';
 import { EmpanadaPickModal } from '@/components/products/EmpanadaPickModal';
 import { ProductDetailModal } from '@/components/products/ProductDetailModal';
+import { CoccionDialog, type Coccion } from '@/components/products/CoccionDialog';
 import { useMemo, useState, type KeyboardEvent } from 'react';
 
 interface PromotionCardProps {
@@ -28,10 +29,15 @@ export function PromotionCard({ promotion }: PromotionCardProps) {
   const { products } = useProducts({ available: true });
   const { categories } = useCategories();
   const [pickOpen, setPickOpen] = useState(false);
+  // Cocción: solo si la promo lleva pizza grande (la única que va al molde).
+  const [coccionOpen, setCoccionOpen] = useState(false);
+  // Empanadas ya elegidas, esperando a que se elija la cocción.
+  const [pendingChosen, setPendingChosen] = useState<EmpanadaDozen | undefined>(undefined);
   // Ficha de la promo: se abre al tocar la foto.
   const [detailOpen, setDetailOpen] = useState(false);
 
   const empanadaCount = promoEmpanadaCount(promotion.id);
+  const preguntaCoccion = promoHasLargePizza(promotion.id);
   const empanadasCategoryId = useMemo(() => categories.find((c) => c.slug === 'empanadas')?.id, [categories]);
   const empanadas = useMemo(
     () => products.filter((p) => p.categoryId === empanadasCategoryId && p.available && !/doble cambalache/i.test(p.name)),
@@ -45,7 +51,11 @@ export function PromotionCard({ promotion }: PromotionCardProps) {
   const discount = originalPrice - Number(promotion.promotionalPrice);
   const discountPct = originalPrice > 0 ? Math.round((discount / originalPrice) * 100) : 0;
 
-  const addToCart = (chosen?: EmpanadaDozen) => {
+  const addToCart = (chosen?: EmpanadaDozen, coccion?: Coccion) => {
+    // "AL MOLDE" va en su propia línea: así lo detecta el ticket de cocina.
+    const base = formatPromoNotes(promotion.id, chosen);
+    const notes = coccion === 'molde' ? `${base}
+AL MOLDE`.trim() : base;
     addItemAndOpen({
       type: 'promotion',
       promotionId: promotion.id,
@@ -53,7 +63,7 @@ export function PromotionCard({ promotion }: PromotionCardProps) {
       image: promotion.image,
       unitPrice: Number(promotion.promotionalPrice),
       quantity: 1,
-      notes: formatPromoNotes(promotion.id, chosen) || undefined,
+      notes: notes || undefined,
       // Además del texto de las notas (que es lo que ve la cocina), mandamos los
       // gustos con su id para poder reportar qué se vendió dentro de la promo.
       promoChoices: chosen?.flavors
@@ -64,6 +74,7 @@ export function PromotionCard({ promotion }: PromotionCardProps) {
 
   const handleAdd = () => {
     if (empanadaCount > 0) setPickOpen(true);
+    else if (preguntaCoccion) setCoccionOpen(true);
     else addToCart();
   };
 
@@ -194,8 +205,23 @@ export function PromotionCard({ promotion }: PromotionCardProps) {
           count={empanadaCount}
           empanadas={empanadas}
           onConfirm={(chosen) => {
-            addToCart(chosen);
             setPickOpen(false);
+            // Con pizza grande falta un paso más: cómo se cocina.
+            if (preguntaCoccion) { setPendingChosen(chosen); setCoccionOpen(true); }
+            else addToCart(chosen);
+          }}
+        />
+      )}
+
+      {preguntaCoccion && (
+        <CoccionDialog
+          open={coccionOpen}
+          title={promotion.name}
+          onClose={() => { setCoccionOpen(false); setPendingChosen(undefined); }}
+          onConfirm={(coccion) => {
+            addToCart(pendingChosen, coccion);
+            setCoccionOpen(false);
+            setPendingChosen(undefined);
           }}
         />
       )}

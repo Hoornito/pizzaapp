@@ -334,7 +334,11 @@ function OrderDetailContent({ params }: Props) {
               </Box>
             )}
 
-            {order.paymentMethod === 'TRANSFERENCIA' && order.payment?.status !== 'APPROVED' && (
+            {/* Los datos para transferir se muestran siempre que el pago sea por
+                transferencia: el pedido entra como cobrado para que la cocina no
+                lo vea como pendiente, pero eso es asunto nuestro — el cliente
+                tiene que transferir y mandar el comprobante igual. */}
+            {order.paymentMethod === 'TRANSFERENCIA' && order.status !== 'CANCELADO' && (
               <Alert severity="info" sx={{ mt: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                   <Typography variant="body2">Alias: <strong>{TRANSFER_INFO.alias}</strong></Typography>

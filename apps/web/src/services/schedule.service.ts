@@ -66,6 +66,51 @@ async function todayRanges(now: Date): Promise<{ open: number; close: number }[]
   return ranges;
 }
 
+/**
+ * ¿El local está DENTRO de su horario de atención ahora mismo? Mira los turnos
+ * de hoy y, para los que cruzan la medianoche (ej. 20:00–02:00), también los de
+ * ayer: a las 00:30 seguimos dentro del turno que arrancó anoche.
+ *
+ * Un cierre a las "00:00" es el fin del día, no el arranque de la madrugada.
+ */
+export async function isWithinBusinessHours(now = new Date()): Promise<boolean> {
+  const minutes = now.getHours() * 60 + now.getMinutes();
+
+  const hoy = await prisma.businessHours.findMany({ where: { dayOfWeek: now.getDay(), isOpen: true } });
+  for (const h of hoy) {
+    const open = parseHHMM(h.openTime);
+    const close = parseHHMM(h.closeTime);
+    if (open == null || close == null) continue;
+    const end = close <= open ? close + 1440 : close;
+    if (minutes >= open && minutes < end) return true;
+  }
+
+  const ayer = await prisma.businessHours.findMany({
+    where: { dayOfWeek: (now.getDay() + 6) % 7, isOpen: true },
+  });
+  for (const h of ayer) {
+    const open = parseHHMM(h.openTime);
+    const close = parseHHMM(h.closeTime);
+    if (open == null || close == null) continue;
+    // Solo los turnos que cruzan la medianoche siguen vigentes hoy.
+    if (close <= open && close > 0 && minutes < close) return true;
+  }
+
+  return false;
+}
+
+/** Horario de hoy en texto ("11:00 a 15:00 y 18:00 a 00:00"), para avisarle al cliente. */
+export async function todayHoursLabel(now = new Date()): Promise<string> {
+  const hoy = await prisma.businessHours.findMany({
+    where: { dayOfWeek: now.getDay(), isOpen: true },
+    orderBy: { openTime: 'asc' },
+  });
+  const tramos = hoy
+    .filter((h) => parseHHMM(h.openTime) != null && parseHHMM(h.closeTime) != null)
+    .map((h) => `${h.openTime} a ${h.closeTime}`);
+  return tramos.join(' y ');
+}
+
 /** Franjas elegibles para hoy. Vacío = no se puede programar (ya cerró o está cerrado). */
 export async function getTodaySlots(now = new Date()): Promise<TimeSlot[]> {
   const ranges = await todayRanges(now);

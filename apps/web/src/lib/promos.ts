@@ -34,6 +34,14 @@ export const PROMO_DEFS: Record<string, PromoDef> = {
   'promo-12': { fixed: [{ label: 'Muzzarella (Grande)', qty: 3 }] },
 };
 
+/**
+ * ¿La promo lleva alguna pizza GRANDE? Es la única que se puede hacer al molde,
+ * así que también es la única que justifica preguntar la cocción.
+ */
+export function promoHasLargePizza(promoId: string): boolean {
+  return (PROMO_DEFS[promoId]?.fixed ?? []).some((c) => /\(Grande\)/i.test(c.label));
+}
+
 /** Cantidad de empanadas a elegir para la promo (0 si no aplica). */
 export function promoEmpanadaCount(promoId: string): number {
   return PROMO_DEFS[promoId]?.chooseEmpanadas ?? 0;

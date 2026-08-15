@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getOrders, createOrder } from '@/services/order.service';
 import { isStoreOpen } from '@/services/finance.service';
+import { isWithinBusinessHours, todayHoursLabel } from '@/services/schedule.service';
 import { createOrderSchema } from '@/lib/validators';
 import { rateLimit } from '@/lib/rate-limiter';
 import type { OrderStatus } from '@prisma/client';
@@ -31,7 +32,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Demasiadas solicitudes' }, { status: 429 });
   }
 
-  // La tienda debe estar abierta (caja abierta, no simulación) para tomar pedidos.
+  // Dos condiciones para tomar un pedido por la app: estar dentro del horario
+  // de atención (Configuración → Horarios) y tener la caja abierta.
+  if (!(await isWithinBusinessHours())) {
+    const horario = await todayHoursLabel();
+    return NextResponse.json(
+      {
+        error: horario
+          ? `Estamos cerrados 🕒 Hoy atendemos de ${horario}.`
+          : 'Estamos cerrados 🕒 Hoy no estamos atendiendo.',
+      },
+      { status: 409 }
+    );
+  }
   if (!(await isStoreOpen())) {
     return NextResponse.json({ error: 'Aún estamos cerrados 🕒 Volvé en un rato.' }, { status: 409 });
   }
