@@ -25,6 +25,8 @@ export interface OrderOption {
   /** Precio unitario del producto SI se elige esta opción. */
   price: number;
   caption?: string | null;
+  /** Sin stock hoy: se muestra en gris y no se puede elegir. */
+  disabled?: boolean;
 }
 
 export interface ProductOrderModalProps {
@@ -47,7 +49,7 @@ export interface ProductOrderModalProps {
    * solo existe en la pizza grande.
    */
   variantLabel?: string;
-  variants?: (optionId: string | null) => { id: string; label: string }[];
+  variants?: (optionId: string | null) => { id: string; label: string; disabled?: boolean; hint?: string }[];
   /** Se llama con la cantidad, la opción elegida y la variante. */
   onAdd: (result: { quantity: number; option: OrderOption | null; variant: string | null }) => void;
 }
@@ -82,13 +84,18 @@ export function ProductOrderModal({
   const hasOptions = !!options && options.length > 0;
   // Variantes disponibles para lo que está elegido ahora mismo.
   const currentVariants = variants ? variants(optionId) : [];
-  // Con una sola no hay nada que elegir: no mostramos el grupo.
+  // Con una sola no hay nada que elegir: no mostramos el grupo. Las que están
+  // deshabilitadas igual se muestran (en gris), así el cliente entiende que la
+  // opción existe pero hoy no está.
   const hasVariants = currentVariants.length > 1;
+  const elegibles = currentVariants.filter((v) => !v.disabled);
   // Con una sola opción no tiene sentido hacer elegir: viene marcada.
   useEffect(() => {
     if (open) {
       setQuantity(1);
-      setOptionId(hasOptions && options!.length === 1 ? options![0].id : null);
+      // Con una sola opción elegible viene marcada; las caídas no cuentan.
+      const elegiblesOpt = (options ?? []).filter((o) => !o.disabled);
+      setOptionId(elegiblesOpt.length === 1 ? elegiblesOpt[0].id : null);
     }
   }, [open, hasOptions, options]);
 
@@ -96,7 +103,7 @@ export function ProductOrderModal({
   // cambiar de tamaño la elegida puede dejar de existir (venías en grande al
   // molde y pasás a mediana): ahí también vuelve a la primera disponible.
   useEffect(() => {
-    const ids = currentVariants.map((v) => v.id);
+    const ids = elegibles.map((v) => v.id);
     if (ids.length === 0) {
       if (variantId !== null) setVariantId(null);
     } else if (!variantId || !ids.includes(variantId)) {
@@ -176,6 +183,7 @@ export function ProductOrderModal({
                   <Button
                     key={o.id}
                     onClick={() => setOptionId(o.id)}
+                    disabled={o.disabled}
                     fullWidth
                     disableElevation
                     sx={{
@@ -215,9 +223,11 @@ export function ProductOrderModal({
                   <Button
                     key={v.id}
                     onClick={() => setVariantId(v.id)}
+                    disabled={v.disabled}
                     disableElevation
                     sx={{
                       flex: 1, textTransform: 'none', borderRadius: 2, py: 1,
+                      flexDirection: 'column', gap: 0, lineHeight: 1.2,
                       border: '2px solid',
                       borderColor: isSel ? 'primary.main' : 'divider',
                       bgcolor: isSel ? 'action.selected' : 'transparent',
@@ -226,6 +236,9 @@ export function ProductOrderModal({
                     }}
                   >
                     {v.label}
+                    {v.hint && (
+                      <Box component="span" sx={{ fontSize: '0.68rem', opacity: 0.8 }}>{v.hint}</Box>
+                    )}
                   </Button>
                 );
               })}

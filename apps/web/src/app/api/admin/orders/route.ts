@@ -57,7 +57,11 @@ export async function GET(req: NextRequest) {
       skip,
       take: limit,
       include: {
-        user: { select: { name: true, email: true } },
+        // role: para distinguir los pedidos hechos por un cliente desde la web
+        // (color y sonido propios). Sin esto, isWebOrder() siempre daba false.
+        user: { select: { name: true, email: true, role: true } },
+        // whatsappToken: los del bot no cuentan como "pedido web".
+
         deliveryEmployee: { select: { id: true, firstName: true, lastName: true } },
         payment: { select: { status: true, paidAt: true } },
         items: {

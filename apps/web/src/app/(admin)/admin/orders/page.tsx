@@ -31,7 +31,7 @@ import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import NotificationsOffIcon from '@mui/icons-material/NotificationsOff';
 import { useRouter } from 'next/navigation';
 import { useSocket } from '@/hooks/useSocket';
-import { playNewOrderSound, primeAudio } from '@/lib/sound';
+import { playNewOrderSound, playWebOrderSound, primeAudio } from '@/lib/sound';
 import {
   ORDER_STATUS_LABELS,
   ORDER_STATUS_COLORS,
@@ -40,7 +40,7 @@ import {
   ORDER_PAYMENT_METHOD_EMOJI,
   DELIVERY_TYPE_LABELS,
 } from '@/lib/constants';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, isWebOrder } from '@/lib/utils';
 import { isPizzaItemNotes } from '@/lib/pizza';
 import { PaymentDialog, type PaymentKind } from '@/components/admin/PaymentDialog';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -171,8 +171,12 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     if (!socket) return;
     socket.emit('join:admin');
-    const onNew = () => {
-      if (soundOnRef.current) playNewOrderSound();
+    const onNew = (order?: any) => {
+      // Los pedidos de la web suenan distinto: nadie los está esperando.
+      if (soundOnRef.current) {
+        if (order && isWebOrder(order)) playWebOrderSound();
+        else playNewOrderSound();
+      }
       loadOrders();
     };
     socket.on('order:new', onNew);
@@ -429,9 +433,18 @@ export default function AdminOrdersPage() {
             // No se puede enviar a reparto sin un repartidor asignado.
             const needsDriver = next?.status === 'EN_REPARTO' && !order.deliveryEmployee;
             const { client, rest: restNotes } = splitClientNote(order.notes);
+            // Los pedidos que entran por la web se distinguen de un vistazo: no
+            // los tomó nadie del local, así que hay que ir a atenderlos.
+            const web = isWebOrder(order);
             return (
               <Grid item xs={12} sm={6} md={4} key={order.id}>
-                <Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    height: '100%', display: 'flex', flexDirection: 'column',
+                    ...(web && { bgcolor: '#E3F2FD', borderColor: '#64B5F6' }),
+                  }}
+                >
                   <CardContent sx={{ flex: 1 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, gap: 1 }}>
                       <Typography variant="h6" fontWeight={700}>#{order.orderNumber}</Typography>
@@ -464,6 +477,9 @@ export default function AdminOrdersPage() {
                     )}
 
                     <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+                      {web && (
+                        <Chip label="🌐 Pedido web" size="small" color="info" sx={{ fontWeight: 700 }} />
+                      )}
                       <Chip label={DELIVERY_TYPE_LABELS[order.deliveryType] || order.deliveryType} size="small" variant="outlined" />
                       <Chip label={`${ORDER_PAYMENT_METHOD_EMOJI[order.paymentMethod] || ''} ${ORDER_PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}`} size="small" variant="outlined" />
                       <Chip label={paid ? 'Pagado' : 'Pago pendiente'} size="small" color={paid ? 'success' : 'warning'} />

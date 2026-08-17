@@ -15,6 +15,7 @@ import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
 import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
@@ -27,6 +28,8 @@ import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
 import { formatCurrency } from '@/lib/utils';
 import { controlsStock } from '@/lib/constants';
+import { PIZZA_SIZES, PIZZA_SIZE_LABELS } from '@/types/product.types';
+import { invalidateMenuFlags, type MenuFlags } from '@/hooks/useMenuFlags';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useSnackbar } from '@/app/snackbar-context';
 
@@ -37,6 +40,15 @@ export default function AdminProductsPage() {
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState('');
+
+  // Disponibilidad del menú: la pizza no se lleva por stock en unidades, así que
+  // se corta a mano cuando se acaba la masa de molde o los discos de un tamaño.
+  // Apaga la opción en el menú del cliente, en las promos y en el mostrador.
+  const [flags, setFlags] = useState<MenuFlags>({
+    moldeDisabled: false,
+    sizeDisabled: { SMALL: false, MEDIUM: false, LARGE: false },
+  });
+  const [savingFlags, setSavingFlags] = useState(false);
 
   // Diálogo de movimiento de stock (cargar / descontar)
   const [stockCtx, setStockCtx] = useState<{ product: any; kind: 'ENTRADA' | 'SALIDA' } | null>(null);
@@ -55,8 +67,33 @@ export default function AdminProductsPage() {
     fetch('/api/categories')
       .then((r) => r.json())
       .then((d) => setCategories(d.data || []));
+    fetch('/api/settings/menu-flags', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => { if (d.data) setFlags(d.data); })
+      .catch(() => {});
     loadProducts();
   }, []);
+
+  const saveFlags = async (patch: Partial<MenuFlags>, aviso: string) => {
+    setSavingFlags(true);
+    try {
+      const res = await fetch('/api/settings/menu-flags', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      const json = await res.json();
+      if (!res.ok) { showError(json.error || 'No se pudo guardar'); return; }
+      setFlags(json.data);
+      // El menú del cliente cachea los flags: los soltamos para que relea.
+      invalidateMenuFlags();
+      showSuccess(aviso);
+    } catch {
+      showError('Error de conexión');
+    } finally {
+      setSavingFlags(false);
+    }
+  };
 
   useEffect(() => { loadProducts(); }, [categoryFilter]);
 
@@ -186,6 +223,56 @@ export default function AdminProductsPage() {
           </Button>
         </Box>
       </Box>
+
+      {/* Corte rápido de lo que hoy no se puede hacer (sin masa, sin discos). */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+          Disponibilidad de pizzas
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+          Apagá lo que se te haya acabado: en el menú del cliente, en las promos y en el
+          mostrador aparece en gris y no se puede elegir.
+        </Typography>
+        <Box sx={{ display: 'flex', gap: { xs: 0, sm: 3 }, flexWrap: 'wrap', flexDirection: { xs: 'column', sm: 'row' } }}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={!flags.moldeDisabled}
+                disabled={savingFlags}
+                onChange={(e) =>
+                  saveFlags(
+                    { moldeDisabled: !e.target.checked },
+                    e.target.checked ? 'Al molde habilitado' : 'Al molde deshabilitado'
+                  )
+                }
+              />
+            }
+            label={flags.moldeDisabled ? '🍕 Al molde: sin stock' : '🍕 Al molde'}
+          />
+          {PIZZA_SIZES.map((size) => (
+            <FormControlLabel
+              key={size}
+              control={
+                <Switch
+                  checked={!flags.sizeDisabled[size]}
+                  disabled={savingFlags}
+                  onChange={(e) =>
+                    saveFlags(
+                      { sizeDisabled: { ...flags.sizeDisabled, [size]: !e.target.checked } },
+                      `${PIZZA_SIZE_LABELS[size]} ${e.target.checked ? 'habilitada' : 'deshabilitada'}`
+                    )
+                  }
+                />
+              }
+              label={
+                flags.sizeDisabled[size]
+                  ? `${PIZZA_SIZE_LABELS[size]}: sin stock`
+                  : PIZZA_SIZE_LABELS[size]
+              }
+            />
+          ))}
+        </Box>
+      </Paper>
 
       <TableContainer component={Paper}>
         <Table>

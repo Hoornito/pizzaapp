@@ -39,6 +39,7 @@ import { flavorsForSize, formatPizzaName, formatPizzaNotes, isPizzaItemNotes } f
 import { promoEmpanadaCount, formatPromoNotes } from '@/lib/promos';
 import { PIZZA_SIZES, PIZZA_SIZE_LABELS, type PizzaSize } from '@/types/product.types';
 import { controlsStock } from '@/lib/constants';
+import { useMenuFlags } from '@/hooks/useMenuFlags';
 
 /** Empanada especial que no es un "gusto" para docenas/sueltas. */
 const isDobleCambalache = (name: string) => /doble cambalache/i.test(name);
@@ -106,6 +107,9 @@ export default function PosPage() {
   const { categories } = useCategories();
   const { promotions } = usePromotions(true);
   const { showError, showSuccess } = useSnackbar();
+  // Lo que hoy no se puede hacer (Productos → Disponibilidad): si no hay masa
+  // de molde o discos de un tamaño, tampoco se toma por teléfono.
+  const { moldeDisabled, sizeDisabled } = useMenuFlags();
 
   const [items, setItems] = useState<PosItem[]>([]);
   // Borrador restaurado desde localStorage: evita pisar el guardado antes de hidratar.
@@ -138,6 +142,7 @@ export default function PosPage() {
   // Cómo entra la plata de un pedido de Pedidos Ya: el repartidor a veces paga
   // en efectivo en el mostrador y ese dinero tiene que entrar a la caja.
   const [pyaCobro, setPyaCobro] = useState<'EFECTIVO' | 'VIRTUAL'>('VIRTUAL');
+
   // La ciudad es siempre San Vicente (zona de reparto).
   const [address, setAddress] = useState({ street: '', number: '', apartment: '', city: 'San Vicente', reference: '' });
   const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA' | 'MIXTO' | 'A_DEFINIR'>('EFECTIVO');
@@ -207,6 +212,8 @@ export default function PosPage() {
       .catch(() => setCajaAbierta(null));
   };
   useEffect(() => { loadCajaStatus(); }, []);
+
+
 
   // Restauramos el borrador (si lo hay) al entrar, una sola vez.
   useEffect(() => {
@@ -720,10 +727,11 @@ export default function PosPage() {
                       size="small"
                       variant={i.alMolde ? 'contained' : 'text'}
                       color="warning"
+                      disabled={moldeDisabled && !i.alMolde}
                       onClick={() => toggleMolde(i.key)}
                       sx={{ textTransform: 'none' }}
                     >
-                      🟡 Al molde
+                      {moldeDisabled && !i.alMolde ? '🟡 Sin molde' : '🟡 Al molde'}
                     </Button>
                   )}
                   {i.extraEligible && (
@@ -885,21 +893,17 @@ export default function PosPage() {
                 control={
                   <Checkbox
                     size="small"
-                    // La transferencia se da por cobrada (se verifica después),
-                    // así que no hay nada que tildar.
-                    checked={paymentMethod === 'TRANSFERENCIA' || (paid && paymentMethod !== 'A_DEFINIR')}
-                    disabled={paymentMethod === 'A_DEFINIR' || paymentMethod === 'TRANSFERENCIA'}
+                    checked={paid && paymentMethod !== 'A_DEFINIR'}
+                    disabled={paymentMethod === 'A_DEFINIR'}
                     onChange={(e) => setPaid(e.target.checked)}
                   />
                 }
                 label={
-                  paymentMethod === 'TRANSFERENCIA'
-                    ? '🏦 Transferencia — entra como pagada (verificala después)'
-                    : paymentMethod === 'A_DEFINIR'
-                      ? '💰 Pagó (elegí primero el método de pago)'
-                      : paid
-                        ? '✅ Pagó (el ticket sale sin «FALTA COBRAR»)'
-                        : '💰 Pagó'
+                  paymentMethod === 'A_DEFINIR'
+                    ? '💰 Pagó (elegí primero el método de pago)'
+                    : paid
+                      ? '✅ Pagó (el ticket sale sin «FALTA COBRAR»)'
+                      : '💰 Pagó'
                 }
               />
               <TextField
@@ -1038,6 +1042,7 @@ export default function PosPage() {
         open={pizzaOpen}
         onClose={() => setPizzaOpen(false)}
         pizzas={pizzas}
+        sizeDisabled={sizeDisabled}
         onConfirm={(lines) => {
           lines.forEach((l) =>
             addPizzaLines({ productId: l.productId, name: l.name, unitPrice: l.unitPrice, quantity: l.quantity, notes: l.notes })

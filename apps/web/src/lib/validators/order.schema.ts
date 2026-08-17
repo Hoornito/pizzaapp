@@ -57,6 +57,8 @@ export const createOrderSchema = z
     phone: z.string().optional(),
     // Pedidos Ya: repartidor de la plataforma que pasa a buscarlo.
     courierName: z.string().optional(),
+    // El cliente pidió guardar la dirección para sus próximos pedidos.
+    saveAddress: z.boolean().optional(),
     whatsappToken: z.string().optional(),
     // Pedido programado: ISO del inicio de la franja elegida. Ausente = "lo
     // antes posible". La validación de que la franja siga siendo válida se hace

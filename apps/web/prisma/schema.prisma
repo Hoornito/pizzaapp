@@ -130,6 +130,10 @@ model Address {
   zipCode   String?
   reference String?
   isDefault Boolean  @default(false)
+  // El cliente pidió guardarla para reusarla en los próximos pedidos. Las que
+  // no lo son existen solo para el pedido que las creó (el ticket las necesita)
+  // y no se le ofrecen de nuevo.
+  saved     Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -446,6 +450,15 @@ model DeliveryFee {
   updatedAt      DateTime @updatedAt
 
   zone ShipmentZone? @relation(fields: [shipmentZoneId], references: [id])
+}
+
+// Ajustes sueltos del negocio, clave→valor. Para cosas que no justifican una
+// tabla propia (ej. "molde-disabled": la pizza al molde no se puede pedir
+// porque se quedaron sin masa). Ver APP_SETTING_KEYS.
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }
 
 // Foto de las tarjetas "armables" del menú (mitad y mitad, empanadas sueltas).

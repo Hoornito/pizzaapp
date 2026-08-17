@@ -12,7 +12,9 @@ import type { OrderStatus, Prisma } from '@prisma/client';
 import { format } from 'date-fns';
 
 const ORDER_INCLUDE = {
-  user: { select: { id: true, name: true, email: true, phone: true } },
+  // role: para distinguir los pedidos que hace un cliente por la web de los
+  // que carga el local (sonido y color propios en Pedidos).
+  user: { select: { id: true, name: true, email: true, phone: true, role: true } },
   address: true,
   deliveryEmployee: { select: { id: true, firstName: true, lastName: true, phone: true } },
   items: {
@@ -215,6 +217,15 @@ export async function createOrder(
 
   // Para delivery sin addressId, creamos la dirección a partir de los datos inline.
   let addressId = data.addressId;
+  // Una dirección elegida por id tiene que ser del que pide: viene del cliente,
+  // así que no alcanza con que exista.
+  if (addressId) {
+    const suya = await prisma.address.findFirst({
+      where: { id: addressId, userId },
+      select: { id: true },
+    });
+    if (!suya) addressId = undefined;
+  }
   if (!addressId && data.deliveryType === 'DELIVERY' && data.address) {
     const created = await prisma.address.create({
       data: {
@@ -225,6 +236,8 @@ export async function createOrder(
         city: data.address.city,
         state: data.address.state ?? '',
         reference: data.address.reference ?? null,
+        // Solo se le vuelve a ofrecer si pidió guardarla.
+        saved: !!data.saveAddress,
       },
     });
     addressId = created.id;
@@ -240,13 +253,10 @@ export async function createOrder(
         ? 'CONFIRMADO'
         : 'RECIBIDO';
 
-  // Nacen pagados:
-  //  · PEDIDOS_YA — cobra la plataforma, nadie le cobra al repartidor.
-  //  · TRANSFERENCIA — el cliente transfiere al confirmar; el local verifica
-  //    después que haya entrado. Así la comanda no sale con "FALTA COBRAR" ni
-  //    queda como pendiente en Pedidos.
-  const naceCobrado = data.paymentMethod === 'PEDIDOS_YA' || data.paymentMethod === 'TRANSFERENCIA';
-  const paid = naceCobrado ? true : !!data.paid;
+  // Pedidos Ya cobra la plataforma: el pedido nace pagado (nadie le cobra al
+  // repartidor) y la venta cuenta como virtual, igual que tarjeta. La
+  // transferencia NO: se marca cobrada a mano cuando se verifica que entró.
+  const paid = data.paymentMethod === 'PEDIDOS_YA' ? true : !!data.paid;
 
   // Descuento de la app. Se calcula ACÁ y pisa lo que haya mandado el cliente:
   // el navegador no decide cuánta plata se descuenta. Si el front venía
@@ -704,12 +714,25 @@ export async function cancelStaleUnpaidMercadoPagoOrders(maxAgeMinutes = 30) {
  * Cancelación por parte del cliente. Solo se permite si el pedido es suyo y
  * está en PENDIENTE_PAGO (todavía no pagó / no entró a cocina).
  */
+/**
+ * Estados en los que el cliente todavía puede cancelar solo: mientras espera el
+ * pago y mientras el local no lo confirmó. Después ya se está cocinando, así que
+ * tiene que llamar y lo cancela el local.
+ */
+export const CUSTOMER_CANCELABLE: OrderStatus[] = ['PENDIENTE_PAGO', 'RECIBIDO'];
+
 export async function cancelPendingPaymentOrder(orderId: string, userId: string) {
   const existing = await prisma.order.findUnique({ where: { id: orderId } });
   if (!existing) throw new Error('Pedido no encontrado');
   if (existing.userId !== userId) throw new Error('No autorizado');
+  if (!CUSTOMER_CANCELABLE.includes(existing.status)) {
+    throw new Error('El pedido ya está en preparación: llamanos para cancelarlo');
+  }
+
+  // Un pedido PENDIENTE_PAGO nunca descontó stock (se descuenta al acreditarse
+  // el pago), así que solo devolvemos el de los que sí lo hicieron.
   if (existing.status !== 'PENDIENTE_PAGO') {
-    throw new Error('Este pedido ya no se puede cancelar');
+    await adjustStockForOrder(orderId, 'restore');
   }
 
   const order = await prisma.order.update({

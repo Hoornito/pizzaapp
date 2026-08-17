@@ -75,7 +75,7 @@ function OrderDetailContent({ params }: Props) {
   };
 
   const handleCancelOrder = async () => {
-    if (!confirm('¿Cancelar este pedido?')) return;
+    if (!confirm('¿Seguro que querés cancelar este pedido?')) return;
     setPaying(true);
     try {
       const res = await fetch(`/api/orders/${id}/cancel`, { method: 'POST' });
@@ -165,6 +165,10 @@ function OrderDetailContent({ params }: Props) {
 
   // En retiro en local, mientras no esté pagado ni cerrado, el cliente puede
   // alternar entre efectivo y transferencia.
+  // El cliente puede cancelar solo mientras el local no lo confirmó (después ya
+  // se está cocinando). Ver CUSTOMER_CANCELABLE en order.service.
+  const canCancel = ['PENDIENTE_PAGO', 'RECIBIDO'].includes(order.status);
+
   const canChangePayment =
     order.deliveryType === 'PICKUP' &&
     order.payment?.status !== 'APPROVED' &&
@@ -208,6 +212,22 @@ function OrderDetailContent({ params }: Props) {
       )}
       {verifying && (
         <Alert severity="info" sx={{ mb: 2 }}>Verificando el pago con Mercado Pago…</Alert>
+      )}
+
+      {/* Cancelar: solo hasta que el local confirme el pedido. Los de Mercado
+          Pago ya tienen su propio botón en el aviso de arriba. */}
+      {canCancel && order.status !== 'PENDIENTE_PAGO' && (
+        <Alert
+          severity="info"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" variant="outlined" disabled={paying} onClick={handleCancelOrder}>
+              Cancelar pedido
+            </Button>
+          }
+        >
+          Todavía podés cancelarlo. Cuando el local lo confirme y empiece a prepararlo, vas a tener que llamarnos.
+        </Alert>
       )}
       {!verifying && order.paymentMethod === 'MERCADO_PAGO' && order.payment?.status === 'APPROVED' && (
         <Alert severity="success" sx={{ mb: 2 }}>
@@ -334,11 +354,9 @@ function OrderDetailContent({ params }: Props) {
               </Box>
             )}
 
-            {/* Los datos para transferir se muestran siempre que el pago sea por
-                transferencia: el pedido entra como cobrado para que la cocina no
-                lo vea como pendiente, pero eso es asunto nuestro — el cliente
-                tiene que transferir y mandar el comprobante igual. */}
-            {order.paymentMethod === 'TRANSFERENCIA' && order.status !== 'CANCELADO' && (
+            {/* Mientras el local no confirme que entró la transferencia, el
+                cliente sigue viendo a dónde transferir. */}
+            {order.paymentMethod === 'TRANSFERENCIA' && order.payment?.status !== 'APPROVED' && (
               <Alert severity="info" sx={{ mt: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                   <Typography variant="body2">Alias: <strong>{TRANSFER_INFO.alias}</strong></Typography>

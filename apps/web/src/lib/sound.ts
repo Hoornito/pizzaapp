@@ -20,20 +20,16 @@ export function primeAudio(): void {
   if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
 }
 
-/** Campanita "ding-dong" para nuevos pedidos. */
-export function playNewOrderSound(): void {
+/** Toca una secuencia de tonos con la campanita de siempre. */
+function playTones(tones: { f: number; t: number }[], type: OscillatorType = 'sine'): void {
   const ctx = getCtx();
   if (!ctx) return;
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   const now = ctx.currentTime;
-  const tones = [
-    { f: 880, t: 0 },
-    { f: 660, t: 0.18 },
-  ];
   for (const { f, t } of tones) {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = 'sine';
+    osc.type = type;
     osc.frequency.value = f;
     gain.gain.setValueAtTime(0.0001, now + t);
     gain.gain.exponentialRampToValueAtTime(0.3, now + t + 0.02);
@@ -42,4 +38,29 @@ export function playNewOrderSound(): void {
     osc.start(now + t);
     osc.stop(now + t + 0.36);
   }
+}
+
+/** Campanita "ding-dong" para nuevos pedidos (los que carga el local). */
+export function playNewOrderSound(): void {
+  playTones([
+    { f: 880, t: 0 },
+    { f: 660, t: 0.18 },
+  ]);
+}
+
+/**
+ * Pedido entrado por la WEB: tres notas ascendentes, más largas y con otro
+ * timbre. Tiene que distinguirse de oído del "ding-dong" del mostrador, porque
+ * es el que nadie está esperando y hay que ir a atender.
+ */
+export function playWebOrderSound(): void {
+  playTones(
+    [
+      { f: 523, t: 0 },
+      { f: 659, t: 0.2 },
+      { f: 784, t: 0.4 },
+      { f: 1047, t: 0.6 },
+    ],
+    'triangle'
+  );
 }

@@ -18,6 +18,7 @@ import { promoEmpanadaCount, promoHasLargePizza, formatPromoNotes } from '@/lib/
 import { EmpanadaPickModal } from '@/components/products/EmpanadaPickModal';
 import { ProductDetailModal } from '@/components/products/ProductDetailModal';
 import { CoccionDialog, type Coccion } from '@/components/products/CoccionDialog';
+import { useMenuFlags } from '@/hooks/useMenuFlags';
 import { useMemo, useState, type KeyboardEvent } from 'react';
 
 interface PromotionCardProps {
@@ -25,6 +26,9 @@ interface PromotionCardProps {
 }
 
 export function PromotionCard({ promotion }: PromotionCardProps) {
+  // Qué se puede hacer hoy (al molde). Por hook y no por prop: la card se usa en
+  // el menú y en /promotions, y una de las dos se iba a olvidar de pasarlo.
+  const { moldeDisabled } = useMenuFlags();
   const { addItemAndOpen } = useCart();
   const { products } = useProducts({ available: true });
   const { categories } = useCategories();
@@ -217,6 +221,7 @@ AL MOLDE`.trim() : base;
         <CoccionDialog
           open={coccionOpen}
           title={promotion.name}
+          moldeDisabled={moldeDisabled}
           onClose={() => { setCoccionOpen(false); setPendingChosen(undefined); }}
           onConfirm={(coccion) => {
             addToCart(pendingChosen, coccion);

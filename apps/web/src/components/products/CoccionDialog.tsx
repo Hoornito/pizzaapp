@@ -14,6 +14,8 @@ export type Coccion = 'piedra' | 'molde';
 interface CoccionDialogProps {
   open: boolean;
   title: string;
+  /** Al molde deshabilitado (sin masa): se ve en gris y no se puede elegir. */
+  moldeDisabled?: boolean;
   onClose: () => void;
   onConfirm: (coccion: Coccion) => void;
   confirmLabel?: string;
@@ -28,7 +30,9 @@ const OPCIONES: { id: Coccion; label: string; hint: string }[] = [
  * Cómo se cocina la pizza. Se usa en las promos que llevan pizza grande, que es
  * la única que se hace al molde (ver promoHasLargePizza).
  */
-export function CoccionDialog({ open, title, onClose, onConfirm, confirmLabel = 'Agregar a mi pedido' }: CoccionDialogProps) {
+export function CoccionDialog({
+  open, title, onClose, onConfirm, moldeDisabled, confirmLabel = 'Agregar a mi pedido',
+}: CoccionDialogProps) {
   const [coccion, setCoccion] = useState<Coccion>('piedra');
 
   return (
@@ -41,18 +45,22 @@ export function CoccionDialog({ open, title, onClose, onConfirm, confirmLabel = 
         <Box sx={{ display: 'flex', gap: 1 }}>
           {OPCIONES.map((o) => {
             const activa = coccion === o.id;
+            const bloqueada = o.id === 'molde' && moldeDisabled;
             return (
               <Button
                 key={o.id}
                 onClick={() => setCoccion(o.id)}
-                variant={activa ? 'contained' : 'outlined'}
+                disabled={bloqueada}
+                variant={activa && !bloqueada ? 'contained' : 'outlined'}
                 sx={{
                   flex: 1, flexDirection: 'column', gap: 0.25, py: 1.5,
                   textTransform: 'none', lineHeight: 1.2,
                 }}
               >
                 <Box component="span" sx={{ fontWeight: 700 }}>{o.label}</Box>
-                <Box component="span" sx={{ fontSize: '0.72rem', opacity: 0.8 }}>{o.hint}</Box>
+                <Box component="span" sx={{ fontSize: '0.72rem', opacity: 0.8 }}>
+                  {bloqueada ? 'hoy no hay' : o.hint}
+                </Box>
               </Button>
             );
           })}

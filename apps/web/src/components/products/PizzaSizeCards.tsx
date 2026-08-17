@@ -21,6 +21,7 @@ import { useCart } from '@/hooks/useCart';
 import { useUIStore } from '@/store/uiStore';
 import { formatCurrency } from '@/lib/utils';
 import { PizzaCounterModal, type PizzaMode } from './PizzaCounterModal';
+import { useMenuFlags } from '@/hooks/useMenuFlags';
 import { ProductDetailModal } from './ProductDetailModal';
 
 interface PizzaSizeCardsProps {
@@ -58,6 +59,7 @@ const PLACEHOLDER = '/images/placeholder-pizza.jpg';
 const HALF_IMAGE = '/images/pizza-mitad-y-mitad.jpg';
 
 export function PizzaSizeCards({ pizzas, onlyHalf, halfImage }: PizzaSizeCardsProps) {
+  const { sizeDisabled } = useMenuFlags();
   const { addItem } = useCart();
   const { openCart } = useUIStore();
   // Panel de armado abierto (con el tamaño ya fijado por la card).
@@ -195,6 +197,7 @@ export function PizzaSizeCards({ pizzas, onlyHalf, halfImage }: PizzaSizeCardsPr
           onClose={() => setBuilding(null)}
           pizzas={pizzas}
           lockedMode={building.mode}
+          sizeDisabled={sizeDisabled}
           title={building.mode === 'HALF' ? '🍕 Mitad y mitad' : `🍕 ${building.title}`}
           confirmLabel="Agregar a mi pedido"
           onConfirm={(lines) => {

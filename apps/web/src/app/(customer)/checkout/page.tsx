@@ -19,6 +19,10 @@ import FormControl from '@mui/material/FormControl';
 import FormLabel from '@mui/material/FormLabel';
 import Alert from '@mui/material/Alert';
 import Divider from '@mui/material/Divider';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 import { useCart } from '@/hooks/useCart';
 import { CartSummary } from '@/components/cart/CartSummary';
 import { CartItem } from '@/components/cart/CartItem';
@@ -91,6 +95,18 @@ export default function CheckoutPage() {
   // acá es para mostrarlo y para que el reparto del pago mixto cuadre.
   const [promo, setPromo] = useState<{ percentage: number; label: string } | null>(null);
 
+  // Direcciones guardadas del cliente. `addressId` vacío = está escribiendo una
+  // nueva (o no tiene ninguna guardada).
+  const [addresses, setAddresses] = useState<any[]>([]);
+  const [addressId, setAddressId] = useState('');
+  // Cartel "¿guardás esta dirección?" antes de confirmar un pedido con una
+  // dirección nueva. Guarda la respuesta para no volver a preguntar.
+  const [askSave, setAskSave] = useState(false);
+  const [saveAddress, setSaveAddress] = useState<boolean | null>(null);
+  // Aviso de dirección que no pudimos ubicar en la zona (countries, barrios).
+  const [zoneWarning, setZoneWarning] = useState(false);
+  const [zoneConfirmed, setZoneConfirmed] = useState(false);
+
   // Propina para el repartidor (solo delivery). Se suma al total a pagar.
   const tipNum = form.deliveryType === 'DELIVERY' ? Math.max(parseFloat(form.tip) || 0, 0) : 0;
   const discountNum = promo ? Math.round(subtotal * (promo.percentage / 100) * 100) / 100 : 0;
@@ -114,6 +130,37 @@ export default function CheckoutPage() {
       .then((d) => setPromo(d.data ?? null))
       .catch(() => setPromo(null));
   }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    fetch('/api/addresses', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = d.data || [];
+        setAddresses(list);
+        // Con una guardada arrancamos usándola: es el caso normal del cliente
+        // que repite el pedido desde su casa.
+        if (list.length > 0) elegirDireccion(list[0]);
+      })
+      .catch(() => setAddresses([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id]);
+
+  const elegirDireccion = (a: any) => {
+    setAddressId(a.id);
+    setZoneConfirmed(false);
+    setForm((prev) => ({
+      ...prev,
+      street: a.street, number: a.number, apartment: a.apartment ?? '',
+      city: a.city, state: a.state ?? '', reference: a.reference ?? '',
+    }));
+  };
+
+  const nuevaDireccion = () => {
+    setAddressId('');
+    setZoneConfirmed(false);
+    setForm((prev) => ({ ...prev, street: '', number: '', apartment: '', city: '', state: '', reference: '' }));
+  };
 
   // El teléfono de la cuenta se completa solo. No alcanza con el valor inicial
   // del form: en el primer render la sesión todavía puede estar cargando.
@@ -209,16 +256,21 @@ export default function CheckoutPage() {
       return;
     }
 
-    // Geocercado real: geocodificamos la dirección y verificamos que caiga en la
-    // zona de reparto (polígono de San Vicente + municipio que devuelve OSM).
-    if (form.deliveryType === 'DELIVERY') {
+    // Geocercado: verificamos que la dirección caiga en la zona. NO bloqueamos:
+    // los countries y barrios cerrados de la zona no los ubica bien el geocoder
+    // (busca "Barrio X" y lo manda a otro partido), y quedaban afuera pudiendo
+    // pedir. Preguntamos y decide el cliente.
+    if (form.deliveryType === 'DELIVERY' && !zoneConfirmed) {
       setLoading(true);
       const inZone = await checkDeliveryZone();
-      if (!inZone) {
-        setLoading(false);
-        showError(`La dirección está fuera de nuestra zona de reparto (${DELIVERY_ZONE_LABEL}). Podés elegir "Retiro en local".`);
-        return;
-      }
+      setLoading(false);
+      if (!inZone) { setZoneWarning(true); return; }
+    }
+
+    // Dirección nueva: preguntamos si la guarda para la próxima.
+    if (form.deliveryType === 'DELIVERY' && !addressId && saveAddress === null) {
+      setAskSave(true);
+      return;
     }
 
     setLoading(true);
@@ -232,21 +284,25 @@ export default function CheckoutPage() {
         discount: discountNum,
         total: payTotal,
         ...(form.paymentMethod === 'MIXTO' ? { cashAmount, transferAmount } : {}),
+        // Con una dirección guardada mandamos su id; si es nueva, los datos y
+        // si el cliente pidió guardarla.
         ...(form.deliveryType === 'DELIVERY'
-          ? {
-              address: {
-                street: form.street,
-                number: form.number,
-                apartment: form.apartment || undefined,
-                city: form.city,
-                state: form.state || undefined,
-                reference: form.reference || undefined,
-              },
-            }
+          ? addressId
+            ? { addressId }
+            : {
+                address: {
+                  street: form.street,
+                  number: form.number,
+                  apartment: form.apartment || undefined,
+                  city: form.city,
+                  state: form.state || undefined,
+                  reference: form.reference || undefined,
+                },
+                saveAddress: saveAddress === true,
+              }
           : {}),
         notes: form.notes,
         phone: form.phone,
-        addressId: undefined,
         ...(when === 'scheduled' && slot ? { scheduledFor: slot } : {}),
         items: items.map((item) => ({
           productId: item.productId,
@@ -503,6 +559,46 @@ export default function CheckoutPage() {
 
               <Divider sx={{ mb: 3 }} />
 
+              {form.deliveryType === 'DELIVERY' && addresses.length > 0 && (
+                <Box sx={{ mb: 3 }}>
+                  <FormLabel sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
+                    ¿A dónde te lo llevamos?
+                  </FormLabel>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                    {addresses.map((a) => {
+                      const selected = addressId === a.id;
+                      return (
+                        <Button
+                          key={a.id}
+                          onClick={() => elegirDireccion(a)}
+                          variant={selected ? 'contained' : 'text'}
+                          color={selected ? 'primary' : 'inherit'}
+                          sx={{
+                            borderRadius: 8, py: 1.25, justifyContent: 'flex-start', textAlign: 'left',
+                            textTransform: 'none', fontWeight: selected ? 700 : 400,
+                            color: selected ? undefined : 'text.secondary',
+                          }}
+                        >
+                          📍 {a.street} {a.number}{a.apartment ? `, ${a.apartment}` : ''}
+                        </Button>
+                      );
+                    })}
+                    <Button
+                      onClick={nuevaDireccion}
+                      variant={addressId === '' ? 'contained' : 'text'}
+                      color={addressId === '' ? 'primary' : 'inherit'}
+                      sx={{
+                        borderRadius: 8, py: 1.25, justifyContent: 'flex-start',
+                        textTransform: 'none', fontWeight: addressId === '' ? 700 : 400,
+                        color: addressId === '' ? undefined : 'text.secondary',
+                      }}
+                    >
+                      ➕ Agregar nueva dirección
+                    </Button>
+                  </Box>
+                </Box>
+              )}
+
               {form.deliveryType === 'DELIVERY' && (
                 <>
                   <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
@@ -692,6 +788,58 @@ export default function CheckoutPage() {
             </Paper>
           )}
         </Box>
+
+        {/* Guardar la dirección para la próxima */}
+        <Dialog open={askSave} onClose={() => setAskSave(false)} maxWidth="xs" fullWidth>
+          <DialogTitle sx={{ fontWeight: 700 }}>¿Guardamos tu dirección?</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">
+              Si la guardás, la próxima vez la elegís con un toque y no la tenés que escribir de nuevo.
+            </Typography>
+            <Typography variant="body2" fontWeight={700} sx={{ mt: 1.5 }}>
+              📍 {form.street} {form.number}{form.apartment ? `, ${form.apartment}` : ''}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button
+              onClick={() => { setSaveAddress(false); setAskSave(false); setTimeout(handleSubmitOrder, 0); }}
+              disabled={loading}
+            >
+              No, gracias
+            </Button>
+            <Button
+              variant="contained"
+              onClick={() => { setSaveAddress(true); setAskSave(false); setTimeout(handleSubmitOrder, 0); }}
+              disabled={loading}
+            >
+              Sí, guardar
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Dirección que no pudimos ubicar en la zona (countries, barrios) */}
+        <Dialog open={zoneWarning} onClose={() => setZoneWarning(false)} maxWidth="xs" fullWidth>
+          <DialogTitle sx={{ fontWeight: 700 }}>No pudimos ubicar la dirección</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">
+              No encontramos <strong>{form.street} {form.number}</strong> dentro de {DELIVERY_ZONE_LABEL}.
+              Pasa seguido con countries y barrios cerrados, que los mapas no ubican bien.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1.5 }}>
+              Si estás en la zona, seguí adelante y te lo llevamos. Si no, elegí <strong>Retiro en local</strong>.
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setZoneWarning(false)} disabled={loading}>Revisar la dirección</Button>
+            <Button
+              variant="contained"
+              onClick={() => { setZoneConfirmed(true); setZoneWarning(false); setTimeout(handleSubmitOrder, 0); }}
+              disabled={loading}
+            >
+              Estoy en la zona, seguir
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Summary */}
         <Box sx={{ flex: 1, minWidth: 280 }}>

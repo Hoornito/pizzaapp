@@ -50,6 +50,8 @@ interface Props {
    * donde cada tamaño (y "Mitad y mitad") es su propia card.
    */
   lockedMode?: Mode;
+  /** Tamaños que hoy no se pueden hacer (Productos → Disponibilidad). */
+  sizeDisabled?: Partial<Record<PizzaSize, boolean>>;
   title?: string;
   confirmLabel?: string;
 }
@@ -66,6 +68,7 @@ export function PizzaCounterModal({
   pizzas,
   onConfirm,
   lockedMode,
+  sizeDisabled,
   title,
   confirmLabel = 'Agregar al carrito',
 }: Props) {
@@ -185,6 +188,7 @@ export function PizzaCounterModal({
       key={m}
       variant={mode === m ? 'contained' : 'outlined'}
       onClick={() => setMode(m)}
+      disabled={m !== 'HALF' && !!sizeDisabled?.[m as PizzaSize]}
       sx={{ flex: 1, textTransform: 'none', py: 1, minWidth: 0 }}
     >
       {label}
@@ -198,6 +202,7 @@ export function PizzaCounterModal({
       variant={halfSize === s ? 'contained' : 'outlined'}
       color="secondary"
       onClick={() => setHalfSize(s)}
+      disabled={!!sizeDisabled?.[s]}
       sx={{ flex: 1, textTransform: 'none', minWidth: 0 }}
     >
       {SHORT_LABEL[s]}

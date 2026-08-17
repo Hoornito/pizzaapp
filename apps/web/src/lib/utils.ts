@@ -217,6 +217,18 @@ export function formatOrderPayment(order: PayableOrder, opts?: { emoji?: boolean
   return `${emoji ? '💵 ' : ''}Efectivo`;
 }
 
+/**
+ * ¿El pedido lo hizo un cliente desde la web? Los que carga el local van con la
+ * cuenta del admin/mostrador; los del bot llevan whatsappToken. Sirve para
+ * distinguirlos en Pedidos (color y sonido propios).
+ */
+export function isWebOrder(order: {
+  user?: { role?: string | null } | null;
+  whatsappToken?: string | null;
+}): boolean {
+  return order.user?.role === 'CUSTOMER' && !order.whatsappToken;
+}
+
 /** Porción del total de un pedido que ingresa en efectivo a la caja. */
 export function orderCashPortion(order: PayableOrder): number {
   if (order.paymentMethod === 'EFECTIVO') return toNumber(order.total);

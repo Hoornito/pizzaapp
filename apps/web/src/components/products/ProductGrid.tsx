@@ -14,6 +14,7 @@ import { DobleCambalacheDialog } from './DobleCambalacheDialog';
 import { PromotionCard } from '@/components/promotions/PromotionCard';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useProducts, useCategories, usePromotions } from '@/hooks/useProducts';
+import { useMenuFlags } from '@/hooks/useMenuFlags';
 import { useCart } from '@/hooks/useCart';
 import { useUIStore } from '@/store/uiStore';
 import { useSnackbar } from '@/app/snackbar-context';
@@ -64,6 +65,9 @@ export function ProductGrid() {
   // Fotos de las tarjetas armables (mitad y mitad, empanadas sueltas): no son
   // productos, así que su imagen se carga aparte desde Configuración.
   const [cardImages, setCardImages] = useState<Record<string, string>>({});
+
+  // Lo que hoy no se puede hacer (al molde, tamaños sin discos).
+  const { moldeDisabled, sizeDisabled } = useMenuFlags();
 
   const { categories: allCategories } = useCategories();
   const { products: allProducts, loading } = useProducts({ available: true });
@@ -191,6 +195,9 @@ export function ProductGrid() {
       id: s,
       label: PIZZA_SIZE_LABELS[s],
       price: flavorPrice(p, s)!,
+      // Sin discos de ese tamaño: se ve pero no se puede elegir.
+      disabled: sizeDisabled[s],
+      caption: sizeDisabled[s] ? 'Hoy no hay' : undefined,
     }));
 
   const openProduct = (p: ProductWithCategory) => {
@@ -244,14 +251,19 @@ export function ProductGrid() {
   const renderProduct = (p: ProductWithCategory) => {
     const pizza = isPizza(p);
     const sizes = pizza ? sizeOptions(p) : [];
+    // El precio de la card sale de los tamaños que HOY se pueden pedir: si la
+    // grande está caída, anunciar su precio sería mentirle al cliente.
+    const vendibles = sizes.filter((s) => !s.disabled);
     // En pizzas mostramos el precio MAS ALTO (la grande): adentro se ve el de
     // cada tamaño. Así el cliente no se encuentra con un precio mayor al entrar.
-    const price = pizza ? Math.max(...sizes.map((s) => s.price)) : toNumber(p.price);
+    const price = pizza ? Math.max(...vendibles.map((s) => s.price)) : toNumber(p.price);
     const available = availableFor(p);
     const outOfStock = available != null && available <= 0;
 
-    // Una pizza sin ningún tamaño con precio no se puede pedir.
+    // Una pizza sin ningún tamaño con precio no se puede pedir. Si están todos
+    // los tamaños caídos, tampoco: se muestra como no disponible.
     if (pizza && sizes.length === 0) return null;
+    const sinTamanos = pizza && vendibles.length === 0;
 
     return (
       // En celular ocupa el ancho completo (una entrada por fila).
@@ -260,10 +272,10 @@ export function ProductGrid() {
           name={p.name}
           description={p.description}
           image={p.image}
-          price={price}
-          priceNote={pizza && sizes.length > 1 ? 'hasta' : null}
-          disabled={!p.available || outOfStock}
-          disabledLabel={outOfStock ? 'Sin stock' : 'No disponible'}
+          price={sinTamanos ? 0 : price}
+          priceNote={pizza && vendibles.length > 1 ? 'hasta' : null}
+          disabled={!p.available || outOfStock || sinTamanos}
+          disabledLabel={outOfStock || sinTamanos ? 'Sin stock' : 'No disponible'}
           onOpen={() => openProduct(p)}
         />
       </Grid>
@@ -393,7 +405,9 @@ export function ProductGrid() {
                   sizeId === 'LARGE'
                     ? [
                         { id: 'piedra', label: 'A la piedra' },
-                        { id: 'molde', label: 'Al molde' },
+                        // Sin masa de molde se muestra en gris, no se esconde:
+                        // así el cliente ve que existe pero hoy no está.
+                        { id: 'molde', label: 'Al molde', disabled: moldeDisabled, hint: moldeDisabled ? 'hoy no hay' : undefined },
                       ]
                     : [{ id: 'piedra', label: 'A la piedra' }]
               : undefined
