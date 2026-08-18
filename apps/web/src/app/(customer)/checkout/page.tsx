@@ -107,8 +107,17 @@ export default function CheckoutPage() {
   const [zoneWarning, setZoneWarning] = useState(false);
   const [zoneConfirmed, setZoneConfirmed] = useState(false);
 
-  // Propina para el repartidor (solo delivery). Se suma al total a pagar.
-  const tipNum = form.deliveryType === 'DELIVERY' ? Math.max(parseFloat(form.tip) || 0, 0) : 0;
+  /**
+   * La propina solo tiene sentido cuando el pago pasa por la app: en efectivo
+   * (o "a definir", que termina en efectivo) el cliente se la da en la mano al
+   * repartidor y no hay nada que gestionar.
+   */
+  const admitePropina =
+    form.deliveryType === 'DELIVERY' &&
+    (form.paymentMethod === 'TRANSFERENCIA' || form.paymentMethod === 'MERCADO_PAGO');
+  // Ojo: si no admite propina vale 0 aunque haya quedado un monto escrito, así
+  // no se le cobra de más al que empezó a cargarla y después cambió el medio.
+  const tipNum = admitePropina ? Math.max(parseFloat(form.tip) || 0, 0) : 0;
   const discountNum = promo ? Math.round(subtotal * (promo.percentage / 100) * 100) / 100 : 0;
   const payTotal = Math.max(0, Math.round((total + tipNum - discountNum) * 100) / 100);
 
@@ -729,8 +738,8 @@ export default function CheckoutPage() {
                 })()
               )}
 
-              {/* Propina para el repartidor (opcional, solo delivery) */}
-              {form.deliveryType === 'DELIVERY' && (
+              {/* Propina: solo si el pago va por la app (ver admitePropina) */}
+              {admitePropina && (
                 <Box sx={{ mb: 3 }}>
                   <Typography variant="subtitle2" fontWeight={700} gutterBottom>
                     🛵 Propina para el repartidor (opcional)
