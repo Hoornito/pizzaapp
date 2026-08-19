@@ -31,6 +31,19 @@ export const appDiscountSchema = z.object({
   active: z.boolean(),
 });
 
+/** Barrio/country con la franja en la que no se reparte ahí. */
+export const deliveryAreaSchema = z.object({
+  name: z.string().min(2, 'Poné el nombre del barrio'),
+  // Vacías = se reparte siempre. Si viene una, tiene que venir la otra.
+  blockedFrom: z.string().regex(/^\d{2}:\d{2}$/, 'Formato HH:MM').or(z.literal('')).nullish(),
+  blockedTo: z.string().regex(/^\d{2}:\d{2}$/, 'Formato HH:MM').or(z.literal('')).nullish(),
+  active: z.boolean().default(true),
+}).refine((d) => !!d.blockedFrom === !!d.blockedTo, {
+  message: 'Cargá las dos horas o ninguna',
+  path: ['blockedTo'],
+});
+
+export type DeliveryAreaInput = z.infer<typeof deliveryAreaSchema>;
 export type AppDiscountInput = z.infer<typeof appDiscountSchema>;
 export type BusinessHoursInput = z.infer<typeof businessHoursSchema>;
 export type ShipmentZoneInput = z.infer<typeof shipmentZoneSchema>;

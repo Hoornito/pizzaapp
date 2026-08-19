@@ -30,6 +30,7 @@ import { formatCurrency } from '@/lib/utils';
 import { TRANSFER_INFO, isCityInDeliveryZone, DELIVERY_ZONE_LABEL } from '@/lib/constants';
 import { CopyButton } from '@/components/ui/CopyButton';
 import { pointInPolygon, DELIVERY_ZONE_POLYGON } from '@/lib/geo';
+import { buscarBarrio } from '@/lib/delivery-areas';
 import dynamic from 'next/dynamic';
 
 // El mapa usa Leaflet (window) -> solo en el cliente.
@@ -103,6 +104,8 @@ export default function CheckoutPage() {
   // dirección nueva. Guarda la respuesta para no volver a preguntar.
   const [askSave, setAskSave] = useState(false);
   const [saveAddress, setSaveAddress] = useState<boolean | null>(null);
+  // Barrios cargados en Configuración: sirven de lista blanca para el mapa.
+  const [areas, setAreas] = useState<{ name: string; active: boolean }[]>([]);
   // Aviso de dirección que no pudimos ubicar en la zona (countries, barrios).
   const [zoneWarning, setZoneWarning] = useState(false);
   const [zoneConfirmed, setZoneConfirmed] = useState(false);
@@ -132,6 +135,13 @@ export default function CheckoutPage() {
   useEffect(() => {
     setDeliveryFee(0); // El envío es sin cargo.
   }, [form.deliveryType]);
+
+  useEffect(() => {
+    fetch('/api/settings/delivery-areas', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setAreas(d.data || []))
+      .catch(() => setAreas([]));
+  }, []);
 
   useEffect(() => {
     fetch('/api/settings/discount', { cache: 'no-store' })
@@ -224,6 +234,11 @@ export default function CheckoutPage() {
   // Solo bloqueamos cuando la geocodificación funciona y da claramente afuera;
   // si el geocoder no responde, NO limitamos (dejamos pasar).
   const checkDeliveryZone = async (): Promise<boolean> => {
+    // Si nombra un barrio que el local tiene cargado, ya sabemos que está en la
+    // zona: no lo geocodificamos. Los countries no figuran como calle y el mapa
+    // los mandaba a otro partido, así que avisaba "fuera de zona" de gusto.
+    if (buscarBarrio(form.street, areas)) return true;
+
     const q = [`${form.street} ${form.number}`, form.city, form.state || 'Buenos Aires', 'Argentina']
       .filter(Boolean)
       .join(', ');
@@ -611,8 +626,10 @@ export default function CheckoutPage() {
               {form.deliveryType === 'DELIVERY' && (
                 <>
                   <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                    <TextField label="Calle *" value={form.street} onChange={(e) => handleChange('street', e.target.value)} />
-                    <TextField label="Número *" value={form.number} onChange={(e) => handleChange('number', e.target.value)} />
+                    {/* En la zona hay barrios cerrados: ponen el nombre del
+                        barrio y el lote en vez de calle y altura. */}
+                    <TextField label="Calle / Barrio cerrado *" value={form.street} onChange={(e) => handleChange('street', e.target.value)} />
+                    <TextField label="Número / Nro de lote *" value={form.number} onChange={(e) => handleChange('number', e.target.value)} />
                     <TextField label="Departamento" value={form.apartment} onChange={(e) => handleChange('apartment', e.target.value)} />
                     <TextField
                       label="Ciudad *"

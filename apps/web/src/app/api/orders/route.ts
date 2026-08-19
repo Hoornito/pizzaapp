@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getOrders, createOrder } from '@/services/order.service';
 import { isStoreOpen } from '@/services/finance.service';
 import { isWithinBusinessHours, todayHoursLabel } from '@/services/schedule.service';
+import { findBlockedArea } from '@/services/delivery-area.service';
 import { createOrderSchema } from '@/lib/validators';
 import { rateLimit } from '@/lib/rate-limiter';
 import type { OrderStatus } from '@prisma/client';
@@ -21,6 +22,13 @@ export async function GET(req: NextRequest) {
 
   const result = await getOrders({ userId, status: status || undefined, page, limit });
   return NextResponse.json({ success: true, ...result });
+}
+
+/** Calle de una dirección ya guardada (el cliente eligió una de la lista). */
+async function calleDeAddressId(addressId?: string): Promise<string | null> {
+  if (!addressId) return null;
+  const a = await prisma.address.findUnique({ where: { id: addressId }, select: { street: true } });
+  return a?.street ?? null;
 }
 
 export async function POST(req: NextRequest) {
@@ -73,6 +81,23 @@ export async function POST(req: NextRequest) {
     // Puede chocar con el teléfono de otra cuenta (es único): si pasa, seguimos
     // igual — el número queda en el pedido, que es lo que importa para entregarlo.
     await prisma.user.update({ where: { id: session.user.id }, data: { phone } }).catch(() => null);
+  }
+
+  // Barrios a los que no se llega en ciertas franjas (Configuración → Zonas de
+  // reparto). Se mide contra la hora de entrega: si lo programó para la noche,
+  // que el mediodía esté bloqueado no importa.
+  if (parsed.data.deliveryType === 'DELIVERY') {
+    const calle = parsed.data.address?.street ?? (await calleDeAddressId(parsed.data.addressId));
+    const cuando = parsed.data.scheduledFor ? new Date(parsed.data.scheduledFor) : new Date();
+    const bloqueado = calle ? await findBlockedArea(calle, cuando) : null;
+    if (bloqueado) {
+      return NextResponse.json(
+        {
+          error: `A ${bloqueado.name} no llegamos entre las ${bloqueado.blockedFrom} y las ${bloqueado.blockedTo}. Programalo para más tarde o elegí retiro en el local.`,
+        },
+        { status: 409 }
+      );
+    }
   }
 
   try {

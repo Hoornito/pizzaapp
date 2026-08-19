@@ -17,6 +17,7 @@ const SECTIONS = [
   { href: '/admin/settings/hours', label: '🕒 Horarios' },
   { href: '/admin/settings/discounts', label: '🏷️ Descuentos' },
   { href: '/admin/settings/menu-images', label: '🖼️ Imágenes del menú' },
+  { href: '/admin/settings/delivery-areas', label: '📍 Zonas de reparto' },
   // { href: '/admin/settings/zones', label: '📍 Zonas' },
   // { href: '/admin/settings/delivery', label: '🛵 Envío' },
 ];
