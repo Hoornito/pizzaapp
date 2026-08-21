@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Container from '@mui/material/Container';
@@ -23,18 +23,38 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const loadOrders = useCallback(() => {
+    return fetch('/api/orders/my')
+      .then((r) => r.json())
+      .then((d) => setOrders(d.data || []))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login?callbackUrl=/orders');
       return;
     }
     if (status === 'authenticated') {
-      fetch('/api/orders/my')
-        .then((r) => r.json())
-        .then((d) => setOrders(d.data || []))
-        .finally(() => setLoading(false));
+      loadOrders().finally(() => setLoading(false));
     }
-  }, [status, router]);
+  }, [status, router, loadOrders]);
+
+  // Esta lista se cargaba una sola vez. En la app instalada, volver desde
+  // segundo plano no remonta el componente, así que el estado de los pedidos
+  // quedaba congelado hasta refrescar a mano.
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void loadOrders();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [status, loadOrders]);
 
   if (status === 'loading' || loading) return <LoadingSpinner message="Cargando pedidos..." />;
 

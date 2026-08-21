@@ -22,6 +22,7 @@ import { CopyButton } from '@/components/ui/CopyButton';
 import { isPizzaItemNotes } from '@/lib/pizza';
 import { formatCurrency, formatDate, formatOrderPayment } from '@/lib/utils';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { PushOptIn } from '@/components/notifications/PushOptIn';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -136,11 +137,14 @@ function OrderDetailContent({ params }: Props) {
       .finally(() => setVerifying(false));
   }, [order, searchParams, loadOrder]);
 
+  const orderId = order?.id;
+
   useEffect(() => {
-    if (!socket || !order) return;
-    socket.emit('join:order', order.id);
+    if (!socket || !orderId) return;
+    socket.emit('join:order', orderId);
+
     const handler = (data: { orderId: string; status: string; estimatedTime?: number | null }) => {
-      if (data.orderId === order.id) {
+      if (data.orderId === orderId) {
         setOrder((prev: any) => ({
           ...prev,
           status: data.status,
@@ -150,11 +154,38 @@ function OrderDetailContent({ params }: Props) {
         }));
       }
     };
+
+    // Al reconectar (el celular corta el socket apenas la app pasa a segundo
+    // plano) hay que volver a entrar a la sala: el server olvida quién estaba.
+    // Y de paso recargamos, porque mientras estuvimos afuera nos perdimos los
+    // eventos: sin esto el pedido queda con el estado viejo hasta refrescar.
+    const onReconnect = () => {
+      socket.emit('join:order', orderId);
+      void loadOrder();
+    };
+
     socket.on('order:status', handler);
+    socket.on('connect', onReconnect);
     return () => {
       socket.off('order:status', handler);
+      socket.off('connect', onReconnect);
     };
-  }, [socket, order?.id]);
+  }, [socket, orderId, loadOrder]);
+
+  // Volver a la app desde segundo plano: puede que el socket ni siquiera haya
+  // llegado a reconectar, así que revalidamos contra el server igual.
+  useEffect(() => {
+    if (!orderId) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void loadOrder();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [orderId, loadOrder]);
 
   if (loading) return <LoadingSpinner message="Cargando pedido..." />;
   if (!order) return (
@@ -191,6 +222,11 @@ function OrderDetailContent({ params }: Props) {
         </Box>
         <Typography variant="body2" color="text.secondary">{formatDate(order.createdAt)}</Typography>
       </Box>
+
+      {/* Acá es donde el cliente REALMENTE quiere los avisos: acaba de hacer el
+          pedido y está esperando. Si sólo lo ofrecemos en "Mis Pedidos", el que
+          va del menú al checkout nunca llega a ver el pedido de permiso. */}
+      {!['ENTREGADO', 'CANCELADO'].includes(order.status) && <PushOptIn />}
 
       {order.status === 'PENDIENTE_PAGO' && !verifying && (
         <Alert
