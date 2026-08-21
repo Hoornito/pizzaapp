@@ -1,7 +1,7 @@
 {
   "name": "pizzaapp",
   "private": true,
-  "workspaces": ["apps/*"],
+  "workspaces": ["apps/web"],
   "scripts": {
     "dev": "npm run dev --workspace=apps/web",
     "build": "npm run build --workspace=apps/web",

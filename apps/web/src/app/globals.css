@@ -43,3 +43,22 @@
 .js-focus-visible :focus:not(.focus-visible) {
   outline: none;
 }
+
+/* ── App instalada / app nativa (Capacitor) ────────────────────────────────
+   Con viewport-fit=cover el contenido llega hasta los bordes, así que hay que
+   respetar a mano el notch y la barra de gestos. En la web común las safe-area
+   valen 0, o sea que esto no cambia nada de lo que ya se ve. */
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  /* Evita el rebote elástico al scrollear dentro del webview nativo. */
+  overscroll-behavior-y: none;
+}
+
+@media (display-mode: standalone) {
+  /* Ni selección de texto larga ni lupa: adentro de la app molesta. */
+  body {
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}

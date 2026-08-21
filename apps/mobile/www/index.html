@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Pizzería Cambalache</title>
+    <style>
+      :root { color-scheme: light; }
+      html, body {
+        margin: 0; height: 100%;
+        background: #FBF3E2; color: #3E2723;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      main {
+        height: 100%; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 12px; padding: 24px;
+        text-align: center;
+      }
+      .logo { font-size: 56px; }
+      h1 { font-size: 20px; margin: 0; font-weight: 700; }
+      p { margin: 0; color: #6D4C41; font-size: 15px; }
+    </style>
+  </head>
+  <body>
+    <!-- Pantalla puente: la app carga el sitio real (ver capacitor.config.ts).
+         Esto se ve un instante mientras arranca el WebView. -->
+    <main>
+      <div class="logo">🍕</div>
+      <h1>Pizzería Cambalache</h1>
+      <p>Abriendo…</p>
+    </main>
+  </body>
+</html>

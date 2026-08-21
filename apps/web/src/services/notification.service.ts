@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { sendOrderConfirmationEmail, sendOrderStatusEmail } from './email.service';
 import { sendOrderConfirmationWA, sendOrderStatusUpdateWA } from './whatsapp.service';
 import { eventBus } from '@/lib/event-bus';
+import { sendOrderStatusPush } from './push.service';
 import type { OrderWithRelations } from '@/types/order.types';
 import type { OrderStatus } from '@prisma/client';
 
@@ -21,6 +22,10 @@ function setupEventListeners() {
 
   eventBus.on('order:status_changed', async (order: OrderWithRelations) => {
     const tasks = [sendOrderStatusEmail(order, order.status).catch(() => {})];
+
+    // Push al celular del cliente (app nativa o navegador). Best-effort: si no
+    // hay dispositivos registrados o falta configuración, no hace nada.
+    tasks.push(sendOrderStatusPush(order as never).catch(() => {}));
 
     if (order.phone || order.user.phone) {
       const phone = order.phone || order.user.phone!;

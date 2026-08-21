@@ -75,6 +75,7 @@ model User {
   orders        Order[]
   cart          Cart?
   notifications Notification[]
+  pushDevices   PushDevice[]
   auditLogs     AuditLog[]
 
   @@index([email])
@@ -639,6 +640,39 @@ model Notification {
   @@index([userId])
   @@index([read])
   @@index([createdAt])
+}
+
+enum PushPlatform {
+  WEB
+  ANDROID
+  IOS
+}
+
+/// Dispositivo suscripto a notificaciones push de cambio de estado del pedido.
+/// - WEB: suscripción del navegador (Web Push / VAPID): endpoint + claves.
+/// - ANDROID / IOS: token de FCM que devuelve el plugin de Capacitor.
+/// Un mismo usuario puede tener varios (celular, tablet, navegador de la compu).
+model PushDevice {
+  id         String       @id @default(cuid())
+  userId     String?
+  platform   PushPlatform
+  /// Token de FCM (solo apps nativas).
+  token      String?      @unique
+  /// Endpoint de Web Push (solo navegadores).
+  endpoint   String?      @unique
+  p256dh     String?
+  auth       String?
+  userAgent  String?
+  /// Se apaga cuando el proveedor responde que el destino ya no existe (404/410),
+  /// así no reintentamos para siempre contra dispositivos muertos.
+  active     Boolean      @default(true)
+  lastSeenAt DateTime     @default(now())
+  createdAt  DateTime     @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([active])
 }
 
 // ─── Audit ───────────────────────────────────────────────────────────────────

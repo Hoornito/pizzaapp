@@ -1,0 +1,5 @@
+# Proyectos nativos: se regeneran con `npx cap add android|ios`. Se versionan
+# recién cuando haya cambios hechos a mano adentro (keystore NO va acá nunca).
+/android
+/ios
+node_modules

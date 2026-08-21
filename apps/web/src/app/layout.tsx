@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Roboto } from 'next/font/google';
 import { Providers } from './providers';
 import './globals.css';
@@ -16,7 +16,29 @@ export const metadata: Metadata = {
     template: '%s | Pizzería Cambalache',
   },
   description: 'Pizza a la piedra · San Vicente',
-  icons: { icon: '/logo.png' },
+  applicationName: 'Cambalache',
+  icons: {
+    icon: '/logo.png',
+    apple: '/icons/apple-touch-icon.png',
+  },
+  // Instalable desde el navegador (el manifest lo genera src/app/manifest.ts) y
+  // en pantalla completa al agregarla a la pantalla de inicio del iPhone.
+  appleWebApp: {
+    capable: true,
+    title: 'Cambalache',
+    statusBarStyle: 'default',
+  },
+  // Evita que iOS convierta números de pedido y precios en links de teléfono.
+  formatDetection: { telephone: false },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#C62828',
+  // Que el fondo llegue hasta los bordes en celulares con notch; el contenido se
+  // separa con las safe-area de globals.css.
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

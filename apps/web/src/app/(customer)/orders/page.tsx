@@ -14,6 +14,7 @@ import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '@/lib/constants';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { PushOptIn } from '@/components/notifications/PushOptIn';
 import type { Order } from '@prisma/client';
 
 export default function OrdersPage() {
@@ -42,6 +43,8 @@ export default function OrdersPage() {
       <Typography variant="h4" fontWeight={700} gutterBottom>
         Mis Pedidos
       </Typography>
+
+      <PushOptIn />
 
       {orders.length === 0 ? (
         <EmptyState

@@ -42,6 +42,13 @@ services:
       QZ_CERTIFICATE_B64: ${QZ_CERTIFICATE_B64}
       QZ_PRIVATE_KEY_B64: ${QZ_PRIVATE_KEY_B64}
       ADMIN_LOGIN_CODE: ${ADMIN_LOGIN_CODE}
+      # ─── Notificaciones push (estado del pedido) ───────────────────────────
+      # Web (PWA/navegador): generar con `npm run push:vapid --workspace=apps/web`.
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      # App nativa (Android/iOS): service account de Firebase en JSON o base64.
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
       # Imágenes subidas: directorio en un volumen persistente (sobrevive deploys).
       UPLOAD_DIR: /data/uploads
     volumes:

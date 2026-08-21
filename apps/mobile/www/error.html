@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Sin conexión</title>
+    <style>
+      :root { color-scheme: light; }
+      html, body {
+        margin: 0; height: 100%;
+        background: #FBF3E2; color: #3E2723;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      main {
+        height: 100%; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 14px; padding: 24px;
+        text-align: center;
+      }
+      .logo { font-size: 56px; }
+      h1 { font-size: 20px; margin: 0; font-weight: 700; }
+      p { margin: 0; max-width: 320px; color: #6D4C41; font-size: 15px; line-height: 1.5; }
+      button {
+        margin-top: 8px; border: 0; border-radius: 8px; cursor: pointer;
+        background: #C62828; color: #fff; font-size: 16px; font-weight: 600;
+        padding: 12px 28px; font-family: inherit;
+      }
+      a { color: #C62828; font-size: 15px; }
+    </style>
+  </head>
+  <body>
+    <!-- Se muestra cuando el WebView no pudo cargar el sitio (ver `errorPath`). -->
+    <main>
+      <div class="logo">📶</div>
+      <h1>No pudimos conectarnos</h1>
+      <p>Revisá tu conexión a internet y probá de nuevo. Si el problema sigue, escribinos por WhatsApp y te tomamos el pedido.</p>
+      <button onclick="location.replace('https://pizzacambalache.com.ar/menu')">Reintentar</button>
+      <a href="https://wa.me/5491169878641">Pedir por WhatsApp</a>
+    </main>
+  </body>
+</html>

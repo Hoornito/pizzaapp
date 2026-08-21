@@ -6,6 +6,8 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 import { SnackbarProvider } from './snackbar-context';
+import { PushSetup } from '@/components/notifications/PushSetup';
+import { PwaSetup } from '@/components/pwa/PwaSetup';
 
 const theme = createTheme({
   // Paleta tomada del logo: rojo tomate, verde del sombrero y crema del emblema.
@@ -77,6 +79,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <CssBaseline />
         <SessionProvider>
           <SnackbarProvider>
+            <PwaSetup />
+            <PushSetup />
             {children}
           </SnackbarProvider>
         </SessionProvider>

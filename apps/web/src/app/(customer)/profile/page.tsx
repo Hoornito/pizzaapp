@@ -12,6 +12,7 @@ import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import Avatar from '@mui/material/Avatar';
 import { useSnackbar } from '@/app/snackbar-context';
+import { PushToggle } from '@/components/notifications/PushToggle';
 
 export default function ProfilePage() {
   const { data: session, update } = useSession();
@@ -147,6 +148,8 @@ export default function ProfilePage() {
           </Button>
         </Box>
       </Paper>
+
+      <PushToggle />
 
       {/* Password change */}
       <Paper sx={{ p: 3 }}>
