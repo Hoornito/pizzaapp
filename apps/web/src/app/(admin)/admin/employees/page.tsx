@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
@@ -18,6 +19,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Switch from '@mui/material/Switch';
 import Chip from '@mui/material/Chip';
+import Tooltip from '@mui/material/Tooltip';
 import Grid from '@mui/material/Grid';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
@@ -74,6 +76,7 @@ const emptyForm: EmployeeForm = {
 };
 
 export default function EmployeesPage() {
+  const router = useRouter();
   const { showSuccess, showError } = useSnackbar();
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -299,14 +302,22 @@ export default function EmployeesPage() {
                     >
                       Cargar
                     </Button>
-                    <Button
-                      size="small"
-                      color="warning"
-                      disabled={emp.acumulado <= 0}
-                      onClick={() => openMov(emp, 'ACUMULADO_RETIRO', `Retirar a favor · ${emp.firstName} ${emp.lastName}`)}
-                    >
-                      Retirar
-                    </Button>
+                    {/* El retiro sale de la caja, así que se carga como egreso en
+                        Finanzas. Acá sólo damos el atajo con el empleado ya elegido:
+                        si lo descontáramos de una, el dinero saldría del local sin
+                        quedar registrado en la caja. */}
+                    <Tooltip title="Se carga como egreso en Finanzas">
+                      <span>
+                        <Button
+                          size="small"
+                          color="warning"
+                          disabled={emp.acumulado <= 0}
+                          onClick={() => router.push(`/admin/finance?retiro=${emp.id}`)}
+                        >
+                          Retirar
+                        </Button>
+                      </span>
+                    </Tooltip>
                   </Box>
                 </TableCell>
                 <TableCell align="center">{formatDateShort(emp.hireDate)}</TableCell>

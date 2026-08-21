@@ -5,7 +5,9 @@ import {
   FINANCE_CATEGORY_SUELDOS,
   FINANCE_CATEGORY_ADELANTOS,
   FINANCE_CATEGORY_SOBRES,
+  FINANCE_CATEGORY_RETIRO_EMPLEADO,
 } from '@/lib/constants';
+import { getEmployeeBalance } from '@/services/employee-balance.service';
 import type { CashRegister, CashShift, Prisma } from '@prisma/client';
 import type {
   FinanceTransactionInput,
@@ -158,6 +160,21 @@ export async function createFinanceTransaction(
   if (!register) {
     throw new Error('Debés abrir la caja antes de registrar movimientos.');
   }
+
+  // Retiro de lo que el empleado tenía guardado: no puede llevarse más de lo que
+  // tiene a favor. Se chequea contra la base y no sólo en el formulario, que es
+  // lo único que impide que dos pantallas abiertas dejen el acumulado en rojo.
+  if (input.category === FINANCE_CATEGORY_RETIRO_EMPLEADO && input.employeeId) {
+    const { acumulado } = await getEmployeeBalance(input.employeeId);
+    // Tolerancia de un centavo: los montos son Decimal(10,2) y no queremos que
+    // un retiro por el total exacto rebote por un redondeo.
+    if (input.amount > acumulado + 0.001) {
+      throw new Error(
+        `El empleado tiene guardado $${acumulado.toFixed(2)} y el retiro es de $${input.amount.toFixed(2)}.`
+      );
+    }
+  }
+
   const txn = await prisma.financeTransaction.create({
     data: {
       cashRegisterId: register.id,
@@ -180,6 +197,22 @@ export async function createFinanceTransaction(
         employeeId: input.employeeId,
         kind: 'ADELANTO',
         amount: input.amount,
+        financeTransactionId: txn.id,
+        createdById: userId ?? null,
+      },
+    });
+  }
+
+  // Retiro de lo guardado: descuenta el acumulado del empleado. Va vinculado al
+  // egreso, así que borrar el movimiento en Finanzas le devuelve la plata a su
+  // acumulado (deleteFinanceTransaction borra los EmployeeMovement asociados).
+  if (input.category === FINANCE_CATEGORY_RETIRO_EMPLEADO && input.employeeId) {
+    await prisma.employeeMovement.create({
+      data: {
+        employeeId: input.employeeId,
+        kind: 'ACUMULADO_RETIRO',
+        amount: input.amount,
+        note: 'Retiro de dinero guardado (desde Finanzas)',
         financeTransactionId: txn.id,
         createdById: userId ?? null,
       },

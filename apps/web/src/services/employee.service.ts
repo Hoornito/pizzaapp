@@ -1,29 +1,7 @@
 import { prisma } from '@/lib/prisma';
-import { toNumber } from '@/lib/utils';
 import { getOpenCashRegister } from '@/services/finance.service';
+import { getEmployeeBalances } from '@/services/employee-balance.service';
 import type { EmployeeInput, EmployeeMovementInput } from '@/lib/validators';
-
-/**
- * Saldos por empleado a partir de EmployeeMovement:
- *  - adelantosPendientes = ADELANTO − ADELANTO_DESCUENTO
- *  - acumulado           = ACUMULADO_APORTE − ACUMULADO_RETIRO
- */
-async function getBalancesMap() {
-  const grouped = await prisma.employeeMovement.groupBy({
-    by: ['employeeId', 'kind'],
-    _sum: { amount: true },
-  });
-  const map: Record<string, { adelantosPendientes: number; acumulado: number }> = {};
-  for (const g of grouped) {
-    if (!map[g.employeeId]) map[g.employeeId] = { adelantosPendientes: 0, acumulado: 0 };
-    const sum = toNumber(g._sum.amount);
-    if (g.kind === 'ADELANTO') map[g.employeeId].adelantosPendientes += sum;
-    else if (g.kind === 'ADELANTO_DESCUENTO') map[g.employeeId].adelantosPendientes -= sum;
-    else if (g.kind === 'ACUMULADO_APORTE') map[g.employeeId].acumulado += sum;
-    else if (g.kind === 'ACUMULADO_RETIRO') map[g.employeeId].acumulado -= sum;
-  }
-  return map;
-}
 
 export async function listEmployees(includeInactive = true) {
   const [employees, balances] = await Promise.all([
@@ -31,7 +9,7 @@ export async function listEmployees(includeInactive = true) {
       where: includeInactive ? {} : { active: true },
       orderBy: [{ active: 'desc' }, { lastName: 'asc' }, { firstName: 'asc' }],
     }),
-    getBalancesMap(),
+    getEmployeeBalances(),
   ]);
   return employees.map((e) => ({
     ...e,

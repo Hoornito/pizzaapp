@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
@@ -26,6 +27,7 @@ import Divider from '@mui/material/Divider';
 import Alert from '@mui/material/Alert';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
+import FormHelperText from '@mui/material/FormHelperText';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { StatCard } from '@/components/admin/StatCard';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -41,6 +43,7 @@ import {
   FINANCE_CATEGORY_SUELDOS,
   FINANCE_CATEGORY_ADELANTOS,
   FINANCE_CATEGORY_PROPINA,
+  FINANCE_CATEGORY_RETIRO_EMPLEADO,
 } from '@/lib/constants';
 
 type TxnType = 'INCOME' | 'EXPENSE';
@@ -62,9 +65,12 @@ const emptyForm: TxnForm = { amount: '', cashAmount: '', virtualAmount: '', cate
 const needsEmployee = (category: string) =>
   category === FINANCE_CATEGORY_SUELDOS ||
   category === FINANCE_CATEGORY_ADELANTOS ||
-  category === FINANCE_CATEGORY_PROPINA;
+  category === FINANCE_CATEGORY_PROPINA ||
+  category === FINANCE_CATEGORY_RETIRO_EMPLEADO;
 
-export default function FinancePage() {
+function FinanceContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { showSuccess, showError } = useSnackbar();
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -91,12 +97,31 @@ export default function FinancePage() {
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
 
-  useEffect(() => {
+  // Se recarga después de cada movimiento: los saldos de los empleados (lo que
+  // tienen guardado) cambian con los retiros y con los sueldos que acumulan.
+  const loadEmployees = useCallback(() => {
     fetch('/api/admin/employees?active=true')
       .then((r) => r.json())
       .then((d) => setEmployees(d.data || []))
       .catch(() => {});
   }, []);
+
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);
+
+  // Atajo desde Empleados (?retiro=<id>): abre el egreso de retiro con ese
+  // empleado ya elegido. Después limpiamos la URL para que un refresh —o volver
+  // con el botón de atrás— no lo reabra solo.
+  const retiroEmpleadoId = searchParams.get('retiro');
+  useEffect(() => {
+    if (!retiroEmpleadoId) return;
+    setTxnForm({
+      ...emptyForm,
+      category: FINANCE_CATEGORY_RETIRO_EMPLEADO,
+      employeeId: retiroEmpleadoId,
+    });
+    setTxnDialog('EXPENSE');
+    router.replace('/admin/finance');
+  }, [retiroEmpleadoId, router]);
 
   const register = summary?.register || null;
   const totals = summary?.totals || null;
@@ -111,6 +136,24 @@ export default function FinancePage() {
 
   const categories = txnDialog === 'INCOME' ? FINANCE_INCOME_CATEGORIES : FINANCE_EXPENSE_CATEGORIES;
 
+  // ─── Derivados del formulario ──────────────────────────────────────────
+  const esRetiroEmpleado = txnForm.category === FINANCE_CATEGORY_RETIRO_EMPLEADO;
+  const empleadoSeleccionado = employees.find((e) => e.id === txnForm.employeeId) ?? null;
+  // Lo que el empleado tiene guardado hoy (acumulado a favor).
+  const guardadoDisponible = Number(empleadoSeleccionado?.acumulado ?? 0);
+  // En mixto el total sale de sumar los dos campos, que se cargan a mano: nunca
+  // se parte de un total para repartirlo.
+  const montoTotal =
+    txnForm.paymentMethod === 'MIXTO'
+      ? Number(txnForm.cashAmount || 0) + Number(txnForm.virtualAmount || 0)
+      : Number(txnForm.amount || 0);
+  // Un centavo de tolerancia: los montos son Decimal(10,2) y retirar el total
+  // exacto no tiene que rebotar por un redondeo.
+  // Si la lista de empleados todavía no cargó, no marcamos exceso: el saldo se
+  // leería como 0 y el formulario se pintaría en rojo por un instante.
+  const retiroExcedido =
+    esRetiroEmpleado && empleadoSeleccionado !== null && montoTotal > guardadoDisponible + 0.001;
+
   const handleSaveTxn = async () => {
     if (!txnDialog) return;
     setSaving(true);
@@ -119,9 +162,7 @@ export default function FinancePage() {
       const isMixto = txnForm.paymentMethod === 'MIXTO';
       // En mixto el total = efectivo + virtual (ambos a mano).
       // En Sueldos, el monto (retiro de caja) puede quedar en 0 si todo va "a favor".
-      const amount = isMixto
-        ? Number(txnForm.cashAmount || 0) + Number(txnForm.virtualAmount || 0)
-        : Number(txnForm.amount || 0);
+      const amount = montoTotal;
       const res = await fetch('/api/admin/finance/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -145,6 +186,7 @@ export default function FinancePage() {
       showSuccess(txnDialog === 'INCOME' ? 'Ingreso registrado' : 'Egreso registrado');
       setTxnDialog(null);
       loadSummary();
+      loadEmployees();
     } catch {
       showError('Error de conexión');
     } finally {
@@ -163,6 +205,8 @@ export default function FinancePage() {
       }
       showSuccess('Movimiento eliminado');
       loadSummary();
+      // Borrar un retiro/adelanto le devuelve el saldo al empleado.
+      loadEmployees();
     } catch {
       showError('Error de conexión');
     }
@@ -558,8 +602,14 @@ export default function FinancePage() {
                     ...p,
                     category: e.target.value,
                     employeeId: '',
-                    // La propina siempre es en efectivo.
-                    paymentMethod: e.target.value === FINANCE_CATEGORY_PROPINA ? 'EFECTIVO' : p.paymentMethod,
+                    // La propina siempre es en efectivo, y al empleado no se le
+                    // paga con la tarjeta del local: en ambos casos corregimos
+                    // el método si el que había quedado ya no aplica.
+                    paymentMethod:
+                      e.target.value === FINANCE_CATEGORY_PROPINA ||
+                      (e.target.value === FINANCE_CATEGORY_RETIRO_EMPLEADO && p.paymentMethod === 'TARJETA')
+                        ? 'EFECTIVO'
+                        : p.paymentMethod,
                   }))
                 }
               >
@@ -588,18 +638,28 @@ export default function FinancePage() {
                       </MenuItem>
                     )}
                     {opciones.map((emp) => (
-                      <MenuItem key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName}</MenuItem>
+                      // En el retiro mostramos cuánto tiene guardado cada uno, así
+                      // no hay que ir hasta Empleados a fijarse.
+                      <MenuItem key={emp.id} value={emp.id}>
+                        {emp.firstName} {emp.lastName}
+                        {esRetiroEmpleado ? ` — guardado: ${formatCurrency(Number(emp.acumulado ?? 0))}` : ''}
+                      </MenuItem>
                     ))}
                   </Select>
+                  {esRetiroEmpleado && empleadoSeleccionado && (
+                    <FormHelperText>
+                      Tiene guardado {formatCurrency(guardadoDisponible)}. No puede retirar más que eso.
+                    </FormHelperText>
+                  )}
                 </FormControl>
               );
             })()}
 
             {/* 3. Método de pago (la propina queda fija en efectivo) */}
             <FormControl fullWidth>
-              <InputLabel>Método de pago *</InputLabel>
+              <InputLabel>{esRetiroEmpleado ? 'Método de retiro *' : 'Método de pago *'}</InputLabel>
               <Select
-                label="Método de pago *"
+                label={esRetiroEmpleado ? 'Método de retiro *' : 'Método de pago *'}
                 value={txnForm.paymentMethod}
                 disabled={txnForm.category === FINANCE_CATEGORY_PROPINA}
                 onChange={(e) => setTxnForm((p) => ({ ...p, paymentMethod: e.target.value }))}
@@ -607,6 +667,8 @@ export default function FinancePage() {
                 {FINANCE_PAYMENT_METHODS
                   // "Mixto" solo tiene sentido en egresos.
                   .filter((m) => m !== 'MIXTO' || txnDialog === 'EXPENSE')
+                  // Al empleado se le da la plata en mano o por transferencia.
+                  .filter((m) => m !== 'TARJETA' || !esRetiroEmpleado)
                   .map((m) => (
                     <MenuItem key={m} value={m}>{FINANCE_PAYMENT_METHOD_LABELS[m]}</MenuItem>
                   ))}
@@ -615,21 +677,32 @@ export default function FinancePage() {
 
             {/* 4. Monto (debajo del método). En mixto: efectivo + virtual, ambos a mano. */}
             {txnForm.paymentMethod === 'MIXTO' ? (
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
-                <TextField
-                  label="En efectivo *"
-                  type="number"
-                  inputProps={{ min: 0, step: 0.01 }}
-                  value={txnForm.cashAmount}
-                  onChange={(e) => setTxnForm((p) => ({ ...p, cashAmount: e.target.value }))}
-                />
-                <TextField
-                  label="Virtual *"
-                  type="number"
-                  inputProps={{ min: 0, step: 0.01 }}
-                  value={txnForm.virtualAmount}
-                  onChange={(e) => setTxnForm((p) => ({ ...p, virtualAmount: e.target.value }))}
-                />
+              <Box>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                  <TextField
+                    label="En efectivo *"
+                    type="number"
+                    inputProps={{ min: 0, step: 0.01 }}
+                    value={txnForm.cashAmount}
+                    error={retiroExcedido}
+                    onChange={(e) => setTxnForm((p) => ({ ...p, cashAmount: e.target.value }))}
+                  />
+                  <TextField
+                    // En el retiro la parte virtual siempre es una transferencia.
+                    label={esRetiroEmpleado ? 'Transferencia *' : 'Virtual *'}
+                    type="number"
+                    inputProps={{ min: 0, step: 0.01 }}
+                    value={txnForm.virtualAmount}
+                    error={retiroExcedido}
+                    onChange={(e) => setTxnForm((p) => ({ ...p, virtualAmount: e.target.value }))}
+                  />
+                </Box>
+                {/* Cada campo se carga a mano: el total es la suma, no un reparto. */}
+                <FormHelperText error={retiroExcedido}>
+                  {retiroExcedido
+                    ? `Entre los dos suman ${formatCurrency(montoTotal)} y sólo tiene guardado ${formatCurrency(guardadoDisponible)}.`
+                    : `Total a entregar: ${formatCurrency(montoTotal)}`}
+                </FormHelperText>
               </Box>
             ) : (
               <TextField
@@ -639,10 +712,17 @@ export default function FinancePage() {
                 value={txnForm.amount}
                 onChange={(e) => setTxnForm((p) => ({ ...p, amount: e.target.value }))}
                 fullWidth
+                error={retiroExcedido}
                 helperText={
                   txnForm.category === FINANCE_CATEGORY_SUELDOS
                     ? 'Lo que el empleado se lleva ahora (sale de caja). Si todo queda a favor, dejalo vacío.'
-                    : undefined
+                    : esRetiroEmpleado
+                      ? retiroExcedido
+                        ? `No puede retirar más de ${formatCurrency(guardadoDisponible)}.`
+                        : empleadoSeleccionado
+                          ? `Máximo ${formatCurrency(guardadoDisponible)}.`
+                          : 'Elegí primero el empleado.'
+                      : undefined
                 }
               />
             )}
@@ -704,6 +784,20 @@ export default function FinancePage() {
                 </Box>
               );
             })()
+          ) : esRetiroEmpleado && empleadoSeleccionado ? (
+            // Corroborar con qué se queda el empleado después del retiro.
+            <Box>
+              <Typography variant="caption" color="text.secondary" display="block">
+                Le queda guardado
+              </Typography>
+              <Typography
+                variant="h6"
+                fontWeight={800}
+                color={retiroExcedido ? 'error.main' : 'primary.main'}
+              >
+                {formatCurrency(guardadoDisponible - montoTotal)}
+              </Typography>
+            </Box>
           ) : (
             <Box />
           )}
@@ -715,6 +809,8 @@ export default function FinancePage() {
               disabled={(() => {
                 if (saving || !txnForm.category) return true;
                 if (needsEmployee(txnForm.category) && !txnForm.employeeId) return true;
+                // No se puede retirar más de lo que el empleado tiene guardado.
+                if (retiroExcedido) return true;
                 if (txnForm.paymentMethod === 'MIXTO') {
                   return !(Number(txnForm.cashAmount) > 0) || !(Number(txnForm.virtualAmount) > 0);
                 }
@@ -833,6 +929,15 @@ export default function FinancePage() {
         </DialogActions>
       </Dialog>
     </Box>
+  );
+}
+
+// useSearchParams() exige un límite de Suspense para poder prerenderar la página.
+export default function FinancePage() {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <FinanceContent />
+    </Suspense>
   );
 }
 

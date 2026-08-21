@@ -112,6 +112,7 @@ export const FINANCE_INCOME_CATEGORIES = [
 export const FINANCE_EXPENSE_CATEGORIES = [
   'Sueldos',
   'Adelantos',
+  'Retiro de dinero empleado',
   'Propina',
   'Proveedores',
   'Servicios (Luz, Gas, etc.)',
@@ -123,6 +124,9 @@ export const FINANCE_EXPENSE_CATEGORIES = [
 // Categorías usadas en los reportes financieros
 export const FINANCE_CATEGORY_SUELDOS = 'Sueldos';
 export const FINANCE_CATEGORY_ADELANTOS = 'Adelantos';
+// El empleado se lleva parte de lo que tenía guardado (acumulado a favor). Sale
+// de caja y descuenta su acumulado en Empleados.
+export const FINANCE_CATEGORY_RETIRO_EMPLEADO = 'Retiro de dinero empleado';
 export const FINANCE_CATEGORY_PROPINA = 'Propina';
 export const FINANCE_CATEGORY_SOBRES = 'Retiro en sobre';
 // Retiro del "dinero a favor" generado por la venta de postres (egreso en Finanzas).

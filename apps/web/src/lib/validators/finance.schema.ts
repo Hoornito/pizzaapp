@@ -7,12 +7,14 @@ import {
   FINANCE_CATEGORY_SUELDOS,
   FINANCE_CATEGORY_ADELANTOS,
   FINANCE_CATEGORY_PROPINA,
+  FINANCE_CATEGORY_RETIRO_EMPLEADO,
 } from '@/lib/constants';
 
 const EMPLOYEE_CATEGORIES: readonly string[] = [
   FINANCE_CATEGORY_SUELDOS,
   FINANCE_CATEGORY_ADELANTOS,
   FINANCE_CATEGORY_PROPINA,
+  FINANCE_CATEGORY_RETIRO_EMPLEADO,
 ];
 
 export const financeTransactionSchema = z
@@ -52,7 +54,7 @@ export const financeTransactionSchema = z
         message: 'El monto debe ser mayor a 0',
       });
     }
-    // Sueldos, Adelantos y Propina requieren empleado asociado
+    // Sueldos, Adelantos, Propina y Retiro de dinero requieren empleado asociado
     if (EMPLOYEE_CATEGORIES.includes(data.category) && !data.employeeId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -66,6 +68,18 @@ export const financeTransactionSchema = z
         code: z.ZodIssueCode.custom,
         path: ['paymentMethod'],
         message: 'La propina se paga en efectivo',
+      });
+    }
+    // El retiro de lo guardado se le entrega en mano o por transferencia: con la
+    // tarjeta del local no se le paga a un empleado.
+    if (
+      data.category === FINANCE_CATEGORY_RETIRO_EMPLEADO &&
+      data.paymentMethod === 'TARJETA'
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['paymentMethod'],
+        message: 'El retiro se entrega en efectivo, por transferencia o mixto',
       });
     }
     // MIXTO: el efectivo no puede superar el total.
