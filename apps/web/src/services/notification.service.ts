@@ -38,12 +38,16 @@ function setupEventListeners() {
   });
 }
 
-let listenersSetup = false;
+// La marca va en globalThis y no en una variable de módulo: ahora que el bus se
+// comparte entre los dos grafos de módulos, un módulo evaluado dos veces podría
+// registrar los listeners por duplicado y mandar todo (mail, WhatsApp, push) dos
+// veces por cada cambio de estado.
+const globalForListeners = globalThis as unknown as { notificationListenersReady?: boolean };
 
 export function initNotificationListeners() {
-  if (listenersSetup) return;
+  if (globalForListeners.notificationListenersReady) return;
+  globalForListeners.notificationListenersReady = true;
   setupEventListeners();
-  listenersSetup = true;
   console.log('[NotificationService] Event listeners registered');
 }
 

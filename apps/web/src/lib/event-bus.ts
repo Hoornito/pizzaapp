@@ -25,4 +25,10 @@ const globalForBus = globalThis as unknown as { eventBus: TypedEventEmitter | un
 
 export const eventBus = globalForBus.eventBus ?? new TypedEventEmitter();
 
-if (process.env.NODE_ENV !== 'production') globalForBus.eventBus = eventBus;
+// El global va SIEMPRE, también en producción (misma razón que socket-server.ts).
+// Quien emite son las rutas de API, que corren dentro del bundle de Next; quien
+// escucha es server.ts, que corre con tsx. Son dos grafos de módulos separados:
+// sin este global cada uno se arma su propio EventEmitter y los eventos nunca
+// cruzan. Con `if (NODE_ENV !== 'production')` andaba en dev y en producción no
+// se disparaba ni un mail, ni un WhatsApp de cambio de estado, ni un push.
+globalForBus.eventBus = eventBus;
