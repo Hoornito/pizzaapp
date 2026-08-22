@@ -161,6 +161,25 @@ export async function createFinanceTransaction(
     throw new Error('Debés abrir la caja antes de registrar movimientos.');
   }
 
+  // Devolución de adelanto: no puede devolver más de lo que debe. Sin este
+  // control quedaba "adelantos pendientes" en negativo, que después no hay
+  // forma de corregir desde la pantalla.
+  if (
+    input.category === FINANCE_CATEGORY_SUELDOS &&
+    input.employeeId &&
+    input.devolucionAdelanto &&
+    input.devolucionAdelanto > 0
+  ) {
+    const { adelantosPendientes } = await getEmployeeBalance(input.employeeId);
+    if (input.devolucionAdelanto > adelantosPendientes + 0.001) {
+      throw new Error(
+        adelantosPendientes <= 0
+          ? 'El empleado no tiene adelantos pendientes de devolución.'
+          : `El empleado debe $${adelantosPendientes.toFixed(2)} de adelanto y la devolución es de $${input.devolucionAdelanto.toFixed(2)}.`
+      );
+    }
+  }
+
   // Retiro de lo que el empleado tenía guardado: no puede llevarse más de lo que
   // tiene a favor. Se chequea contra la base y no sólo en el formulario, que es
   // lo único que impide que dos pantallas abiertas dejen el acumulado en rojo.
@@ -630,6 +649,14 @@ export async function getFinanceSummary() {
   });
   const accByTxn = new Map(aportes.map((a) => [a.financeTransactionId, toNumber(a.amount)]));
 
+  // Ídem con las devoluciones de adelanto: tampoco salen de caja, y un sueldo
+  // que sólo registra una devolución quedaría en el libro como un $0 pelado.
+  const devoluciones = await prisma.employeeMovement.findMany({
+    where: { kind: 'ADELANTO_DESCUENTO', financeTransactionId: { in: manualTxns.map((t) => t.id) } },
+    select: { financeTransactionId: true, amount: true },
+  });
+  const devByTxn = new Map(devoluciones.map((d) => [d.financeTransactionId, toNumber(d.amount)]));
+
   const orderTotalSales = ordersSession.reduce((s, o) => s + toNumber(o.total), 0);
   // efectivo del turno = efectivo puro + porción en efectivo de los mixtos
   const orderCashSales = ordersSession.reduce((s, o) => s + orderCashPortion(o), 0);
@@ -666,6 +693,7 @@ export async function getFinanceSummary() {
       amount: toNumber(t.amount),
       employeeName: t.employee ? `${t.employee.firstName} ${t.employee.lastName}` : null,
       accumulate: accByTxn.get(t.id) ?? 0,
+      devolucionAdelanto: devByTxn.get(t.id) ?? 0,
     })),
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 

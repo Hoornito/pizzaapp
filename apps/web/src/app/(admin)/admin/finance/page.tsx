@@ -154,6 +154,17 @@ function FinanceContent() {
   const retiroExcedido =
     esRetiroEmpleado && empleadoSeleccionado !== null && montoTotal > guardadoDisponible + 0.001;
 
+  // Sueldos: lo que el empleado todavía debe de adelantos. La devolución no
+  // puede pasarse de ahí — si se pasa, el pendiente queda en negativo y desde
+  // la pantalla no hay forma de volverlo a cero.
+  const esSueldo = txnForm.category === FINANCE_CATEGORY_SUELDOS;
+  const adelantoPendiente = Number(empleadoSeleccionado?.adelantosPendientes ?? 0);
+  const devolucionIngresada = Number(txnForm.devolucionAdelanto || 0);
+  const devolucionExcedida =
+    esSueldo &&
+    empleadoSeleccionado !== null &&
+    devolucionIngresada > adelantoPendiente + 0.001;
+
   const handleSaveTxn = async () => {
     if (!txnDialog) return;
     setSaving(true);
@@ -471,6 +482,11 @@ function FinanceContent() {
                               ↳ Acumula a favor: {formatCurrency(row.accumulate)} (no sale de caja)
                             </Typography>
                           )}
+                          {(row.devolucionAdelanto ?? 0) > 0 && (
+                            <Typography variant="caption" color="info.main" display="block">
+                              ↳ Devuelve de adelanto: {formatCurrency(row.devolucionAdelanto)} (no sale de caja)
+                            </Typography>
+                          )}
                           {row.source === 'ORDER' && (
                             <Chip label="Venta" size="small" sx={{ ml: 1, height: 18 }} />
                           )}
@@ -479,7 +495,8 @@ function FinanceContent() {
                           {FINANCE_PAYMENT_METHOD_LABELS[row.paymentMethod] || row.paymentMethod}
                         </TableCell>
                         <TableCell align="right">
-                          {row.amount > 0 || (row.accumulate ?? 0) <= 0 ? (
+                          {row.amount > 0 ||
+                          ((row.accumulate ?? 0) <= 0 && (row.devolucionAdelanto ?? 0) <= 0) ? (
                             <Typography
                               variant="body2"
                               fontWeight={600}
@@ -488,9 +505,10 @@ function FinanceContent() {
                               {isIncome ? '+' : '−'} {formatCurrency(row.amount)}
                             </Typography>
                           ) : (
-                            // Sueldo que quedó todo a favor: no sale de caja.
+                            // Sueldo que no sacó plata de la caja: quedó a favor
+                            // del empleado, o fue solo una devolución de adelanto.
                             <Typography variant="body2" fontWeight={600} color="info.main">
-                              {formatCurrency(row.accumulate)}
+                              {formatCurrency((row.accumulate ?? 0) || (row.devolucionAdelanto ?? 0))}
                             </Typography>
                           )}
                         </TableCell>
@@ -745,11 +763,21 @@ function FinanceContent() {
               <TextField
                 label="Devolución de adelanto (opcional)"
                 type="number"
-                inputProps={{ min: 0, step: 0.01 }}
+                inputProps={{ min: 0, max: adelantoPendiente, step: 0.01 }}
                 value={txnForm.devolucionAdelanto}
                 onChange={(e) => setTxnForm((p) => ({ ...p, devolucionAdelanto: e.target.value }))}
                 fullWidth
-                helperText="Monto que el empleado devuelve de su adelanto. Descuenta directamente su adelanto pendiente en Empleados."
+                disabled={!txnForm.employeeId || adelantoPendiente <= 0}
+                error={devolucionExcedida}
+                helperText={
+                  !txnForm.employeeId
+                    ? 'Elegí primero el empleado.'
+                    : adelantoPendiente <= 0
+                      ? 'No tiene adelantos pendientes de devolución.'
+                      : devolucionExcedida
+                        ? `No puede devolver más de ${formatCurrency(adelantoPendiente)}.`
+                        : `Debe ${formatCurrency(adelantoPendiente)} de adelanto. Descuenta su pendiente en Empleados.`
+                }
               />
             )}
 
@@ -810,13 +838,24 @@ function FinanceContent() {
                 if (saving || !txnForm.category) return true;
                 if (needsEmployee(txnForm.category) && !txnForm.employeeId) return true;
                 // No se puede retirar más de lo que el empleado tiene guardado.
-                if (retiroExcedido) return true;
-                if (txnForm.paymentMethod === 'MIXTO') {
-                  return !(Number(txnForm.cashAmount) > 0) || !(Number(txnForm.virtualAmount) > 0);
+                if (retiroExcedido || devolucionExcedida) return true;
+                const esMixto = txnForm.paymentMethod === 'MIXTO';
+                // Sueldos: alcanza con cualquiera de los tres. Se puede cargar
+                // solo lo que acumula a favor, o solo una devolución de
+                // adelanto, sin que salga un peso de la caja. Ojo: el retiro en
+                // mixto es la suma de los dos campos, no `amount`.
+                if (esSueldo) {
+                  const hayAlgo =
+                    montoTotal > 0 || Number(txnForm.accumulate) > 0 || devolucionIngresada > 0;
+                  if (!hayAlgo) return true;
+                  // Sólo exigimos las dos partes del mixto si algo sale de caja.
+                  if (esMixto && montoTotal > 0) {
+                    return !(Number(txnForm.cashAmount) > 0) || !(Number(txnForm.virtualAmount) > 0);
+                  }
+                  return false;
                 }
-                // Sueldos: alcanza con el retiro O con lo que acumula a favor.
-                if (txnForm.category === FINANCE_CATEGORY_SUELDOS) {
-                  return !(Number(txnForm.amount) > 0 || Number(txnForm.accumulate) > 0);
+                if (esMixto) {
+                  return !(Number(txnForm.cashAmount) > 0) || !(Number(txnForm.virtualAmount) > 0);
                 }
                 return !(Number(txnForm.amount) > 0);
               })()}

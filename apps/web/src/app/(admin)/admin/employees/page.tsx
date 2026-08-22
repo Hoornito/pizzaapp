@@ -480,7 +480,9 @@ export default function EmployeesPage() {
       </Dialog>
 
       {/* Modal: historial de movimientos del empleado */}
-      <Dialog open={histCtx !== null} onClose={() => setHistCtx(null)} maxWidth="sm" fullWidth>
+      {/* Ancho "md": con "sm" la tabla de movimientos no entraba y había que
+          scrollear de costado para leer la nota. */}
+      <Dialog open={histCtx !== null} onClose={() => setHistCtx(null)} maxWidth="md" fullWidth>
         <DialogTitle>
           Movimientos · {histCtx?.firstName} {histCtx?.lastName}
         </DialogTitle>

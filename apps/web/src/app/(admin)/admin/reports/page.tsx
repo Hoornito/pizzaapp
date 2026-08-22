@@ -16,6 +16,7 @@ import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
+import TableFooter from '@mui/material/TableFooter';
 import TableRow from '@mui/material/TableRow';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
@@ -199,8 +200,11 @@ export default function AdminReportsPage() {
                     ({report.finance.expenses.length} movimiento{report.finance.expenses.length === 1 ? '' : 's'})
                   </Typography>
                 </Box>
-                <TableContainer>
-                  <Table size="small">
+                {/* Alto acotado a ~10 filas: con muchos gastos la tarjeta se
+                    estiraba y empujaba todo el reporte para abajo. El encabezado
+                    y la fila de total quedan fijos mientras se scrollea. */}
+                <TableContainer sx={{ maxHeight: 440 }}>
+                  <Table size="small" stickyHeader>
                     <TableHead>
                       <TableRow>
                         <TableCell><strong>Fecha</strong></TableCell>
@@ -235,6 +239,20 @@ export default function AdminReportsPage() {
                           </TableCell>
                         </TableRow>
                       ))}
+                    </TableBody>
+                    <TableFooter
+                      sx={{
+                        '& td': {
+                          position: 'sticky',
+                          bottom: 0,
+                          bgcolor: 'background.paper',
+                          borderTop: '2px solid',
+                          borderTopColor: 'divider',
+                          color: 'text.primary',
+                          fontSize: '0.875rem',
+                        },
+                      }}
+                    >
                       <TableRow>
                         <TableCell colSpan={4}><strong>Total gastado</strong></TableCell>
                         <TableCell align="right">
@@ -249,7 +267,7 @@ export default function AdminReportsPage() {
                           </strong>
                         </TableCell>
                       </TableRow>
-                    </TableBody>
+                    </TableFooter>
                   </Table>
                 </TableContainer>
               </Paper>

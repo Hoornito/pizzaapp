@@ -43,11 +43,15 @@ export const financeTransactionSchema = z
         message: 'Categoría inválida para este tipo de movimiento',
       });
     }
-    // El monto solo puede ser 0 en Sueldos cuando todo queda "a favor"
-    // (acumulado > 0). En cualquier otro caso, el monto debe ser mayor a 0.
+    // En Sueldos el monto es lo que SALE DE CAJA, y puede ser 0: el empleado
+    // puede dejar todo a favor, o solo devolver parte de un adelanto. En esos
+    // casos no se mueve plata de la caja pero el movimiento igual hay que
+    // registrarlo. Para el resto de las categorías el monto va sí o sí.
     const acumulado = data.accumulate ?? 0;
-    const soloAcumulado = data.category === FINANCE_CATEGORY_SUELDOS && acumulado > 0;
-    if (data.amount <= 0 && !soloAcumulado) {
+    const devolucion = data.devolucionAdelanto ?? 0;
+    const sinRetiroDeCaja =
+      data.category === FINANCE_CATEGORY_SUELDOS && (acumulado > 0 || devolucion > 0);
+    if (data.amount <= 0 && !sinRetiroDeCaja) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['amount'],
@@ -82,8 +86,10 @@ export const financeTransactionSchema = z
         message: 'El retiro se entrega en efectivo, por transferencia o mixto',
       });
     }
-    // MIXTO: el efectivo no puede superar el total.
-    if (data.paymentMethod === 'MIXTO') {
+    // MIXTO: el efectivo no puede superar el total. Sólo aplica si algo sale de
+    // caja: en un sueldo que solo acumula a favor o devuelve un adelanto, el
+    // total es 0 y repartirlo entre efectivo y virtual no significa nada.
+    if (data.paymentMethod === 'MIXTO' && data.amount > 0) {
       const cash = data.cashAmount ?? 0;
       if (cash <= 0 || cash >= data.amount) {
         ctx.addIssue({
