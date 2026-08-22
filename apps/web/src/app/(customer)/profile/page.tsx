@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Container from '@mui/material/Container';
@@ -13,9 +13,10 @@ import Divider from '@mui/material/Divider';
 import Avatar from '@mui/material/Avatar';
 import { useSnackbar } from '@/app/snackbar-context';
 import { PushToggle } from '@/components/notifications/PushToggle';
+import { AddressBook } from '@/components/profile/AddressBook';
 
 export default function ProfilePage() {
-  const { data: session, update } = useSession();
+  const { data: session, status, update } = useSession();
   const router = useRouter();
   const { showSuccess, showError } = useSnackbar();
   const [loading, setLoading] = useState(false);
@@ -27,10 +28,15 @@ export default function ProfilePage() {
     confirmPassword: '',
   });
 
-  if (!session) {
-    router.push('/login?callbackUrl=/profile');
-    return null;
-  }
+  // El redirect va en un efecto y no en el cuerpo del render: navegar durante el
+  // render rompe en el servidor ("location is not defined") y tiraba una
+  // excepción en cada carga de la página. Además esperamos a que la sesión
+  // termine de resolverse: mientras está en 'loading' todavía no sabemos nada.
+  useEffect(() => {
+    if (status === 'unauthenticated') router.push('/login?callbackUrl=/profile');
+  }, [status, router]);
+
+  if (!session) return null;
 
   const handleUpdateProfile = async () => {
     setLoading(true);
@@ -148,6 +154,8 @@ export default function ProfilePage() {
           </Button>
         </Box>
       </Paper>
+
+      <AddressBook />
 
       <PushToggle />
 

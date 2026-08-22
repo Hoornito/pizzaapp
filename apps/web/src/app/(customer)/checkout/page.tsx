@@ -31,13 +31,6 @@ import { TRANSFER_INFO, isCityInDeliveryZone, DELIVERY_ZONE_LABEL } from '@/lib/
 import { CopyButton } from '@/components/ui/CopyButton';
 import { pointInPolygon, DELIVERY_ZONE_POLYGON } from '@/lib/geo';
 import { buscarBarrio } from '@/lib/delivery-areas';
-import dynamic from 'next/dynamic';
-
-// El mapa usa Leaflet (window) -> solo en el cliente.
-const DeliveryZoneMap = dynamic(
-  () => import('@/components/products/DeliveryZoneMap').then((m) => m.DeliveryZoneMap),
-  { ssr: false, loading: () => <Box sx={{ height: 220, borderRadius: 2, bgcolor: 'grey.100' }} /> }
-);
 import { useSnackbar } from '@/app/snackbar-context';
 
 const STEPS = ['Tu pedido', 'Datos de entrega', 'Pago'];
@@ -256,7 +249,16 @@ export default function CheckoutPage() {
     return true; // no pudimos geocodificar -> no bloqueamos al cliente
   };
 
-  const handleSubmitOrder = async () => {
+  /**
+   * Confirma el pedido. Los dos diálogos (guardar dirección / fuera de zona) lo
+   * vuelven a llamar pasando la decisión POR PARÁMETRO y no por estado: al
+   * re-invocarlo desde el propio diálogo, el closure todavía tiene el estado
+   * viejo (`saveAddress === null`) y volvía a preguntar lo mismo una segunda vez.
+   */
+  const handleSubmitOrder = async (decision?: { guardarDireccion?: boolean; zonaConfirmada?: boolean }) => {
+    const guardarDireccion = decision?.guardarDireccion ?? saveAddress;
+    const zonaConfirmada = decision?.zonaConfirmada ?? zoneConfirmed;
+
     if (!session) {
       router.push('/login?callbackUrl=/checkout');
       return;
@@ -284,15 +286,15 @@ export default function CheckoutPage() {
     // los countries y barrios cerrados de la zona no los ubica bien el geocoder
     // (busca "Barrio X" y lo manda a otro partido), y quedaban afuera pudiendo
     // pedir. Preguntamos y decide el cliente.
-    if (form.deliveryType === 'DELIVERY' && !zoneConfirmed) {
+    if (form.deliveryType === 'DELIVERY' && !zonaConfirmada) {
       setLoading(true);
       const inZone = await checkDeliveryZone();
       setLoading(false);
       if (!inZone) { setZoneWarning(true); return; }
     }
 
-    // Dirección nueva: preguntamos si la guarda para la próxima.
-    if (form.deliveryType === 'DELIVERY' && !addressId && saveAddress === null) {
+    // Dirección nueva: preguntamos si la guarda para la próxima. Una sola vez.
+    if (form.deliveryType === 'DELIVERY' && !addressId && guardarDireccion === null) {
       setAskSave(true);
       return;
     }
@@ -322,7 +324,7 @@ export default function CheckoutPage() {
                   state: form.state || undefined,
                   reference: form.reference || undefined,
                 },
-                saveAddress: saveAddress === true,
+                saveAddress: guardarDireccion === true,
               }
           : {}),
         notes: form.notes,
@@ -640,12 +642,6 @@ export default function CheckoutPage() {
                     <TextField label="Provincia" value={form.state} onChange={(e) => handleChange('state', e.target.value)} />
                     <TextField label="Referencia" value={form.reference} onChange={(e) => handleChange('reference', e.target.value)} />
                   </Box>
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                      🛵 Zona de reparto aproximada (podemos llegar a {DELIVERY_ZONE_LABEL} y alrededores)
-                    </Typography>
-                    <DeliveryZoneMap />
-                  </Box>
                 </>
               )}
 
@@ -796,7 +792,7 @@ export default function CheckoutPage() {
                 <Button
                   variant="contained"
                   size="large"
-                  onClick={session ? handleSubmitOrder : () => router.push('/login?callbackUrl=/checkout')}
+                  onClick={session ? () => void handleSubmitOrder() : () => router.push('/login?callbackUrl=/checkout')}
                   disabled={
                     loading ||
                     (form.paymentMethod === 'MIXTO' &&
@@ -828,14 +824,14 @@ export default function CheckoutPage() {
           </DialogContent>
           <DialogActions>
             <Button
-              onClick={() => { setSaveAddress(false); setAskSave(false); setTimeout(handleSubmitOrder, 0); }}
+              onClick={() => { setSaveAddress(false); setAskSave(false); void handleSubmitOrder({ guardarDireccion: false }); }}
               disabled={loading}
             >
               No, gracias
             </Button>
             <Button
               variant="contained"
-              onClick={() => { setSaveAddress(true); setAskSave(false); setTimeout(handleSubmitOrder, 0); }}
+              onClick={() => { setSaveAddress(true); setAskSave(false); void handleSubmitOrder({ guardarDireccion: true }); }}
               disabled={loading}
             >
               Sí, guardar
@@ -859,7 +855,7 @@ export default function CheckoutPage() {
             <Button onClick={() => setZoneWarning(false)} disabled={loading}>Revisar la dirección</Button>
             <Button
               variant="contained"
-              onClick={() => { setZoneConfirmed(true); setZoneWarning(false); setTimeout(handleSubmitOrder, 0); }}
+              onClick={() => { setZoneConfirmed(true); setZoneWarning(false); void handleSubmitOrder({ zonaConfirmada: true }); }}
               disabled={loading}
             >
               Estoy en la zona, seguir
