@@ -24,7 +24,11 @@ export const orderItemSchema = z.object({
 
 export const orderAddressSchema = z.object({
   street: z.string().min(1, 'La calle es requerida'),
-  number: z.string().min(1, 'El número es requerido'),
+  // Opcional a propósito: en los countries y barrios cerrados de la zona el
+  // cliente no siempre sabe el lote, y la calle es una ruta sin altura. Quien
+  // valida que se pueda ubicar es `esDireccionUbicable` (delivery-area.service),
+  // que exige número SALVO que la dirección nombre un barrio cargado.
+  number: z.string().nullish(),
   apartment: z.string().nullish(),
   city: z.string().min(1, 'La ciudad es requerida'),
   state: z.string().nullish(),

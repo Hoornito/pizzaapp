@@ -13,6 +13,10 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Divider from '@mui/material/Divider';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
 import { useSnackbar } from '@/app/snackbar-context';
@@ -36,6 +40,10 @@ const formVacio = { street: '', number: '', apartment: '', city: '', state: '', 
  */
 export function AddressBook() {
   const [addresses, setAddresses] = useState<Address[]>([]);
+  // Barrios/countries cargados por el local. Elegir uno alcanza como dirección:
+  // dan sobre una ruta y el cliente no sabe el kilómetro.
+  const [areas, setAreas] = useState<{ name: string; active: boolean }[]>([]);
+  const [barrioSel, setBarrioSel] = useState('');
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState(false);
   const [form, setForm] = useState(formVacio);
@@ -54,14 +62,34 @@ export function AddressBook() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    fetch('/api/settings/delivery-areas', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setAreas(d.data || []))
+      .catch(() => {});
+  }, []);
+
+  const areasActivas = areas.filter((a) => a.active !== false);
+
+  const elegirBarrio = (nombre: string) => {
+    setBarrioSel(nombre);
+    setForm((p) => ({ ...p, street: nombre, ...(nombre ? {} : { street: '', number: '' }) }));
+  };
+
   const abrir = () => {
     setForm(formVacio);
+    setBarrioSel('');
     setDialog(true);
   };
 
   const guardar = async () => {
-    if (!form.street.trim() || !form.number.trim() || !form.city.trim()) {
-      showError('Completá calle, número y ciudad');
+    if (!form.street.trim() || !form.city.trim()) {
+      showError('Completá la dirección y la ciudad');
+      return;
+    }
+    // En un barrio de la lista alcanza con el nombre; en una calle, no.
+    if (!barrioSel && !form.number.trim()) {
+      showError('Poné la altura de la calle, o elegí tu barrio cerrado de la lista');
       return;
     }
     setSaving(true);
@@ -159,17 +187,39 @@ export function AddressBook() {
           {/* Mismos campos que el checkout: en la zona hay barrios cerrados que
               van con nombre de barrio y número de lote en vez de calle y altura. */}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-            <TextField
-              label="Calle / Barrio cerrado *"
-              value={form.street}
-              onChange={(e) => setForm((p) => ({ ...p, street: e.target.value }))}
-              fullWidth
-            />
+            {areasActivas.length > 0 && (
+              <FormControl fullWidth>
+                <InputLabel>¿Es un barrio cerrado o country?</InputLabel>
+                <Select
+                  label="¿Es un barrio cerrado o country?"
+                  value={barrioSel}
+                  onChange={(e) => elegirBarrio(e.target.value)}
+                  sx={{ textTransform: 'capitalize' }}
+                >
+                  <MenuItem value="">No, es una dirección de calle</MenuItem>
+                  {/* Los nombres se cargan en minúscula desde Configuración. */}
+                  {areasActivas.map((a) => (
+                    <MenuItem key={a.name} value={a.name} sx={{ textTransform: 'capitalize' }}>
+                      {a.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+            {!barrioSel && (
+              <TextField
+                label="Calle *"
+                value={form.street}
+                onChange={(e) => setForm((p) => ({ ...p, street: e.target.value }))}
+                fullWidth
+              />
+            )}
             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
               <TextField
-                label="Número / Nro de lote *"
+                label={barrioSel ? 'Lote / Casa' : 'Altura *'}
                 value={form.number}
                 onChange={(e) => setForm((p) => ({ ...p, number: e.target.value }))}
+                helperText={barrioSel ? 'Si no lo sabés, dejalo vacío' : undefined}
               />
               <TextField
                 label="Departamento"

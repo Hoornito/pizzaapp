@@ -5,6 +5,7 @@ import { getOpenCashRegister } from '@/services/finance.service';
 import { controlsStock } from '@/lib/constants';
 import { isValidSlot } from '@/services/schedule.service';
 import { getActiveAppDiscount, discountAmount } from '@/services/discount.service';
+import { esDireccionUbicable } from '@/services/delivery-area.service';
 import { sendText } from '@/lib/whatsapp';
 import { sanitizePhone } from '@/lib/utils';
 import type { CreateOrderInput, UpdateOrderStatusInput } from '@/lib/validators';
@@ -227,11 +228,18 @@ export async function createOrder(
     if (!suya) addressId = undefined;
   }
   if (!addressId && data.deliveryType === 'DELIVERY' && data.address) {
+    // Sin número solo se acepta si nombra un barrio/country cargado: al
+    // repartidor le alcanza con el nombre, pero una calle sin altura no.
+    if (!(await esDireccionUbicable(data.address.street, data.address.number))) {
+      throw new Error(
+        'Poné el número de la dirección, o elegí tu barrio cerrado de la lista.'
+      );
+    }
     const created = await prisma.address.create({
       data: {
         userId,
         street: data.address.street,
-        number: data.address.number,
+        number: data.address.number ?? '',
         apartment: data.address.apartment ?? null,
         city: data.address.city,
         state: data.address.state ?? '',
@@ -346,6 +354,7 @@ export async function createOrder(
   const order = await createWithRetry();
 
   await savePromotionComposition(order.id, data.items);
+  await recordarTelefonoDelCliente(userId, data.phone);
 
   // Si está esperando pago (MercadoPago), no avisamos a la cocina todavía ni
   // descontamos stock: ambas cosas se disparan al acreditarse el pago
@@ -361,6 +370,28 @@ export async function createOrder(
   }
 
   return order;
+}
+
+/**
+ * Se queda con el teléfono que el cliente cargó en su primer pedido, así no lo
+ * tiene que escribir cada vez (el checkout lo precarga desde la cuenta).
+ *
+ * Solo completa: si la cuenta ya tiene uno, no lo pisa — puede haberlo cambiado
+ * a propósito desde el perfil, o este pedido puede ir a un teléfono de otra
+ * persona. Best-effort: el teléfono es único por usuario y si ya lo tiene otra
+ * cuenta no vale la pena romper el pedido por eso.
+ */
+async function recordarTelefonoDelCliente(userId: string, phone?: string | null) {
+  const limpio = phone?.trim();
+  if (!limpio) return;
+  try {
+    await prisma.user.updateMany({
+      where: { id: userId, OR: [{ phone: null }, { phone: '' }] },
+      data: { phone: limpio },
+    });
+  } catch (e) {
+    console.warn('[order] no se pudo guardar el teléfono del cliente:', e instanceof Error ? e.message : e);
+  }
 }
 
 /**

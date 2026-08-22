@@ -16,6 +16,9 @@ import RadioGroup from '@mui/material/RadioGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Radio from '@mui/material/Radio';
 import FormControl from '@mui/material/FormControl';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import InputLabel from '@mui/material/InputLabel';
 import FormLabel from '@mui/material/FormLabel';
 import Alert from '@mui/material/Alert';
 import Divider from '@mui/material/Divider';
@@ -102,6 +105,10 @@ export default function CheckoutPage() {
   // Aviso de dirección que no pudimos ubicar en la zona (countries, barrios).
   const [zoneWarning, setZoneWarning] = useState(false);
   const [zoneConfirmed, setZoneConfirmed] = useState(false);
+  // Barrio cerrado / country elegido de la lista. Vacío = dirección de calle.
+  // Cuando hay uno elegido, el nombre del barrio ES la "calle" y el lote pasa a
+  // ser opcional: en los countries de la zona la gente no sabe el km de la ruta.
+  const [barrioSel, setBarrioSel] = useState('');
 
   /**
    * La propina solo tiene sentido cuando el pago pasa por la app: en efectivo
@@ -161,6 +168,8 @@ export default function CheckoutPage() {
   const elegirDireccion = (a: any) => {
     setAddressId(a.id);
     setZoneConfirmed(false);
+    // Si la guardada es de un barrio de la lista, dejamos el selector en sintonía.
+    setBarrioSel(buscarBarrio(a.street, areas)?.name ?? '');
     setForm((prev) => ({
       ...prev,
       street: a.street, number: a.number, apartment: a.apartment ?? '',
@@ -168,9 +177,26 @@ export default function CheckoutPage() {
     }));
   };
 
+  const areasActivas = areas.filter((a) => a.active !== false);
+
+  /** Elegir un barrio de la lista completa la dirección con su nombre. */
+  const elegirBarrio = (nombre: string) => {
+    setBarrioSel(nombre);
+    setZoneConfirmed(false);
+    setForm((prev) => ({
+      ...prev,
+      street: nombre,
+      // Los barrios cargados están todos en la zona de reparto.
+      city: nombre ? prev.city || DELIVERY_ZONE_LABEL : prev.city,
+      // Al volver a "dirección de calle" limpiamos lo que había puesto el barrio.
+      ...(nombre ? {} : { street: '', number: '' }),
+    }));
+  };
+
   const nuevaDireccion = () => {
     setAddressId('');
     setZoneConfirmed(false);
+    setBarrioSel('');
     setForm((prev) => ({ ...prev, street: '', number: '', apartment: '', city: '', state: '', reference: '' }));
   };
 
@@ -264,8 +290,13 @@ export default function CheckoutPage() {
       return;
     }
 
-    if (form.deliveryType === 'DELIVERY' && (!form.street || !form.number || !form.city)) {
+    if (form.deliveryType === 'DELIVERY' && (!form.street || !form.city)) {
       showError('Completá la dirección de entrega');
+      return;
+    }
+    // En un barrio de la lista alcanza con el nombre; en una calle, no.
+    if (form.deliveryType === 'DELIVERY' && !barrioSel && !form.number) {
+      showError('Poné la altura de la calle, o elegí tu barrio cerrado de la lista');
       return;
     }
 
@@ -627,11 +658,41 @@ export default function CheckoutPage() {
 
               {form.deliveryType === 'DELIVERY' && (
                 <>
+                  {/* Los countries y barrios cerrados de la zona dan sobre una
+                      ruta y el cliente no sabe el kilómetro. Eligiéndolos de la
+                      lista, el nombre del barrio alcanza como dirección. */}
+                  {areasActivas.length > 0 && (
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                      <InputLabel>¿Estás en un barrio cerrado o country?</InputLabel>
+                      <Select
+                        label="¿Estás en un barrio cerrado o country?"
+                        value={barrioSel}
+                        onChange={(e) => elegirBarrio(e.target.value)}
+                        sx={{ textTransform: 'capitalize' }}
+                      >
+                        <MenuItem value="">No, es una dirección de calle</MenuItem>
+                        {/* Los nombres se cargan en minúscula desde Configuración. */}
+                        {areasActivas.map((a) => (
+                          <MenuItem key={a.name} value={a.name} sx={{ textTransform: 'capitalize' }}>
+                            {a.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
+
                   <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                    {/* En la zona hay barrios cerrados: ponen el nombre del
-                        barrio y el lote en vez de calle y altura. */}
-                    <TextField label="Calle / Barrio cerrado *" value={form.street} onChange={(e) => handleChange('street', e.target.value)} />
-                    <TextField label="Número / Nro de lote *" value={form.number} onChange={(e) => handleChange('number', e.target.value)} />
+                    {/* Con un barrio elegido, su nombre ya ES la dirección: no le
+                        pedimos calle, y el lote pasa a ser opcional. */}
+                    {!barrioSel && (
+                      <TextField label="Calle *" value={form.street} onChange={(e) => handleChange('street', e.target.value)} />
+                    )}
+                    <TextField
+                      label={barrioSel ? 'Lote / Casa' : 'Altura *'}
+                      value={form.number}
+                      onChange={(e) => handleChange('number', e.target.value)}
+                      helperText={barrioSel ? 'Si no lo sabés, dejalo vacío' : undefined}
+                    />
                     <TextField label="Departamento" value={form.apartment} onChange={(e) => handleChange('apartment', e.target.value)} />
                     <TextField
                       label="Ciudad *"
@@ -640,7 +701,12 @@ export default function CheckoutPage() {
                       helperText={`Zona de reparto: ${DELIVERY_ZONE_LABEL} y alrededores`}
                     />
                     <TextField label="Provincia" value={form.state} onChange={(e) => handleChange('state', e.target.value)} />
-                    <TextField label="Referencia" value={form.reference} onChange={(e) => handleChange('reference', e.target.value)} />
+                    <TextField
+                      label="Referencia"
+                      value={form.reference}
+                      onChange={(e) => handleChange('reference', e.target.value)}
+                      helperText={barrioSel ? 'Cómo ubicarte adentro del barrio' : undefined}
+                    />
                   </Box>
                 </>
               )}

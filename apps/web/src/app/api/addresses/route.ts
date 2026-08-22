@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { orderAddressSchema } from '@/lib/validators';
+import { esDireccionUbicable } from '@/services/delivery-area.service';
 
 /**
  * Direcciones guardadas del cliente, para elegir en el checkout sin volver a
@@ -47,7 +48,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { street, number, apartment, city, state, reference } = parsed.data;
+  const { street, apartment, city, state, reference } = parsed.data;
+  const number = parsed.data.number?.trim() ?? '';
+
+  // Sin número solo se acepta si nombra un barrio/country cargado (ver
+  // esDireccionUbicable): en un country el repartidor ubica por el nombre, pero
+  // una calle sin altura no la encuentra nadie.
+  if (!(await esDireccionUbicable(street, number))) {
+    return NextResponse.json(
+      { error: 'Poné el número de la dirección, o elegí tu barrio cerrado de la lista.' },
+      { status: 400 }
+    );
+  }
 
   // Si ya la tenía guardada, no duplicamos: alcanza con volver a ofrecerla.
   const existente = await prisma.address.findFirst({

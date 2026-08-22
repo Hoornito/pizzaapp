@@ -50,3 +50,17 @@ export async function findBlockedArea(street: string, when: Date = new Date()) {
   if (!barrio) return null;
   return barrioBloqueadoA(barrio, when) ? barrio : null;
 }
+
+/**
+ * ¿Se puede ubicar esta dirección para repartir?
+ *
+ * Con número, siempre. Sin número, solo si nombra un barrio o country que el
+ * local tenga cargado en Configuración → Zonas de reparto: ahí el repartidor
+ * ubica por el nombre, y pedirle la altura de la ruta al cliente no sirve de
+ * nada porque no la sabe.
+ */
+export async function esDireccionUbicable(street: string, number?: string | null) {
+  if (number && number.trim()) return true;
+  const areas = await getDeliveryAreas();
+  return buscarBarrio(street, areas) !== null;
+}
