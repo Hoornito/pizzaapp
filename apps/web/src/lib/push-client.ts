@@ -11,6 +11,24 @@ import { registerServiceWorker } from '@/lib/pwa';
 export type PushState = 'unsupported' | 'default' | 'granted' | 'denied';
 
 const REGISTERED_KEY = 'push:registered';
+/**
+ * El cliente apagó los avisos a propósito.
+ *
+ * Hace falta guardarlo: dar de baja la suscripción NO revoca el permiso del
+ * navegador, que sigue en "granted". Sin esta marca, `PushSetup` volvía a
+ * suscribir el dispositivo en la siguiente carga y la decisión de apagarlos no
+ * sobrevivía a un refresh.
+ */
+const OPTOUT_KEY = 'push:optout';
+
+export function pushOptedOut(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(OPTOUT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4);
@@ -48,7 +66,31 @@ export function webPushState(): PushState {
   return Notification.permission as PushState;
 }
 
-/** Estado que ve la UI, unificando app nativa y navegador. */
+/**
+ * ¿Hay una suscripción viva ahora mismo?
+ *
+ * Es lo que tiene que mirar el interruptor de la UI, y NO el permiso: apagar
+ * los avisos da de baja la suscripción pero deja el permiso en "granted", así
+ * que un interruptor atado al permiso se volvía a prender solo y quedaba
+ * trabado en "activado".
+ */
+export async function isPushSubscribed(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  if (pushOptedOut()) return false;
+
+  if (isNativeApp()) {
+    const plugin = getPushPlugin();
+    if (!plugin) return false;
+    const { receive } = await plugin.checkPermissions();
+    return receive === 'granted' && !!localStorage.getItem(REGISTERED_KEY);
+  }
+
+  if (webPushState() !== 'granted') return false;
+  const registration = await navigator.serviceWorker.getRegistration();
+  return !!(await registration?.pushManager.getSubscription());
+}
+
+/** Permiso del navegador / del sistema. Sirve para saber si está bloqueado. */
 export async function getPushState(): Promise<PushState> {
   if (isNativeApp()) {
     const plugin = getPushPlugin();
@@ -146,9 +188,16 @@ export async function enablePush(
 ): Promise<boolean> {
   const { askPermission = true, onOpenUrl } = options;
   try {
-    return isNativeApp()
+    const ok = isNativeApp()
       ? await registerNative(askPermission, onOpenUrl)
       : await registerWeb(askPermission);
+    // Volvió a prenderlos: se cancela el apagado explícito.
+    if (ok) {
+      try {
+        localStorage.removeItem(OPTOUT_KEY);
+      } catch {}
+    }
+    return ok;
   } catch (err) {
     console.error('[push] No se pudo activar las notificaciones:', err);
     return false;
@@ -157,6 +206,12 @@ export async function enablePush(
 
 /** Baja del dispositivo actual (el usuario apagó las notificaciones). */
 export async function disablePush(): Promise<void> {
+  // Se marca ANTES de dar la baja: aunque falle el unsubscribe, la decisión del
+  // cliente queda registrada y nada lo vuelve a suscribir por su cuenta.
+  try {
+    localStorage.setItem(OPTOUT_KEY, '1');
+  } catch {}
+
   try {
     if (isNativeApp()) {
       const token = localStorage.getItem(REGISTERED_KEY);

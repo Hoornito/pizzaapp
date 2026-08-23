@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { enablePush, getPushState } from '@/lib/push-client';
+import { enablePush, getPushState, pushOptedOut } from '@/lib/push-client';
 import { isNativeApp } from '@/lib/native';
 
 /**
@@ -29,6 +29,10 @@ export function PushSetup() {
     const openUrl = (url: string) => router.push(url);
 
     void (async () => {
+      // Si los apagó a propósito, no lo volvemos a suscribir a sus espaldas.
+      // Esto era lo que hacía que "desactivar" no sobreviviera a un refresh.
+      if (pushOptedOut()) return;
+
       const state = await getPushState();
 
       if (state === 'granted') {

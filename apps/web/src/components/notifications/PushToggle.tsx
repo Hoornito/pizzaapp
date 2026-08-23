@@ -7,7 +7,14 @@ import Typography from '@mui/material/Typography';
 import Switch from '@mui/material/Switch';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
-import { disablePush, enablePush, getPushConfig, getPushState, type PushState } from '@/lib/push-client';
+import {
+  disablePush,
+  enablePush,
+  getPushConfig,
+  getPushState,
+  isPushSubscribed,
+  type PushState,
+} from '@/lib/push-client';
 import { useSnackbar } from '@/app/snackbar-context';
 import { iosNeedsInstall } from '@/lib/pwa';
 
@@ -17,15 +24,24 @@ import { iosNeedsInstall } from '@/lib/pwa';
  */
 export function PushToggle() {
   const [state, setState] = useState<PushState | null>(null);
+  // Lo que muestra el interruptor: si HAY suscripción, no si hay permiso. Son
+  // cosas distintas — al apagar los avisos el permiso sigue concedido.
+  const [suscripto, setSuscripto] = useState(false);
   const [available, setAvailable] = useState(false);
   const [working, setWorking] = useState(false);
   const { showSuccess, showError } = useSnackbar();
 
+  const refrescar = async () => {
+    const [permiso, activo] = await Promise.all([getPushState(), isPushSubscribed()]);
+    setState(permiso);
+    setSuscripto(activo);
+  };
+
   useEffect(() => {
     void (async () => {
-      const [current, config] = await Promise.all([getPushState(), getPushConfig()]);
-      setState(current);
+      const config = await getPushConfig();
       setAvailable(config.web || config.native);
+      await refrescar();
     })();
   }, []);
 
@@ -58,7 +74,7 @@ export function PushToggle() {
       await disablePush();
       showSuccess('Avisos desactivados');
     }
-    setState(await getPushState());
+    await refrescar();
     setWorking(false);
   };
 
@@ -74,7 +90,7 @@ export function PushToggle() {
           </Typography>
         </Box>
         <Switch
-          checked={state === 'granted'}
+          checked={suscripto}
           disabled={working || state === 'denied'}
           onChange={(e) => void cambiar(e.target.checked)}
         />
@@ -87,7 +103,7 @@ export function PushToggle() {
         </Alert>
       )}
 
-      {state === 'granted' && (
+      {suscripto && (
         <Button
           size="small"
           sx={{ mt: 1 }}
