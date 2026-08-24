@@ -91,7 +91,12 @@ export async function sendPushToUser(
     return { dispositivos: 0, enviados: 0 };
   }
 
-  const devices = await prisma.pushDevice.findMany({ where: { userId, active: true } });
+  // Sólo clientes: mostrador y admin no reciben avisos de pedidos. Se filtra acá
+  // y no sólo al registrar, para que un dispositivo de staff que haya quedado de
+  // antes tampoco reciba nada.
+  const devices = await prisma.pushDevice.findMany({
+    where: { userId, active: true, user: { is: { role: 'CUSTOMER' } } },
+  });
   if (devices.length === 0) return { dispositivos: 0, enviados: 0 };
 
   const results = await Promise.allSettled(

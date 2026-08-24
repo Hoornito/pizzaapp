@@ -15,7 +15,9 @@ import {
   isPushSubscribed,
   type PushState,
 } from '@/lib/push-client';
+import { useSession } from 'next-auth/react';
 import { useSnackbar } from '@/app/snackbar-context';
+import { isStaff } from '@/lib/roles';
 import { iosNeedsInstall } from '@/lib/pwa';
 
 /**
@@ -29,6 +31,7 @@ export function PushToggle() {
   const [suscripto, setSuscripto] = useState(false);
   const [available, setAvailable] = useState(false);
   const [working, setWorking] = useState(false);
+  const { data: session } = useSession();
   const { showSuccess, showError } = useSnackbar();
 
   const refrescar = async () => {
@@ -44,6 +47,10 @@ export function PushToggle() {
       await refrescar();
     })();
   }, []);
+
+  // Mostrador y admin no reciben avisos de pedido (ver PushSetup): no tiene
+  // sentido mostrarles el interruptor.
+  if (isStaff(session?.user?.role)) return null;
 
   // iPhone sin instalar: el interruptor no serviría de nada, así que explicamos
   // el paso que falta en vez de mostrar un control muerto.

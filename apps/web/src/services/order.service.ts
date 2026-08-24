@@ -380,13 +380,17 @@ export async function createOrder(
  * a propósito desde el perfil, o este pedido puede ir a un teléfono de otra
  * persona. Best-effort: el teléfono es único por usuario y si ya lo tiene otra
  * cuenta no vale la pena romper el pedido por eso.
+ *
+ * SOLO para clientes: en los pedidos de mostrador el teléfono que se carga es el
+ * DEL CLIENTE, no el de quien atiende, y se quedaba pegado a la cuenta de
+ * mostrador/admin apareciendo precargado en el pedido siguiente.
  */
 async function recordarTelefonoDelCliente(userId: string, phone?: string | null) {
   const limpio = phone?.trim();
   if (!limpio) return;
   try {
     await prisma.user.updateMany({
-      where: { id: userId, OR: [{ phone: null }, { phone: '' }] },
+      where: { id: userId, role: 'CUSTOMER', OR: [{ phone: null }, { phone: '' }] },
       data: { phone: limpio },
     });
   } catch (e) {

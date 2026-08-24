@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { enablePush, getPushState, pushOptedOut } from '@/lib/push-client';
 import { isNativeApp } from '@/lib/native';
+import { isStaff } from '@/lib/roles';
 
 /**
  * Mantiene al día el registro del dispositivo para las notificaciones push.
@@ -18,12 +19,15 @@ import { isNativeApp } from '@/lib/native';
  *    para una app de pedidos, y una sola vez por instalación.
  */
 export function PushSetup() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const done = useRef(false);
 
   useEffect(() => {
     if (status !== 'authenticated' || done.current) return;
+    // Mostrador y admin no reciben avisos de pedido: su cuenta carga pedidos de
+    // otra gente y les llegaría uno por cada pedido que toman.
+    if (isStaff(session?.user?.role)) return;
     done.current = true;
 
     const openUrl = (url: string) => router.push(url);
@@ -45,7 +49,7 @@ export function PushSetup() {
         await enablePush({ askPermission: true, onOpenUrl: openUrl });
       }
     })();
-  }, [status, router]);
+  }, [status, session, router]);
 
   return null;
 }

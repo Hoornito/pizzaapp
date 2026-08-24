@@ -39,6 +39,16 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
+  // Los avisos de pedido son para el cliente. Mostrador y admin siguen el
+  // movimiento desde el panel, y su cuenta carga pedidos de OTRA gente: si se
+  // suscribieran, recibirían un aviso por cada pedido que toman.
+  if (session.user.role !== 'CUSTOMER') {
+    return NextResponse.json(
+      { error: 'Las notificaciones de pedido son solo para clientes.' },
+      { status: 403 }
+    );
+  }
+
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 });

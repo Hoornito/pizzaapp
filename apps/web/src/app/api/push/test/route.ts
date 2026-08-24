@@ -9,6 +9,12 @@ import { sendPushToUser } from '@/services/push.service';
 export async function POST() {
   const session = await auth();
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (session.user.role !== 'CUSTOMER') {
+    return NextResponse.json(
+      { error: 'Las notificaciones de pedido son solo para clientes.' },
+      { status: 403 }
+    );
+  }
 
   const { enviados } = await sendPushToUser(session.user.id, {
     title: '🍕 Prueba de notificaciones',

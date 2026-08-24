@@ -5,7 +5,9 @@ import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import { enablePush, getPushConfig, getPushState, type PushState } from '@/lib/push-client';
+import { useSession } from 'next-auth/react';
 import { useSnackbar } from '@/app/snackbar-context';
+import { isStaff } from '@/lib/roles';
 import { iosNeedsInstall } from '@/lib/pwa';
 
 const DISMISSED_KEY = 'push:dismissed';
@@ -32,6 +34,7 @@ export function PushOptIn() {
   const [available, setAvailable] = useState(false);
   const [dismissed, setDismissed] = useState(true);
   const [working, setWorking] = useState(false);
+  const { data: session } = useSession();
   const { showSuccess, showError } = useSnackbar();
 
   useEffect(() => {
@@ -42,6 +45,9 @@ export function PushOptIn() {
       setDismissed(descartadoHaceMenosDeUnaSemana());
     })();
   }, []);
+
+  // Mostrador y admin no reciben avisos de pedido (ver PushSetup).
+  if (isStaff(session?.user?.role)) return null;
 
   // En iPhone sin instalar no hay nada que activar: Safari no manda push a un
   // sitio que no esté en la pantalla de inicio. De eso se encarga InstallPrompt,
