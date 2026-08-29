@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
@@ -17,6 +16,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import type { ProductWithCategory } from '@/types/product.types';
 import { formatCurrency, toNumber } from '@/lib/utils';
 import { ProductDetailModal } from './ProductDetailModal';
+import { ResponsiveDialog } from '@/components/ui/ResponsiveDialog';
 
 export interface LooseSelection {
   productId: string;
@@ -70,7 +70,7 @@ export function EmpanadaLooseModal({ open, onClose, empanadas, onConfirm }: Prop
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
+    <ResponsiveDialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
       <DialogTitle sx={{ pr: 6 }}>
         🥟 Empanadas sueltas
         <IconButton onClick={onClose} size="small" sx={{ position: 'absolute', right: 12, top: 12 }}>
@@ -84,12 +84,12 @@ export function EmpanadaLooseModal({ open, onClose, empanadas, onConfirm }: Prop
         </Typography>
         <Box
           sx={{
-            maxHeight: { xs: '45vh', sm: 360 },
-            overflowY: 'auto',
+            maxHeight: { xs: 'none', sm: 360 },
+            overflowY: { xs: 'visible', sm: 'auto' },
             // Nunca scroll horizontal: si no entran dos por fila, se apilan.
-            overflowX: 'hidden',
+            overflowX: { xs: 'visible', sm: 'hidden' },
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))',
             gap: 1,
             alignContent: 'start',
           }}
@@ -173,6 +173,6 @@ export function EmpanadaLooseModal({ open, onClose, empanadas, onConfirm }: Prop
         addLabel="Agregar al pedido"
         onAdd={() => detail && change(detail.id, 1)}
       />
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
-import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
@@ -24,6 +23,7 @@ import { DOZEN_SIZE, type EmpanadaDozen } from '@/types/product.types';
 import type { ProductWithCategory } from '@/types/product.types';
 import { formatCurrency, toNumber } from '@/lib/utils';
 import { ProductDetailModal } from './ProductDetailModal';
+import { ResponsiveDialog } from '@/components/ui/ResponsiveDialog';
 
 /** Composición de una docena: productId -> cantidad. */
 type Composition = Record<string, number>;
@@ -121,7 +121,7 @@ export function EmpanadaDozenModal({
   const totalPrice = useMemo(() => dozenPrice * dozenCount, [dozenPrice, dozenCount]);
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
+    <ResponsiveDialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
       <DialogTitle sx={{ pr: 6 }}>
         🥟 Armá tu {promotionName}
         <IconButton onClick={onClose} size="small" sx={{ position: 'absolute', right: 12, top: 12 }}>
@@ -211,15 +211,15 @@ export function EmpanadaDozenModal({
         {/* Lista de sabores: 2 por fila, área con scroll interno si hay muchos */}
         <Box
           sx={{
-            maxHeight: { xs: '40vh', sm: 320 },
-            overflowY: 'auto',
+            maxHeight: { xs: 'none', sm: 320 },
+            overflowY: { xs: 'visible', sm: 'auto' },
             // pequeño margen para que el scrollbar no tape el borde de las cards
             mx: -0.5,
             px: 0.5,
             // Nunca scroll horizontal: si no entran dos por fila, se apilan.
-            overflowX: 'hidden',
+            overflowX: { xs: 'visible', sm: 'hidden' },
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))',
             gap: 1,
             alignContent: 'start',
           }}
@@ -344,6 +344,6 @@ export function EmpanadaDozenModal({
         addDisabled={activeTotal >= DOZEN_SIZE}
         onAdd={() => detail && changeFlavor(detail.id, 1)}
       />
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

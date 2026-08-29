@@ -48,6 +48,8 @@ interface CheckoutForm {
   deliveryType: 'DELIVERY' | 'PICKUP';
   paymentMethod: 'MERCADO_PAGO' | 'EFECTIVO' | 'MIXTO' | 'TRANSFERENCIA' | 'A_DEFINIR';
   cashAmount: string;
+  /** Efectivo con el que va a pagar el cliente, para llevarle el vuelto justo. */
+  cashReceived: string;
   transferAmount: string;
   street: string;
   number: string;
@@ -76,6 +78,7 @@ export default function CheckoutPage() {
     deliveryType: 'DELIVERY',
     paymentMethod: 'EFECTIVO',
     cashAmount: '',
+    cashReceived: '',
     transferAmount: '',
     street: '',
     number: '',
@@ -209,17 +212,24 @@ export default function CheckoutPage() {
 
   // Franjas para programar. Las calcula el servidor (horarios del local + margen
   // mínimo), así no dependen del reloj del dispositivo.
+  // Se refrescan cada minuto: si el cliente deja el checkout abierto un rato,
+  // la franja que ve puede haber vencido y el pedido le fallaría al confirmar.
   useEffect(() => {
-    fetch('/api/schedule/slots', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((d) => setSlots(d.data || []))
-      .catch(() => setSlots([]))
-      .finally(() => setSlotsLoading(false));
+    const cargarSlots = () =>
+      fetch('/api/schedule/slots', { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((d) => setSlots(d.data || []))
+        .catch(() => setSlots([]))
+        .finally(() => setSlotsLoading(false));
+
+    cargarSlots();
+    const id = setInterval(cargarSlots, 60_000);
+    return () => clearInterval(id);
   }, []);
 
   // Si la franja elegida dejó de estar disponible (pasó el tiempo), la soltamos.
   useEffect(() => {
-    if (slot && !slots.some((s) => s.value === slot)) setSlot('');
+    if (slot && slots.length > 0 && !slots.some((s) => s.value === slot)) setSlot('');
   }, [slots, slot]);
 
   // Al elegir pago Mixto, pre-cargar todo como efectivo para que el reparto
@@ -229,6 +239,14 @@ export default function CheckoutPage() {
       setForm((prev) => ({ ...prev, cashAmount: String(payTotal), transferAmount: '0' }));
     }
   }, [form.paymentMethod, payTotal]);
+
+  // "¿Con cuánto abonás?" (solo efectivo). Es opcional: vacío = no lo dijo.
+  // Si lo carga, tiene que alcanzar para el total; con eso el local sabe cuánto
+  // vuelto preparar (sale impreso en el ticket que lleva el repartidor).
+  const cashReceivedNum = parseFloat(form.cashReceived) || 0;
+  const pagaConCargado = form.paymentMethod === 'EFECTIVO' && form.cashReceived.trim() !== '';
+  const pagaConCorto = pagaConCargado && cashReceivedNum < payTotal;
+  const vuelto = pagaConCargado ? Math.round((cashReceivedNum - payTotal) * 100) / 100 : 0;
 
   const handleChange = (field: keyof CheckoutForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -312,6 +330,10 @@ export default function CheckoutPage() {
       showError('El efectivo y la transferencia deben sumar el total');
       return;
     }
+    if (pagaConCorto) {
+      showError(`Con cuánto abonás tiene que ser al menos el total (${formatCurrency(payTotal)})`);
+      return;
+    }
 
     // Geocercado: verificamos que la dirección caiga en la zona. NO bloqueamos:
     // los countries y barrios cerrados de la zona no los ubica bien el geocoder
@@ -341,6 +363,8 @@ export default function CheckoutPage() {
         discount: discountNum,
         total: payTotal,
         ...(form.paymentMethod === 'MIXTO' ? { cashAmount, transferAmount } : {}),
+        // Solo si lo cargó: sin esto el ticket no imprime la línea del vuelto.
+        ...(pagaConCargado && cashReceivedNum > 0 ? { cashReceived: cashReceivedNum } : {}),
         // Con una dirección guardada mandamos su id; si es nueva, los datos y
         // si el cliente pidió guardarla.
         ...(form.deliveryType === 'DELIVERY'
@@ -777,6 +801,29 @@ export default function CheckoutPage() {
                 </RadioGroup>
               </FormControl>
 
+              {form.paymentMethod === 'EFECTIVO' && (
+                <Box sx={{ mb: 3 }}>
+                  <TextField
+                    label="¿Con cuánto abonás?"
+                    type="number"
+                    fullWidth
+                    value={form.cashReceived}
+                    onChange={(e) => handleChange('cashReceived', e.target.value)}
+                    inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+                    error={pagaConCorto}
+                    helperText={
+                      pagaConCorto
+                        ? `Tiene que ser al menos el total del pedido (${formatCurrency(payTotal)})`
+                        : !pagaConCargado
+                          ? 'Opcional · decinos con cuánto pagás y te llevamos el vuelto justo'
+                          : vuelto > 0
+                            ? `Te llevamos ${formatCurrency(vuelto)} de vuelto`
+                            : 'Pagás justo, sin vuelto'
+                    }
+                  />
+                </Box>
+              )}
+
               {form.paymentMethod === 'TRANSFERENCIA' && transferInfoAlert}
 
               {form.paymentMethod === 'MIXTO' && (
@@ -861,6 +908,7 @@ export default function CheckoutPage() {
                   onClick={session ? () => void handleSubmitOrder() : () => router.push('/login?callbackUrl=/checkout')}
                   disabled={
                     loading ||
+                    pagaConCorto ||
                     (form.paymentMethod === 'MIXTO' &&
                       Math.abs(
                         (parseFloat(form.cashAmount) || 0) +

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
@@ -9,6 +8,7 @@ import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import { formatCurrency } from '@/lib/utils';
+import { ResponsiveDialog } from '@/components/ui/ResponsiveDialog';
 
 interface Props {
   open: boolean;
@@ -24,7 +24,7 @@ export function DobleCambalacheDialog({ open, onClose, price, onConfirm }: Props
   useEffect(() => { if (open) setText(''); }, [open]);
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+    <ResponsiveDialog open={open} onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>🥟 Empanada Doble Cambalache</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -47,6 +47,6 @@ export function DobleCambalacheDialog({ open, onClose, price, onConfirm }: Props
           Agregar
         </Button>
       </DialogActions>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

@@ -311,6 +311,12 @@ export async function createOrder(
     notes: data.notes,
     phone: data.phone,
     courierName: data.courierName ?? null,
+    // Solo tiene sentido en Pedidos Ya, y solo si cargaron un monto: un 0 se
+    // guarda como null para que no salga la línea en la comanda.
+    pedidosYaExtra:
+      data.deliveryType === 'PEDIDOS_YA' && (data.pedidosYaExtra ?? 0) > 0
+        ? data.pedidosYaExtra
+        : null,
     whatsappToken: data.whatsappToken,
     items: {
       create: data.items.map((item) => ({

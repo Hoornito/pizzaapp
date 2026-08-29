@@ -139,6 +139,8 @@ export default function PosPage() {
   // Pedidos Ya: lo cobra la plataforma y lo retira su repartidor. No se elige
   // forma de pago ni descuento; lo único propio es quién lo viene a buscar.
   const [courier, setCourier] = useState('');
+  // Plus que cobra Pedidos Ya y carga el mostrador a mano. Opcional.
+  const [pyaExtra, setPyaExtra] = useState('');
   // Cómo entra la plata de un pedido de Pedidos Ya: el repartidor a veces paga
   // en efectivo en el mostrador y ese dinero tiene que entrar a la caja.
   const [pyaCobro, setPyaCobro] = useState<'EFECTIVO' | 'VIRTUAL'>('VIRTUAL');
@@ -195,7 +197,10 @@ export default function PosPage() {
   // Tab inicial: la primera categoría disponible.
   const activeTab = tab || categories[0]?.id || 'promos';
 
-  const subtotal = items.reduce((s, i) => s + lineTotal(i), 0);
+  // El plus de Pedidos Ya entra como una línea más del pedido: suma al subtotal
+  // (y por lo tanto al total), así la cuenta de la comanda del cliente cierra.
+  const pyaExtraNum = isPedidosYa ? Math.max(parseFloat(pyaExtra) || 0, 0) : 0;
+  const subtotal = items.reduce((s, i) => s + lineTotal(i), 0) + pyaExtraNum;
   const deliveryFee = deliveryType === 'DELIVERY' ? DELIVERY_FEE : 0;
   // Descuento acotado: 0 ≤ descuento ≤ subtotal + envío. En Pedidos Ya los
   // precios los fija la plataforma: no se toca el total.
@@ -226,6 +231,7 @@ export default function PosPage() {
         if (typeof d.phone === 'string') setPhone(d.phone);
         if (['PICKUP', 'DELIVERY', 'PEDIDOS_YA'].includes(d.deliveryType)) setDeliveryType(d.deliveryType);
         if (typeof d.courier === 'string') setCourier(d.courier);
+        if (typeof d.pyaExtra === 'string') setPyaExtra(d.pyaExtra);
         if (d.address && typeof d.address === 'object') setAddress((prev) => ({ ...prev, ...d.address }));
         if (typeof d.paymentMethod === 'string') setPaymentMethod(d.paymentMethod);
         if (typeof d.cashAmount === 'string') setCashAmount(d.cashAmount);
@@ -251,13 +257,13 @@ export default function PosPage() {
         localStorage.setItem(
           DRAFT_KEY,
           JSON.stringify({
-            items, customerName, phone, deliveryType, courier, address,
+            items, customerName, phone, deliveryType, courier, pyaExtra, address,
             paymentMethod, cashAmount, transferAmount, pagaCon, paid, discount, notes,
           })
         );
       }
     } catch { /* almacenamiento no disponible / lleno: seguimos sin persistir */ }
-  }, [hydrated, items, customerName, phone, deliveryType, courier, address, paymentMethod, cashAmount, transferAmount, pagaCon, paid, discount, notes]);
+  }, [hydrated, items, customerName, phone, deliveryType, courier, pyaExtra, address, paymentMethod, cashAmount, transferAmount, pagaCon, paid, discount, notes]);
 
   const addItem = (item: Omit<PosItem, 'key'>) => {
     setItems((prev) => {
@@ -371,6 +377,7 @@ export default function PosPage() {
     setPaymentMethod('EFECTIVO');
     setDeliveryType('PICKUP');
     setCourier('');
+    setPyaExtra('');
     setPyaCobro('VIRTUAL');
     setWhen('asap');
     setEta('');
@@ -393,12 +400,38 @@ export default function PosPage() {
   };
 
   // Franjas para programar: las calcula el servidor con los horarios del local.
+  //
+  // Se refrescan solas cada minuto (y al volver a la pestaña) porque el
+  // mostrador deja esta pantalla abierta todo el turno. Con la lista vieja
+  // seguían apareciendo franjas ya pasadas: el pedido se cargaba, el servidor
+  // la rechazaba por vencida y parecía que "ese horario ya estaba tomado"
+  // —justo cuando un rato antes otro pedido para esa misma hora había entrado
+  // bien—. Varios pedidos para la misma franja siempre estuvieron permitidos.
   useEffect(() => {
-    fetch('/api/schedule/slots', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((d) => setSlots(d.data || []))
-      .catch(() => setSlots([]));
+    const cargarSlots = () =>
+      fetch('/api/schedule/slots', { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((d) => setSlots(d.data || []))
+        .catch(() => setSlots([]));
+
+    cargarSlots();
+    const id = setInterval(cargarSlots, 60_000);
+    const alVolver = () => { if (document.visibilityState === 'visible') cargarSlots(); };
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
   }, []);
+
+  // Si la franja elegida se venció mientras se cargaba el pedido, la soltamos y
+  // avisamos acá, en vez de que se entere recién al fallar el pedido entero.
+  useEffect(() => {
+    if (slot && slots.length > 0 && !slots.some((s) => s.value === slot)) {
+      setSlot('');
+      showError('El horario que habías elegido ya pasó. Elegí otro.');
+    }
+  }, [slots, slot, showError]);
 
   const etaNum = parseInt(eta, 10);
   const etaOk = Number.isFinite(etaNum) && etaNum > 0;
@@ -437,6 +470,7 @@ export default function PosPage() {
       // "A definir" nunca puede quedar marcado como pagado.
       paid: isPedidosYa ? true : paymentMethod === 'A_DEFINIR' ? false : paid,
       ...(isPedidosYa && courier.trim() ? { courierName: courier.trim() } : {}),
+      ...(pyaExtraNum > 0 ? { pedidosYaExtra: pyaExtraNum } : {}),
       // Sin tiempo estimado el pedido igual se carga: se completa después.
       ...(when === 'scheduled'
         ? { scheduledFor: slot }
@@ -814,6 +848,16 @@ export default function PosPage() {
                   onChange={(e) => setCourier(e.target.value)}
                   helperText="Opcional · sale en la comanda"
                 />
+                <TextField
+                  label="Extra Pedidos Ya ($)"
+                  size="small"
+                  fullWidth
+                  type="number"
+                  inputProps={{ min: 0, step: 0.01 }}
+                  value={pyaExtra}
+                  onChange={(e) => setPyaExtra(e.target.value)}
+                  helperText="Opcional · si lo cargás suma al pedido y sale en la comanda del cliente"
+                />
               </>
             )}
 
@@ -991,6 +1035,12 @@ export default function PosPage() {
 
           <Divider sx={{ my: 1.5 }} />
 
+          {pyaExtraNum > 0 && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography color="text.secondary">Pedidos Ya extra</Typography>
+              <Typography>{formatCurrency(pyaExtraNum)}</Typography>
+            </Box>
+          )}
           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
             <Typography color="text.secondary">Subtotal</Typography>
             <Typography>{formatCurrency(subtotal)}</Typography>

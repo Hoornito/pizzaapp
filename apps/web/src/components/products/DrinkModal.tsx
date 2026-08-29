@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
@@ -16,6 +15,7 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import CloseIcon from '@mui/icons-material/Close';
 import type { ProductWithCategory } from '@/types/product.types';
 import { formatCurrency, toNumber } from '@/lib/utils';
+import { ResponsiveDialog } from '@/components/ui/ResponsiveDialog';
 
 export interface DrinkPick {
   productId: string;
@@ -73,7 +73,7 @@ export function DrinkModal({ open, onClose, title, drinks, stockById, onConfirm 
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
+    <ResponsiveDialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
       <DialogTitle sx={{ pr: 6 }}>
         🥤 {title}
         <IconButton onClick={onClose} size="small" sx={{ position: 'absolute', right: 12, top: 12 }}>
@@ -135,6 +135,6 @@ export function DrinkModal({ open, onClose, title, drinks, stockById, onConfirm 
           Agregar
         </Button>
       </DialogActions>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

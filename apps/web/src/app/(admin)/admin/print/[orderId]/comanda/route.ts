@@ -114,6 +114,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   <div class="sep"></div>
   <div class="bold" style="margin-bottom:4px">DETALLE:</div>
   ${itemsHtml}
+  ${
+    Number(order.pedidosYaExtra) > 0
+      ? `<div class="item-row"><span class="item-name">PEDIDOS YA EXTRA:</span><span class="item-price">${esc(fmtMoney(Number(order.pedidosYaExtra)))}</span></div>`
+      : ''
+  }
   <div class="sep"></div>
   <div class="item-row"><span>Subtotal</span><span>${esc(fmtMoney(Number(order.subtotal)))}</span></div>
   <div class="item-row"><span>Envío</span><span>${Number(order.deliveryFee) > 0 ? esc(fmtMoney(Number(order.deliveryFee))) : 'GRATIS'}</span></div>

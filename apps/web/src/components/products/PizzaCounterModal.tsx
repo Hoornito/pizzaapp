@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
@@ -18,6 +17,7 @@ import { PIZZA_SIZES, type PizzaSize, type PizzaSelection, type ProductWithCateg
 import { flavorPrice, flavorsForSize, pizzaPrice, formatPizzaName, formatPizzaNotes } from '@/lib/pizza';
 import { formatCurrency } from '@/lib/utils';
 import { ProductDetailModal } from './ProductDetailModal';
+import { ResponsiveDialog } from '@/components/ui/ResponsiveDialog';
 
 /** Una línea lista para agregar al carrito del mostrador. */
 export interface PizzaCartLine {
@@ -210,7 +210,7 @@ export function PizzaCounterModal({
   );
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
+    <ResponsiveDialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
       <DialogTitle sx={{ pr: 6 }}>
         {title ?? '🍕 Pizzas'}
         <IconButton onClick={onClose} size="small" sx={{ position: 'absolute', right: 12, top: 12 }}>
@@ -257,13 +257,13 @@ export function PizzaCounterModal({
         {/* Gustos con contador */}
         <Box
           sx={{
-            maxHeight: { xs: '42vh', sm: 340 },
-            overflowY: 'auto',
+            maxHeight: { xs: 'none', sm: 340 },
+            overflowY: { xs: 'visible', sm: 'auto' },
             // Nunca scroll horizontal: si no entran dos por fila, va una debajo
             // de la otra. auto-fill + minmax lo resuelve solo según el ancho.
-            overflowX: 'hidden',
+            overflowX: { xs: 'visible', sm: 'hidden' },
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))',
             gap: 1,
             alignContent: 'start',
           }}
@@ -357,6 +357,6 @@ export function PizzaCounterModal({
         addLabel={isHalf ? 'Agregar esta mitad' : 'Agregar al pedido'}
         onAdd={() => detail && change(detail.id, 1)}
       />
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

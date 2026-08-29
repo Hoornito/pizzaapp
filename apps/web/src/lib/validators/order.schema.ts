@@ -61,6 +61,9 @@ export const createOrderSchema = z
     phone: z.string().optional(),
     // Pedidos Ya: repartidor de la plataforma que pasa a buscarlo.
     courierName: z.string().optional(),
+    // Pedidos Ya: plus que carga el mostrador. Opcional; sin cargar no se
+    // guarda ni se imprime nada.
+    pedidosYaExtra: z.coerce.number().min(0).optional(),
     // El cliente pidió guardar la dirección para sus próximos pedidos.
     saveAddress: z.boolean().optional(),
     whatsappToken: z.string().optional(),

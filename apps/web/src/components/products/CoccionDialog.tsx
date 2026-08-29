@@ -1,13 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
+import { ResponsiveDialog } from '@/components/ui/ResponsiveDialog';
 
 export type Coccion = 'piedra' | 'molde';
 
@@ -36,7 +36,7 @@ export function CoccionDialog({
   const [coccion, setCoccion] = useState<Coccion>('piedra');
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+    <ResponsiveDialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle sx={{ fontWeight: 700 }}>{title}</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -72,6 +72,6 @@ export function CoccionDialog({
           {confirmLabel}
         </Button>
       </DialogActions>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

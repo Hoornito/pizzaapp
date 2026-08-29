@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
@@ -20,6 +19,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import type { ProductWithCategory, EmpanadaDozen } from '@/types/product.types';
 import { toNumber } from '@/lib/utils';
 import { ProductDetailModal } from './ProductDetailModal';
+import { ResponsiveDialog } from '@/components/ui/ResponsiveDialog';
 
 interface Props {
   open: boolean;
@@ -68,7 +68,7 @@ export function EmpanadaPickModal({ open, onClose, title, count, empanadas, onCo
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
+    <ResponsiveDialog open={open} onClose={onClose} fullWidth maxWidth="sm" scroll="paper">
       <DialogTitle sx={{ pr: 6 }}>
         🥟 {title}
         <IconButton onClick={onClose} size="small" sx={{ position: 'absolute', right: 12, top: 12 }}>
@@ -92,7 +92,7 @@ export function EmpanadaPickModal({ open, onClose, title, count, empanadas, onCo
         {empanadas.length === 0 ? (
           <Typography color="text.secondary" sx={{ py: 2 }}>No hay empanadas disponibles.</Typography>
         ) : (
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 1, alignContent: 'start', overflowX: 'hidden' }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 1, alignContent: 'start', overflowX: 'hidden' }}>
             {empanadas.map((emp) => {
               const n = qty[emp.id] ?? 0;
               const selected = n > 0;
@@ -171,6 +171,6 @@ export function EmpanadaPickModal({ open, onClose, title, count, empanadas, onCo
         addDisabled={total >= count}
         onAdd={() => detail && change(detail.id, 1)}
       />
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

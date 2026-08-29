@@ -357,6 +357,10 @@ model Order {
   phone              String?
   // Repartidor que pasa a buscar el pedido (Pedidos Ya).
   courierName        String?
+  // Plus que cobra la plataforma en un pedido de Pedidos Ya y que el local
+  // carga a mano. Va incluido en subtotal/total y sale como una línea más del
+  // detalle en la comanda del cliente. Null/0 = no se cobró extra.
+  pedidosYaExtra     Decimal?      @db.Decimal(10, 2)
   whatsappToken      String?
   estimatedTime      Int?
   // Pedido programado: horario elegido por el cliente ("Programar para después").
