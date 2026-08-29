@@ -159,6 +159,13 @@ export default function PosPage() {
 
   const pizzasCategoryId = useMemo(() => categories.find((c) => c.slug === 'pizzas')?.id, [categories]);
   const empanadasCategoryId = useMemo(() => categories.find((c) => c.slug === 'empanadas')?.id, [categories]);
+  // Las rellenas son pizzas: entran una por línea y admiten extra, igual que el
+  // resto. Están en su propia categoría, por eso caían en el cajón de
+  // "productos sueltos" y quedaban sin el botón de extra.
+  const rellenasCategoryId = useMemo(
+    () => categories.find((c) => c.slug === 'pizzas-rellenas' || /rellena/i.test(c.name))?.id,
+    [categories]
+  );
   const bebidasCategoryId = useMemo(() => categories.find((c) => c.slug === 'bebidas')?.id, [categories]);
   const postresCategoryId = useMemo(() => categories.find((c) => c.slug === 'postres')?.id, [categories]);
   const fainaCategoryId = useMemo(
@@ -694,8 +701,19 @@ export default function PosPage() {
             </Box>
           )}
 
+          {/* Pizzas rellenas: como las otras pizzas, una línea por unidad para
+              poder ponerle un extra distinto a cada una. */}
+          {activeTab === rellenasCategoryId && (
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
+              {products.filter((p) => p.categoryId === rellenasCategoryId).map((p) =>
+                tile(p.name, Number(p.price),
+                  () => addPizzaLines({ productId: p.id, name: p.name, unitPrice: Number(p.price), quantity: 1 }), p.id)
+              )}
+            </Box>
+          )}
+
           {/* Otras categorías: productos sueltos */}
-          {activeTab !== pizzasCategoryId && activeTab !== empanadasCategoryId && activeTab !== bebidasCategoryId && activeTab !== fainaCategoryId && activeTab !== postresCategoryId && activeTab !== 'promos' && (
+          {activeTab !== pizzasCategoryId && activeTab !== empanadasCategoryId && activeTab !== bebidasCategoryId && activeTab !== fainaCategoryId && activeTab !== postresCategoryId && activeTab !== rellenasCategoryId && activeTab !== 'promos' && (
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
               {products.filter((p) => p.categoryId === activeTab).map((p) =>
                 tile(p.name, Number(p.price),
