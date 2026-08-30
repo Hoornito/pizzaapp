@@ -114,6 +114,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   .total { font-size:17px; font-weight:bold; display:flex; justify-content:space-between; }
   .status { margin-top:3px; text-align:center; font-weight:bold; padding:3px; border:2px solid #000; }
   .status.unpaid { background:#000; color:#fff; }
+  /* Desglose del pago mixto: va dentro del recuadro de pago, así el repartidor
+     ve de una cuánto cobra en efectivo aunque el pedido figure como pagado. */
+  .status .split { font-size:12px; margin-top:2px; }
   /* Pedido programado: tiene que verse de lejos, la cocina se organiza por esto. */
   .scheduled { margin-top:4px; text-align:center; font-weight:bold; font-size:22px; padding:4px; border:3px solid #000; letter-spacing:1px; }
   /* Pedidos Ya: lo tiene que ver el que arma el pedido de una, para no cobrarle
@@ -153,6 +156,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
     }
     <div class="status ${isPaid ? 'paid' : 'unpaid'}">
       ${isPaid ? `PAGADO (${esc(methodLabel)})` : `FALTA COBRAR - ${esc(methodLabel)}`}
+      ${
+        // Mixto: cuánto va en efectivo y cuánto por transferencia. Los pedidos
+        // viejos pueden no tener el reparto cargado; ahí no mostramos nada en
+        // vez de imprimir dos ceros.
+        order.paymentMethod === 'MIXTO' &&
+        (Number(order.cashAmount) > 0 || Number(order.transferAmount) > 0)
+          ? `<div class="split">EFECTIVO ${esc(fmtMoney(Number(order.cashAmount)))} · TRANSFERENCIA ${esc(fmtMoney(Number(order.transferAmount)))}</div>`
+          : ''
+      }
     </div>
     ${(() => {
       // Para cuándo es el pedido. Programado manda el horario elegido; si no,
