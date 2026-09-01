@@ -17,7 +17,7 @@ import Grid from '@mui/material/Grid';
 import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, NEXT_STATUSES, DELIVERY_TYPE_LABELS } from '@/lib/constants';
 import { isPizzaItemNotes } from '@/lib/pizza';
 import { PaymentDialog, type PaymentKind } from '@/components/admin/PaymentDialog';
-import { formatCurrency, formatDate, formatOrderPayment, groupTicketItems } from '@/lib/utils';
+import { describeCancellation, formatCurrency, formatDate, formatOrderPayment, groupTicketItems } from '@/lib/utils';
 import { DeliveryMapQR } from '@/components/orders/DeliveryMapQR';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useSnackbar } from '@/app/snackbar-context';
@@ -156,6 +156,7 @@ export default function AdminOrderDetailPage({ params }: Props) {
   );
 
   const nextOptions = NEXT_STATUSES[order.status as keyof typeof NEXT_STATUSES] || [];
+  const cancellation = describeCancellation(order, 'staff');
 
   return (
     <Box>
@@ -170,6 +171,15 @@ export default function AdminOrderDetailPage({ params }: Props) {
         />
         <Button variant="outlined" onClick={handlePrint}>🖨️ Reimprimir</Button>
       </Box>
+
+      {cancellation && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          <Typography fontWeight={600}>{cancellation.title}</Typography>
+          {cancellation.detail && (
+            <Typography variant="body2">{cancellation.detail}</Typography>
+          )}
+        </Alert>
+      )}
 
       <Grid container spacing={3}>
         {/* Main info */}

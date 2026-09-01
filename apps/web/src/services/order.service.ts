@@ -18,6 +18,10 @@ const ORDER_INCLUDE = {
   user: { select: { id: true, name: true, email: true, phone: true, role: true } },
   address: true,
   deliveryEmployee: { select: { id: true, firstName: true, lastName: true, phone: true } },
+  // Quién canceló, para mostrarlo en el detalle del pedido. Null si no está
+  // cancelado, si lo canceló el sistema, o si se canceló antes de que
+  // existiera el registro de origen.
+  cancelledBy: { select: { id: true, name: true, email: true, role: true } },
   items: {
     include: {
       product: true,
@@ -496,6 +500,12 @@ export async function updateOrderStatus(
   const existing = await prisma.order.findUnique({ where: { id: orderId } });
   if (!existing) throw new Error('Pedido no encontrado');
 
+  // Ambas rutas que llegan acá (/api/orders y /api/admin/orders) exigen staff,
+  // así que una cancelación por este camino siempre la hizo el local. La del
+  // cliente pasa por cancelPendingPaymentOrder.
+  const cancelling = data.status === 'CANCELADO' && existing.status !== 'CANCELADO';
+  const uncancelling = data.status !== 'CANCELADO' && existing.status === 'CANCELADO';
+
   const order = await prisma.order.update({
     where: { id: orderId },
     data: {
@@ -503,17 +513,20 @@ export async function updateOrderStatus(
       estimatedTime: data.estimatedTime,
       // Marca de fin cuando se entrega (una sola vez), para medir la demora real.
       ...(data.status === 'ENTREGADO' && !existing.finishedAt ? { finishedAt: new Date() } : {}),
+      ...(cancelling
+        ? { cancelSource: 'LOCAL' as const, cancelledAt: new Date(), cancelledById: actorId ?? null }
+        : {}),
+      // Si se revive un pedido cancelado, el origen deja de aplicar.
+      ...(uncancelling
+        ? { cancelSource: null, cancelledAt: null, cancelledById: null }
+        : {}),
     },
     include: ORDER_INCLUDE,
   });
 
   // Al cancelar un pedido que ya había descontado stock (todo menos los que
   // seguían en PENDIENTE_PAGO, que nunca descontaron), devolvemos el stock.
-  if (
-    data.status === 'CANCELADO' &&
-    existing.status !== 'CANCELADO' &&
-    existing.status !== 'PENDIENTE_PAGO'
-  ) {
+  if (cancelling && existing.status !== 'PENDIENTE_PAGO') {
     await adjustStockForOrder(orderId, 'restore');
   }
 
@@ -743,7 +756,7 @@ export async function cancelStaleUnpaidMercadoPagoOrders(maxAgeMinutes = 30) {
   const ids = stale.map((o) => o.id);
   await prisma.order.updateMany({
     where: { id: { in: ids } },
-    data: { status: 'CANCELADO' },
+    data: { status: 'CANCELADO', cancelSource: 'SISTEMA', cancelledAt: new Date() },
   });
   for (const id of ids) {
     eventBus.emit('order:status_changed', { id, status: 'CANCELADO' } as never);
@@ -778,9 +791,28 @@ export async function cancelPendingPaymentOrder(orderId: string, userId: string)
 
   const order = await prisma.order.update({
     where: { id: orderId },
-    data: { status: 'CANCELADO' },
+    data: {
+      status: 'CANCELADO',
+      cancelSource: 'CLIENTE',
+      cancelledAt: new Date(),
+      cancelledById: userId,
+    },
     include: ORDER_INCLUDE,
   });
+
+  // Queda registrado igual que las cancelaciones del panel, así el historial de
+  // un pedido no depende de por dónde entró la baja.
+  await prisma.auditLog.create({
+    data: {
+      userId,
+      action: 'CANCEL_ORDER',
+      entity: 'Order',
+      entityId: orderId,
+      oldValues: { status: existing.status },
+      newValues: { status: 'CANCELADO', cancelSource: 'CLIENTE' },
+    },
+  });
+
   emitOrderStatusChanged(orderId, 'CANCELADO', order);
   eventBus.emit('order:status_changed', order as never);
   return order;

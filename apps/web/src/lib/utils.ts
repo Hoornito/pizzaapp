@@ -244,3 +244,60 @@ export function toNumber(value: unknown): number {
   }
   return 0;
 }
+
+/**
+ * Describe quién canceló un pedido, para el panel y para la pantalla del
+ * cliente. Devuelve null si el pedido no está cancelado.
+ *
+ * `cancelSource` es null en los pedidos que se cancelaron antes de que se
+ * empezara a registrar el origen: en ese caso se dice que no quedó registrado,
+ * en vez de atribuir la baja a alguien.
+ */
+export function describeCancellation(
+  order: {
+    status?: string | null;
+    cancelSource?: 'CLIENTE' | 'LOCAL' | 'SISTEMA' | null;
+    cancelledAt?: string | Date | null;
+    cancelledBy?: { name?: string | null; email?: string | null; role?: string | null } | null;
+  },
+  audience: 'staff' | 'customer' = 'staff'
+): { title: string; detail: string | null } | null {
+  if (order.status !== 'CANCELADO') return null;
+
+  const when = order.cancelledAt ? formatDate(order.cancelledAt) : null;
+  const who = order.cancelledBy?.name || order.cancelledBy?.email || null;
+  const roleLabel = order.cancelledBy?.role === 'MOSTRADOR' ? 'Mostrador' : 'Administrador';
+
+  let title: string;
+  switch (order.cancelSource) {
+    case 'CLIENTE':
+      title =
+        audience === 'customer'
+          ? 'Cancelaste este pedido desde tu celular'
+          : who
+            ? `Lo canceló el cliente (${who}) desde su dispositivo`
+            : 'Lo canceló el cliente desde su dispositivo';
+      break;
+    case 'LOCAL':
+      title =
+        audience === 'customer'
+          ? 'El local canceló este pedido'
+          : who
+            ? `Lo canceló ${who} (${roleLabel}) desde el panel`
+            : 'Lo canceló el local desde el panel';
+      break;
+    case 'SISTEMA':
+      title =
+        audience === 'customer'
+          ? 'Se canceló solo porque no llegamos a registrar el pago'
+          : 'Cancelación automática: el pago de Mercado Pago nunca se acreditó';
+      break;
+    default:
+      title =
+        audience === 'customer'
+          ? 'Este pedido fue cancelado'
+          : 'Cancelado antes de que se registrara el origen';
+  }
+
+  return { title, detail: when };
+}

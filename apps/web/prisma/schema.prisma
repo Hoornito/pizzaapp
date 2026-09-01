@@ -47,6 +47,16 @@ enum PaymentStatus {
   CANCELLED
 }
 
+/// Quien cancelo el pedido. Se guarda al pasar a CANCELADO.
+enum CancelSource {
+  /// El cliente, desde su dispositivo (pantalla de su pedido).
+  CLIENTE
+  /// Alguien del local desde el panel (rol ADMIN o MOSTRADOR).
+  LOCAL
+  /// Cancelacion automatica: pago de MercadoPago que nunca se acredito.
+  SISTEMA
+}
+
 enum DeliveryType {
   DELIVERY
   PICKUP
@@ -77,6 +87,7 @@ model User {
   notifications Notification[]
   pushDevices   PushDevice[]
   auditLogs     AuditLog[]
+  cancelledOrders Order[]        @relation("OrderCancelledBy")
 
   @@index([email])
   @@index([phone])
@@ -374,10 +385,20 @@ model Order {
   deliveryEmployeeId String?
   // Pedido de SIMULACIÓN (caja de entrenamiento): se borra al cerrar la caja test.
   isTest             Boolean       @default(false)
+  // ─── Cancelación ──────────────────────────────────────────────────────────
+  // Quién la hizo y cuándo. Null en un pedido no cancelado, y también en los
+  // que se cancelaron antes de que existieran estos campos: por eso la UI
+  // distingue "no sabemos" de cada origen concreto.
+  cancelSource       CancelSource?
+  cancelledAt        DateTime?
+  // Usuario que la ejecutó. Para CLIENTE es el dueño del pedido; para LOCAL,
+  // la persona del mostrador; para SISTEMA queda null (no hay usuario).
+  cancelledById      String?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
   user             User                 @relation(fields: [userId], references: [id])
+  cancelledBy      User?                @relation("OrderCancelledBy", fields: [cancelledById], references: [id])
   address          Address?             @relation(fields: [addressId], references: [id])
   deliveryEmployee Employee?            @relation("OrderDeliveryEmployee", fields: [deliveryEmployeeId], references: [id])
   items            OrderItem[]
@@ -389,6 +410,7 @@ model Order {
   @@index([createdAt])
   @@index([orderNumber])
   @@index([deliveryEmployeeId])
+  @@index([cancelledById])
 }
 
 model OrderItem {

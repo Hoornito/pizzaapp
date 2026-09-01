@@ -20,7 +20,7 @@ import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, TRANSFER_INFO } from '@/lib/c
 import { OrderProgress } from '@/components/orders/OrderProgress';
 import { CopyButton } from '@/components/ui/CopyButton';
 import { isPizzaItemNotes } from '@/lib/pizza';
-import { formatCurrency, formatDate, formatOrderPayment } from '@/lib/utils';
+import { describeCancellation, formatCurrency, formatDate, formatOrderPayment } from '@/lib/utils';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { PushOptIn } from '@/components/notifications/PushOptIn';
 
@@ -204,6 +204,7 @@ function OrderDetailContent({ params }: Props) {
     order.deliveryType === 'PICKUP' &&
     order.payment?.status !== 'APPROVED' &&
     !['CANCELADO', 'ENTREGADO'].includes(order.status);
+  const cancellation = describeCancellation(order, 'customer');
 
   return (
     <Container maxWidth="md">
@@ -311,8 +312,13 @@ function OrderDetailContent({ params }: Props) {
         </Paper>
       )}
 
-      {order.status === 'CANCELADO' && (
-        <Alert severity="error" sx={{ mb: 3 }}>Este pedido fue cancelado</Alert>
+      {cancellation && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          <Typography fontWeight={600}>{cancellation.title}</Typography>
+          {cancellation.detail && (
+            <Typography variant="body2">{cancellation.detail}</Typography>
+          )}
+        </Alert>
       )}
 
       {/* Order items */}
