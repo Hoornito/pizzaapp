@@ -344,6 +344,14 @@ model CartItem {
 
 // ─── Orders ───────────────────────────────────────────────────────────────────
 
+/// De dónde salió el pedido. NULL = pedidos viejos, anteriores al campo: para
+/// esos sigue mandando la heurística de `isWebOrder` (rol del usuario + token).
+enum OrderSource {
+  WEB // el cliente lo cargó desde la web/PWA
+  MOSTRADOR // lo cargó el local a mano
+  WHATSAPP // lo tomó el bot de WhatsApp y lo confirmó el local
+}
+
 model Order {
   id                 String        @id @default(cuid())
   orderNumber        String        @unique
@@ -373,6 +381,7 @@ model Order {
   // detalle en la comanda del cliente. Null/0 = no se cobró extra.
   pedidosYaExtra     Decimal?      @db.Decimal(10, 2)
   whatsappToken      String?
+  source             OrderSource?
   estimatedTime      Int?
   // Pedido programado: horario elegido por el cliente ("Programar para después").
   // Null = "lo antes posible" (el local carga el tiempo estimado a mano).

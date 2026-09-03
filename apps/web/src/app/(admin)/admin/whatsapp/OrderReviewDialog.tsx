@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -60,12 +60,26 @@ export default function OrderReviewDialog({ open, onClose, conversationId, ready
 
   const isAddon = !!addonOf;
 
+  // Reset SOLO en la transición cerrado → abierto. NO puede depender de
+  // `readyOrder`: el panel refresca cada 8 s y devuelve un objeto nuevo aunque el
+  // pedido sea idéntico, así que el efecto se re-disparaba y sacaba al operador
+  // del modo edición (perdiendo lo que estaba cargando) cada 8 segundos.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpen.current) {
       setEditing(false);
       setItems(readyOrder ? readyOrder.items.map((it) => ({ ...it })) : []);
     }
+    wasOpen.current = open;
   }, [open, readyOrder]);
+
+  // Mientras NO se está editando, el diálogo sí sigue reflejando lo que llega
+  // del refresh (si el bot sumó un ítem, se ve). Editando, mandan los cambios
+  // del operador.
+  useEffect(() => {
+    if (!open || editing) return;
+    setItems(readyOrder ? readyOrder.items.map((it) => ({ ...it })) : []);
+  }, [open, editing, readyOrder]);
 
   useEffect(() => {
     if (!open || menu.length) return;

@@ -200,6 +200,15 @@ interface GeminiResponse {
   promptFeedback?: { blockReason?: string };
 }
 
+/**
+ * Errores transitorios de Gemini: 429 (limite de rate del plan) y 5xx
+ * (sobrecarga del modelo). Con el tier gratuito saltan seguido apenas hay dos
+ * clientes escribiendo a la vez, y sin reintento cada uno de esos se traduce en
+ * un "te atiende una persona" que no hacia falta.
+ */
+const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_DELAYS_MS = [700, 2000];
+
 async function callGemini(req: StructuredRequest): Promise<StructuredResponse> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('Falta GEMINI_API_KEY');
@@ -237,17 +246,22 @@ async function callGemini(req: StructuredRequest): Promise<StructuredResponse> {
     generationConfig,
   };
 
-  const res = await fetch(`${GEMINI_API}/${model}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    // El cuerpo del error de Gemini dice exactamente qué campo no le gustó:
-    // lo dejamos entero en el log para no adivinar.
-    const detail = (await res.text().catch(() => '')).slice(0, 800);
-    throw new Error(`Gemini ${res.status}: ${detail}`);
+  let res: Response | null = null;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(`${GEMINI_API}/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) break;
+    if (!RETRY_STATUS.has(res.status) || attempt >= RETRY_DELAYS_MS.length) {
+      // El cuerpo del error de Gemini dice exactamente qué campo no le gustó:
+      // lo dejamos entero en el log para no adivinar.
+      const detail = (await res.text().catch(() => '')).slice(0, 800);
+      throw new Error(`Gemini ${res.status}: ${detail}`);
+    }
+    console.warn(`[ai-provider] Gemini ${res.status}, reintento ${attempt + 1}/${RETRY_DELAYS_MS.length}`);
+    await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
   }
 
   const data = (await res.json()) as GeminiResponse;

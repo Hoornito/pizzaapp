@@ -96,6 +96,20 @@ export async function setBotPaused(conversationId: string, paused: boolean) {
   return convo;
 }
 
+/**
+ * Renombra el contacto. Es el nombre que se ve en el inbox y el que viaja al
+ * pedido cuando se lo toma; arranca con el nombre de perfil de WhatsApp y se
+ * puede corregir a mano (mucha gente tiene apodos ahí). Vacío = vuelve a
+ * mostrarse el teléfono.
+ */
+export async function renameContact(conversationId: string, name: string) {
+  const clean = name.trim().slice(0, 80);
+  return prisma.whatsAppConversation.update({
+    where: { id: conversationId },
+    data: { contactName: clean || null },
+  });
+}
+
 /** "Tomar pedido": crea el pedido armado y lo manda a Pedidos. */
 export async function takeOrder(conversationId: string, userId: string) {
   const orderNumber = await takeReadyOrder(conversationId, userId);

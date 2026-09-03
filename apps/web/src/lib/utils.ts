@@ -225,8 +225,20 @@ export function formatOrderPayment(order: PayableOrder, opts?: { emoji?: boolean
 export function isWebOrder(order: {
   user?: { role?: string | null } | null;
   whatsappToken?: string | null;
+  source?: string | null;
 }): boolean {
+  if (order.source) return order.source === 'WEB';
+  // Pedidos anteriores al campo `source`: sigue mandando la heurística vieja.
   return order.user?.role === 'CUSTOMER' && !order.whatsappToken;
+}
+
+/**
+ * ¿El pedido lo tomó el bot de WhatsApp? Se distingue en Pedidos con color y
+ * etiqueta propios: a diferencia de uno de la web, este ya pasó por una charla
+ * y lo confirmó alguien del local.
+ */
+export function isWhatsAppOrder(order: { source?: string | null }): boolean {
+  return order.source === 'WHATSAPP';
 }
 
 /** Porción del total de un pedido que ingresa en efectivo a la caja. */

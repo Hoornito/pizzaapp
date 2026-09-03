@@ -49,6 +49,10 @@ export interface ReadyOrder {
   address: { street: string; number: string; apartment: string | null; reference: string | null } | null;
   paymentMethod: 'EFECTIVO' | 'TRANSFERENCIA';
   customerName: string | null;
+  /** Efectivo: con cuanto abona (para el vuelto). */
+  cashReceived: number | null;
+  /** Pedido programado: hora pedida por el cliente, "HH:MM". */
+  scheduledFor: string | null;
 }
 interface LastOrderSnapshot {
   number: string;
@@ -304,6 +308,9 @@ async function stageAddon(
       items, subtotal, deliveryFee: 0, total: subtotal,
       deliveryType: lo.deliveryType, address: lo.address,
       paymentMethod: lo.paymentMethod, customerName: lo.customerName,
+      // Un agregado se suma a un pedido ya tomado: ni vuelto ni horario propios,
+      // los hereda del original.
+      cashReceived: null, scheduledFor: null,
     };
   } else {
     // No pudimos poner precio (o pidió algo raro): que la persona lo arme a mano.
@@ -344,6 +351,7 @@ async function assembleOrder(menu: WAMenu, draft: ParsedDraft): Promise<Assemble
       items, subtotal, deliveryFee, total: subtotal + deliveryFee,
       deliveryType: draft.deliveryType, address: draft.address,
       paymentMethod: draft.paymentMethod, customerName: draft.customerName,
+      cashReceived: draft.cashReceived, scheduledFor: draft.scheduledFor,
     },
   };
 }
@@ -431,6 +439,21 @@ function clarifyItemText(item: string): string {
  * Una persona toca "Tomar pedido": crea el pedido con el borrador armado y le
  * manda la confirmación al cliente. Devuelve el número de pedido.
  */
+/**
+ * Pasa la hora que pidio el cliente ("HH:MM") a una fecha concreta. Si esa hora
+ * ya paso hoy, se entiende para manana (alguien que a las 23:40 pide "para las
+ * 12" quiere el mediodia siguiente). Devuelve null si el texto no es una hora.
+ */
+function scheduledDate(hhmm: string | null): Date | null {
+  const m = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/.exec((hhmm ?? '').trim());
+  if (!m) return null;
+  const when = new Date();
+  when.setSeconds(0, 0);
+  when.setHours(Number(m[1]), Number(m[2]));
+  if (when.getTime() <= Date.now()) when.setDate(when.getDate() + 1);
+  return when;
+}
+
 export async function takeReadyOrder(conversationId: string, userId: string): Promise<string> {
   const convo = await prisma.whatsAppConversation.findUnique({ where: { id: conversationId } });
   if (!convo) throw new Error('Conversación no encontrada');
@@ -438,7 +461,10 @@ export async function takeReadyOrder(conversationId: string, userId: string): Pr
   const ro = ctx.readyOrder;
   if (!ro) throw new Error('Este chat no tiene un pedido listo para tomar.');
 
-  const uid = await findOrCreateWAUser(convo.phone, ro.customerName);
+  // Nombre a mostrar: el que se cargó en el panel (editable) manda sobre el que
+  // haya dado el cliente en el chat.
+  const displayName = convo.contactName?.trim() || ro.customerName?.trim() || null;
+  const uid = await findOrCreateWAUser(convo.phone, displayName);
 
   const input: CreateOrderInput = {
     deliveryType: ro.deliveryType,
@@ -450,7 +476,23 @@ export async function takeReadyOrder(conversationId: string, userId: string): Pr
     // Efectivo: flujo normal, se cobra al entregar/retirar.
     paid: ro.paymentMethod === 'TRANSFERENCIA',
     phone: convo.phone,
-    notes: 'Pedido tomado por WhatsApp (IA), confirmado por el local.',
+    // El "Cliente: X · ..." es la convención que ya usa el mostrador; la tarjeta
+    // de Pedidos lo levanta con splitClientNote y lo muestra destacado.
+    notes: [
+      displayName ? `Cliente: ${displayName}` : null,
+      'Pedido tomado por WhatsApp (IA), confirmado por el local.',
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    source: 'WHATSAPP',
+    // "Paga con": solo aplica a efectivo; con esto el sistema calcula el vuelto.
+    ...(ro.paymentMethod === 'EFECTIVO' && ro.cashReceived ? { cashReceived: ro.cashReceived } : {}),
+    // Pedido programado: mismo campo que usa el alta manual, asi la tarjeta y
+    // los tickets lo muestran igual que cualquier otro pedido con horario.
+    ...(() => {
+      const when = scheduledDate(ro.scheduledFor);
+      return when ? { scheduledFor: when.toISOString() } : {};
+    })(),
     items: ro.items.map(toOrderItemInput),
     ...(ro.deliveryType === 'DELIVERY' && ro.address
       ? {
@@ -525,7 +567,10 @@ export async function takeAddonOrder(conversationId: string, userId: string): Pr
   const base = ctx.addonOf;
   if (!ro || !base) throw new Error('Este chat no tiene un agregado listo para tomar.');
 
-  const uid = await findOrCreateWAUser(convo.phone, ro.customerName);
+  // Nombre a mostrar: el que se cargó en el panel (editable) manda sobre el que
+  // haya dado el cliente en el chat.
+  const displayName = convo.contactName?.trim() || ro.customerName?.trim() || null;
+  const uid = await findOrCreateWAUser(convo.phone, displayName);
   const input: CreateOrderInput = {
     deliveryType: ro.deliveryType,
     paymentMethod: ro.paymentMethod,

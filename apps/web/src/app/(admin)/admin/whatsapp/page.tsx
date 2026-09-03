@@ -20,6 +20,7 @@ import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import EditIcon from '@mui/icons-material/Edit';
 import { useSnackbar } from '@/app/snackbar-context';
 import OrderReviewDialog, { type ReadyOrder } from './OrderReviewDialog';
 
@@ -151,6 +152,28 @@ export default function WhatsAppInboxPage() {
       showError('Error de conexión');
     } finally {
       setSending(false);
+    }
+  };
+
+  // Renombrar el contacto: arranca con el nombre de perfil de WhatsApp y se
+  // corrige a mano. Ese nombre es el que después aparece en Pedidos.
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const saveName = async () => {
+    if (!selected || nameDraft === null) return;
+    const value = nameDraft.trim();
+    try {
+      const res = await fetch(`/api/admin/whatsapp/conversations/${selected.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contactName: value }),
+      });
+      if (!res.ok) { showError('No se pudo guardar el nombre'); return; }
+      const saved = value || null;
+      setSelected((c) => (c ? { ...c, contactName: saved } : c));
+      setConvos((prev) => prev.map((x) => (x.id === selected.id ? { ...x, contactName: saved } : x)));
+      setNameDraft(null);
+    } catch {
+      showError('Error de conexión');
     }
   };
 
@@ -286,8 +309,33 @@ export default function WhatsAppInboxPage() {
                   <ArrowBackIcon />
                 </IconButton>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography fontWeight={700} noWrap>{selected.contactName || selected.phone}</Typography>
-                  <Typography variant="caption" color="text.secondary">{selected.phone}</Typography>
+                  {nameDraft !== null ? (
+                    <TextField
+                      size="small"
+                      autoFocus
+                      value={nameDraft}
+                      placeholder="Nombre del cliente"
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      onBlur={saveName}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveName();
+                        if (e.key === 'Escape') setNameDraft(null);
+                      }}
+                      sx={{ maxWidth: 260 }}
+                    />
+                  ) : (
+                    <Typography
+                      fontWeight={700}
+                      noWrap
+                      onClick={() => setNameDraft(selected.contactName || '')}
+                      sx={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+                      title="Editar nombre"
+                    >
+                      {selected.contactName || selected.phone}
+                      <EditIcon sx={{ fontSize: 14, opacity: 0.5 }} />
+                    </Typography>
+                  )}
+                  <Typography variant="caption" color="text.secondary" display="block">{selected.phone}</Typography>
                 </Box>
                 {/* Botón para tomar el pedido/agregado (aparece cuando hay pedido armado). */}
                 {readyOrder && (

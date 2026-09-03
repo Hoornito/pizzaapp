@@ -322,6 +322,7 @@ export async function createOrder(
         ? data.pedidosYaExtra
         : null,
     whatsappToken: data.whatsappToken,
+    source: data.source ?? null,
     items: {
       create: data.items.map((item) => ({
         productId: item.productId,
@@ -544,7 +545,9 @@ export async function updateOrderStatus(
   }
 
   // Al pasar a "en reparto", avisamos al cliente por WhatsApp (best-effort).
-  if (data.status === 'EN_REPARTO') {
+  // Sólo en la TRANSICIÓN: guardar el tiempo estimado reenvía el mismo estado y
+  // el cliente recibía "tu pedido está en camino" de nuevo.
+  if (data.status === 'EN_REPARTO' && existing.status !== 'EN_REPARTO') {
     const clientPhone = order.phone || order.user.phone;
     if (clientPhone) {
       const driverName = order.deliveryEmployee
@@ -563,8 +566,10 @@ export async function updateOrderStatus(
   }
 
   // Al confirmar el pedido, disparamos la impresión de los tickets en la
-  // estación de impresión (cocina + comanda).
-  if (data.status === 'CONFIRMADO') {
+  // estación de impresión (cocina + comanda). Sólo en la TRANSICIÓN: guardar el
+  // tiempo estimado reenvía el mismo estado, y sin esta guarda volvía a imprimir
+  // los dos tickets cada vez que el local cargaba los minutos.
+  if (data.status === 'CONFIRMADO' && existing.status !== 'CONFIRMADO') {
     emitPrintOrder(orderId);
   }
 
@@ -728,8 +733,11 @@ export async function assignDeliveryEmployee(
     });
   }
 
+  // Sólo refrescamos la UI por socket. NO emitimos 'order:status_changed': acá
+  // el estado NO cambió (sólo se asignó repartidor), y ese evento dispara mail,
+  // push y WhatsApp al cliente — le llegaba "tu pedido está listo" una segunda
+  // vez cada vez que se asignaba el repartidor.
   emitOrderStatusChanged(orderId, order.status, order);
-  eventBus.emit('order:status_changed', order as never);
 
   return order;
 }

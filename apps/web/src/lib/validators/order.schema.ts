@@ -67,6 +67,8 @@ export const createOrderSchema = z
     // El cliente pidió guardar la dirección para sus próximos pedidos.
     saveAddress: z.boolean().optional(),
     whatsappToken: z.string().optional(),
+    // De dónde salió el pedido (web / mostrador / bot de WhatsApp).
+    source: z.enum(['WEB', 'MOSTRADOR', 'WHATSAPP']).optional(),
     // Pedido programado: ISO del inicio de la franja elegida. Ausente = "lo
     // antes posible". La validación de que la franja siga siendo válida se hace
     // en el servidor al crear el pedido (schedule.service).

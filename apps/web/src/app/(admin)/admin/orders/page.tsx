@@ -40,7 +40,7 @@ import {
   ORDER_PAYMENT_METHOD_EMOJI,
   DELIVERY_TYPE_LABELS,
 } from '@/lib/constants';
-import { formatCurrency, formatDate, isWebOrder } from '@/lib/utils';
+import { formatCurrency, formatDate, isWebOrder, isWhatsAppOrder } from '@/lib/utils';
 import { isPizzaItemNotes } from '@/lib/pizza';
 import { PaymentDialog, type PaymentKind } from '@/components/admin/PaymentDialog';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -436,6 +436,7 @@ export default function AdminOrdersPage() {
             // Los pedidos que entran por la web se distinguen de un vistazo: no
             // los tomó nadie del local, así que hay que ir a atenderlos.
             const web = isWebOrder(order);
+            const wapp = isWhatsAppOrder(order);
             return (
               <Grid item xs={12} sm={6} md={4} key={order.id}>
                 <Card
@@ -443,6 +444,8 @@ export default function AdminOrdersPage() {
                   sx={{
                     height: '100%', display: 'flex', flexDirection: 'column',
                     ...(web && { bgcolor: '#E3F2FD', borderColor: '#64B5F6' }),
+                    // Los del bot de WhatsApp, en verde claro.
+                    ...(wapp && { bgcolor: '#E8F5E9', borderColor: '#81C784' }),
                   }}
                 >
                   <CardContent sx={{ flex: 1 }}>
@@ -466,19 +469,23 @@ export default function AdminOrdersPage() {
                     </Box>
 
                     <Typography variant="body2" color="text.secondary">{formatDate(order.createdAt)}</Typography>
-                    <Typography variant="body2" fontWeight={500}>
-                      {order.user?.name || order.user?.email || 'Cliente'}
-                      {order.phone ? ` · ${order.phone}` : ''}
+                    {/* Nombre arriba, teléfono debajo. El "Cliente: X" de las notas
+                        (mostrador y WhatsApp) manda sobre el nombre de la cuenta. */}
+                    <Typography variant="body2" fontWeight={700}>
+                      {client || order.user?.name || order.user?.email || 'Cliente'}
                     </Typography>
-                    {client && (
-                      <Typography variant="body2" fontWeight={700}>
-                        👤 {client}
+                    {order.phone && (
+                      <Typography variant="body2" color="text.secondary">
+                        {order.phone}
                       </Typography>
                     )}
 
                     <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
                       {web && (
                         <Chip label="🌐 Pedido web" size="small" color="info" sx={{ fontWeight: 700 }} />
+                      )}
+                      {wapp && (
+                        <Chip label="💬 WhatsApp" size="small" color="success" sx={{ fontWeight: 700 }} />
                       )}
                       <Chip label={DELIVERY_TYPE_LABELS[order.deliveryType] || order.deliveryType} size="small" variant="outlined" />
                       <Chip label={`${ORDER_PAYMENT_METHOD_EMOJI[order.paymentMethod] || ''} ${ORDER_PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}`} size="small" variant="outlined" />

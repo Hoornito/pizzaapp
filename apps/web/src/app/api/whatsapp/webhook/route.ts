@@ -37,7 +37,10 @@ export async function POST(req: NextRequest) {
         const contact = contacts?.find((c) => c.wa_id === message.from);
         const phone = `+${message.from}`;
 
-        processIncomingMessage(phone, message).catch((err) => {
+        // El nombre de perfil de WhatsApp es la base del nombre del cliente en
+        // el panel (después se puede editar a mano). Venía extrayéndose y
+        // descartándose, por eso el inbox mostraba siempre el teléfono.
+        processIncomingMessage(phone, message, contact?.profile?.name).catch((err) => {
           console.error('[WA Webhook] Error processing message:', err);
         });
       }

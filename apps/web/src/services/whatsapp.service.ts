@@ -85,12 +85,16 @@ export async function logMessage(
   });
 }
 
-export async function processIncomingMessage(from: string, message: WAMessage): Promise<void> {
+export async function processIncomingMessage(
+  from: string,
+  message: WAMessage,
+  profileName?: string | null
+): Promise<void> {
   try {
     await markAsRead(message.id);
   } catch {}
 
-  const conversation = await getOrCreateConversation(from, message.from);
+  const conversation = await getOrCreateConversation(from, message.from, profileName);
 
   // Guardamos el mensaje entrante en el hilo (para verlo en el inbox del panel).
   await logMessage(conversation.id, {
@@ -120,12 +124,23 @@ export async function processIncomingMessage(from: string, message: WAMessage): 
   );
 }
 
-async function getOrCreateConversation(phone: string, waId: string) {
-  return prisma.whatsAppConversation.upsert({
+async function getOrCreateConversation(phone: string, waId: string, profileName?: string | null) {
+  const name = profileName?.trim() || null;
+  const convo = await prisma.whatsAppConversation.upsert({
     where: { phone },
     update: { updatedAt: new Date() },
-    create: { phone, waId, state: 'AI_ORDERING' },
+    create: { phone, waId, state: 'AI_ORDERING', contactName: name },
   });
+
+  // Sólo completamos el nombre si todavía no hay ninguno. Si el local lo editó
+  // a mano, el perfil de WhatsApp no vuelve a pisarlo en el próximo mensaje.
+  if (name && !convo.contactName) {
+    return prisma.whatsAppConversation.update({
+      where: { id: convo.id },
+      data: { contactName: name },
+    });
+  }
+  return convo;
 }
 
 export async function sendOrderConfirmationWA(
