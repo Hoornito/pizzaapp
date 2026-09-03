@@ -24,6 +24,5 @@ export function getAnthropic(): Anthropic | null {
   return cached;
 }
 
-export function isAIEnabled(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
-}
+// Nota: para saber si HAY bot no alcanza con mirar ANTHROPIC_API_KEY. Usá
+// `availableProviders()` de '@/lib/ai-provider', que contempla los dos proveedores.

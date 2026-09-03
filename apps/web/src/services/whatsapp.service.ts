@@ -1,12 +1,11 @@
-import { sendText, sendInteractiveButtons, sendInteractiveList, markAsRead } from '@/lib/whatsapp';
+import { sendText, markAsRead } from '@/lib/whatsapp';
 import { prisma } from '@/lib/prisma';
 import { redis } from '@/lib/redis';
 import jwt from 'jsonwebtoken';
 import { WHATSAPP_TOKEN_REDIS_TTL } from '@/lib/constants';
-import type { WAMessage, WAConversationState } from '@/types/whatsapp.types';
+import type { WAMessage } from '@/types/whatsapp.types';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 export async function generatePurchaseToken(phone: string): Promise<string> {
   const token = jwt.sign({ phone }, JWT_SECRET, { expiresIn: '2h' });
@@ -104,118 +103,28 @@ export async function processIncomingMessage(from: string, message: WAMessage): 
   // Takeover humano: si la conversación está "atendida a mano", el bot no responde.
   if (conversation.botPaused) return;
 
-  const state = conversation.state as WAConversationState;
-  const text =
-    message.text?.body?.trim().toLowerCase() ||
-    message.button?.payload?.toLowerCase() ||
-    message.interactive?.button_reply?.id?.toLowerCase() ||
-    message.interactive?.list_reply?.id?.toLowerCase() ||
-    '';
-  // Texto tal cual lo escribió el cliente (para el parser de IA).
+  // Toda respuesta automática sale del bot con SUS instrucciones (las de la base,
+  // editables desde /admin/whatsapp/bot). No hay menús ni textos fijos acá: si el
+  // bot no puede contestar, no contestamos nada y el mensaje queda en el inbox
+  // para que lo tome una persona.
+  //
+  // Import dinámico para evitar el ciclo de imports con wa-order-flow.
+  if (message.type !== 'text') return;
   const rawText = message.text?.body?.trim() || '';
+  if (!rawText) return;
 
-  // Modo pedido por chat: derivamos al flujo con IA (import dinámico para evitar
-  // un ciclo de imports con wa-order-flow).
-  if (state === 'AI_ORDERING') {
-    if (message.type === 'text' && rawText) {
-      const { handleAIOrder } = await import('./wa-order-flow.service');
-      await handleAIOrder({ id: conversation.id, phone: conversation.phone, context: conversation.context }, rawText);
-    }
-    return;
-  }
-
-  switch (state) {
-    case 'MENU':
-    case 'AWAITING_OPTION':
-      await handleMenuState(from, text, message);
-      break;
-    default:
-      await sendWelcomeMenu(from);
-      await updateConversationState(from, 'AWAITING_OPTION');
-  }
-}
-
-async function handleMenuState(from: string, text: string, _message: WAMessage): Promise<void> {
-  if (text === '1' || text === 'ver promociones' || text === 'promotions') {
-    await sendPromotionsInfo(from);
-  } else if (text === '2' || text === 'realizar pedido' || text === 'hacer pedido' || text === 'order') {
-    // Entramos al modo pedido por chat con IA.
-    const { isAIEnabled } = await import('@/lib/anthropic');
-    if (isAIEnabled()) {
-      await updateConversationState(from, 'AI_ORDERING');
-      await sendText(from, '🍕 ¡Genial! Contame qué querés pedir y te lo voy armando. Podés escribirlo como quieras (ej: "una grande de muzza al molde y una coca").');
-    } else {
-      // Sin IA configurada: caemos al link de compra de siempre.
-      await sendOrderLink(from);
-    }
-  } else if (text === '3' || text === 'consultar pedido' || text === 'check_order') {
-    await sendText(
-      from,
-      '📦 *Consultar pedido*\n\nPor favor envianos tu número de pedido (ej: 20240601-0001)'
-    );
-    await updateConversationState(from, 'CHECKING_ORDER');
-  } else {
-    await sendWelcomeMenu(from);
-    await updateConversationState(from, 'AWAITING_OPTION');
-  }
-}
-
-async function sendWelcomeMenu(to: string): Promise<void> {
-  await sendInteractiveButtons(
-    to,
-    '🍕 *¡Bienvenido a Pizzería!*\n\nSomos la mejor pizzería de la ciudad. ¿Qué querés hacer?',
-    [
-      { id: 'promotions', title: '🎁 Ver Promociones' },
-      { id: 'order', title: '🛒 Hacer Pedido' },
-      { id: 'check_order', title: '📦 Consultar Pedido' },
-    ]
+  const { handleAIOrder } = await import('./wa-order-flow.service');
+  await handleAIOrder(
+    { id: conversation.id, phone: conversation.phone, context: conversation.context },
+    rawText
   );
-}
-
-async function sendPromotionsInfo(to: string): Promise<void> {
-  const promotions = await prisma.promotion.findMany({
-    where: { available: true },
-    take: 5,
-    orderBy: { createdAt: 'desc' },
-  });
-
-  if (promotions.length === 0) {
-    await sendText(to, 'No tenemos promociones activas en este momento. ¡Volvé pronto! 🍕');
-    return;
-  }
-
-  const list = promotions
-    .map((p) => `• *${p.name}*: $${Number(p.promotionalPrice).toLocaleString('es-AR')}\n  ${p.description || ''}`)
-    .join('\n\n');
-
-  await sendText(to, `🎁 *Nuestras promociones:*\n\n${list}\n\n¡Pedí ahora y te llega calentito! 🔥`);
-  await sendWelcomeMenu(to);
-}
-
-async function sendOrderLink(to: string): Promise<void> {
-  const token = await generatePurchaseToken(to);
-  const orderUrl = `${APP_URL}/pedido/${token}`;
-
-  await sendText(
-    to,
-    `🛒 *¡A pedir!*\n\nHacé clic en el siguiente enlace para armar tu pedido:\n\n${orderUrl}\n\n_Este enlace es válido por 2 horas._`
-  );
-
-  await updateConversationState(to, 'ORDER_LINK_SENT');
 }
 
 async function getOrCreateConversation(phone: string, waId: string) {
   return prisma.whatsAppConversation.upsert({
     where: { phone },
     update: { updatedAt: new Date() },
-    create: { phone, waId, state: 'MENU' },
-  });
-}
-
-async function updateConversationState(phone: string, state: WAConversationState) {
-  await prisma.whatsAppConversation.update({
-    where: { phone },
-    data: { state },
+    create: { phone, waId, state: 'AI_ORDERING' },
   });
 }
 

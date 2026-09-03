@@ -11,7 +11,7 @@ import { createOrder } from '@/services/order.service';
 import { getWAMenu, norm, type WAMenu } from '@/services/wa-menu.service';
 import { parseOrder, type ParsedDraft, type ParsedItem, type ParserTurn } from '@/services/wa-parser.service';
 import { generatePurchaseToken, logMessage } from '@/services/whatsapp.service';
-import { defaultProvider, type AIProvider } from '@/lib/ai-provider';
+import { availableProviders, defaultProvider, type AIProvider } from '@/lib/ai-provider';
 import type { CreateOrderInput } from '@/lib/validators';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -173,6 +173,10 @@ export async function handleAIOrder(
 
   // IA apagada globalmente: no respondemos nada; el mensaje queda para una persona.
   if (await isAIGloballyDisabled()) return;
+
+  // Sin ningún proveedor con API key cargada no hay bot, y sin bot NO mandamos
+  // ninguna respuesta automática: el chat queda entero para atención humana.
+  if (availableProviders().length === 0) return;
 
   if (!opts?.skipStoreCheck && !(await isStoreOpen())) {
     await botSay(id, phone, 'Por ahora estamos cerrados 🕒 Escribinos cuando abramos y te tomamos el pedido. ¡Gracias!');

@@ -170,7 +170,9 @@ export async function parseOrder(
     // modelo y estamos pagando input completo cada vez.
     const u = res.usage;
     console.log(
-      `[wa-parser] ${res.provider}/${res.model} in=${u.in} out=${u.out} cache_write=${u.cacheWrite} cache_read=${u.cacheRead}`
+      `[wa-parser] ${res.provider}/${res.model} in=${u.in} out=${u.out}` +
+        (u.thinking !== undefined ? ` (pensó ${u.thinking})` : '') +
+        ` cache_write=${u.cacheWrite} cache_read=${u.cacheRead}`
     );
 
     if (!res.text) return null;

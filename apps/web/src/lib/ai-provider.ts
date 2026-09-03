@@ -33,9 +33,12 @@ export interface StructuredRequest {
 
 export interface AIUsage {
   in: number;
+  /** Salida TOTAL facturable. En Gemini incluye el pensamiento (ver `thinking`). */
   out: number;
   cacheRead: number;
   cacheWrite: number;
+  /** Sólo Gemini: cuánto de `out` se fue en pensar. Sirve para dimensionar el tope. */
+  thinking?: number;
 }
 
 export interface StructuredResponse {
@@ -51,8 +54,8 @@ const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export function geminiModelFor(role: AIRole): string {
   return role === 'editor'
-    ? process.env.GEMINI_EDITOR_MODEL || 'gemini-2.5-pro'
-    : process.env.GEMINI_PARSER_MODEL || 'gemini-2.5-flash';
+    ? process.env.GEMINI_EDITOR_MODEL || 'gemini-3.8-flash'
+    : process.env.GEMINI_PARSER_MODEL || 'gemini-3.6-flash';
 }
 
 export function modelFor(provider: AIProvider, role: AIRole): string {
@@ -202,19 +205,26 @@ async function callGemini(req: StructuredRequest): Promise<StructuredResponse> {
   if (!key) throw new Error('Falta GEMINI_API_KEY');
   const model = modelFor('gemini', req.role);
 
+  // El "pensamiento" de Gemini sale del MISMO presupuesto que la respuesta: con
+  // maxOutputTokens al ras, el modelo gasta el cupo pensando y el JSON vuelve
+  // cortado ("Unterminated string in JSON"). Por eso lo acotamos y le SUMAMOS
+  // ese margen al tope, para que `req.maxTokens` quede libre para la respuesta.
+  // No se puede apagar: los modelos 3.x rechazan thinkingBudget: 0 con un 400.
+  const envBudget = Number(process.env.GEMINI_THINKING_BUDGET);
+  const thinkingBudget =
+    Number.isFinite(envBudget) && envBudget > 0
+      ? envBudget
+      : req.role === 'parser'
+        ? 512
+        : 2048;
+
   const generationConfig: Record<string, unknown> = {
-    maxOutputTokens: req.maxTokens,
+    maxOutputTokens: req.maxTokens + thinkingBudget,
+    thinkingConfig: { thinkingBudget },
   };
   if (req.schema) {
     generationConfig.responseMimeType = 'application/json';
     generationConfig.responseSchema = toGeminiSchema(req.schema);
-  }
-  // El "pensamiento" de Gemini se cobra como salida. Para el parser conviene
-  // apagarlo o acotarlo; se configura por env para no romper si el modelo que
-  // elijas no soporta el parámetro (dejalo sin definir y no se manda).
-  const budget = process.env.GEMINI_THINKING_BUDGET;
-  if (budget !== undefined && budget !== '' && req.role === 'parser') {
-    generationConfig.thinkingConfig = { thinkingBudget: Number(budget) };
   }
 
   const body = {
@@ -244,10 +254,18 @@ async function callGemini(req: StructuredRequest): Promise<StructuredResponse> {
   if (data.promptFeedback?.blockReason) {
     throw new Error(`Gemini bloqueó el pedido: ${data.promptFeedback.blockReason}`);
   }
+  const finish = data.candidates?.[0]?.finishReason;
   const text = (data.candidates?.[0]?.content?.parts ?? [])
     .map((p) => p.text ?? '')
     .join('')
     .trim();
+  // Si cortó por tope, avisamos con el número a subir en vez de dejar que
+  // reviente más adelante como un JSON.parse ilegible.
+  if (finish === 'MAX_TOKENS') {
+    throw new Error(
+      `Gemini cortó por maxOutputTokens (${req.maxTokens + thinkingBudget}; pensó ${data.usageMetadata?.thoughtsTokenCount ?? '?'}). Subí maxTokens o GEMINI_THINKING_BUDGET.`
+    );
+  }
 
   const um = data.usageMetadata ?? {};
   return {
@@ -261,6 +279,7 @@ async function callGemini(req: StructuredRequest): Promise<StructuredResponse> {
       out: (um.candidatesTokenCount ?? 0) + (um.thoughtsTokenCount ?? 0),
       cacheRead: um.cachedContentTokenCount ?? 0,
       cacheWrite: 0,
+      thinking: um.thoughtsTokenCount ?? 0,
     },
   };
 }
