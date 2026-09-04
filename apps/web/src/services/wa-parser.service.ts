@@ -27,7 +27,13 @@ export interface ParsedDraft {
   items: ParsedItem[];
   deliveryType: 'DELIVERY' | 'PICKUP' | null;
   address: { street: string; number: string; apartment: string | null; reference: string | null } | null;
-  paymentMethod: 'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO' | null;
+  paymentMethod: 'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO' | 'MIXTO' | null;
+  /**
+   * Pago MIXTO: cuanto va en efectivo y cuanto por transferencia. El sistema
+   * valida que sumen el total; si no suman, lo revisa una persona.
+   */
+  cashAmount: number | null;
+  transferAmount: number | null;
   customerName: string | null;
   /**
    * Efectivo: con cuanto abona el cliente (para calcular el vuelto). null si no
@@ -75,6 +81,7 @@ REGLAS:
   • AGREGADO QUE SE COBRA → va en el campo "extra" (texto). Es sumar algo que tiene costo aparte: "extra de jamón", "agregale huevo", "doble muzzarella", "extra de queso". NO le pongas precio (lo pone una persona).
   • SUSTITUCIÓN / PREFERENCIA / QUITAR algo → NO es extra, va en "notes" y NO se cobra: "aceituna verde en vez de negra", "sin cebolla", "poca sal", "bien cocida", "cortada en cuadrados", "la salsa aparte". Ante la duda de si algo se cobra o no, tratalo como preferencia (notes), NO como extra.
 - Pedí los datos que falten, de a poco: qué quiere pedir, si es envío (delivery) o retira por el local (pickup), la dirección si es delivery, y el medio de pago (efectivo, transferencia o Mercado Pago).
+- PAGO MIXTO: si el cliente parte el pago entre dos medios ("te pago 10000 en efectivo y 5000 por transferencia", "una parte en efectivo y el resto transferencia"), poné paymentMethod="MIXTO" y cargá los montos en "cashAmount" (efectivo) y "transferAmount" (transferencia). Si dijo sólo una de las dos partes, preguntá la otra. Los montos tienen que sumar el total del pedido.
 - EFECTIVO: cuando el cliente elige efectivo, preguntale CON CUÁNTO abona (para llevarle el vuelto). Si lo dice ("con 20 mil", "con $20.000", "justo"), cargá ese número en "cashReceived" (si dice que paga justo, dejalo en null). No insistas más de una vez: si no contesta, seguí igual con cashReceived=null.
 - PRECIOS: el menú de abajo trae los precios. Si el cliente pregunta cuánto sale algo ("cuánto sale", "qué precio tiene", "cuánto es todo"), RESPONDÉ con el precio del menú en ese mismo mensaje, sin esperar a cerrar el pedido. Usá SIEMPRE los precios del menú, nunca inventes ni estimes. El TOTAL final lo calcula igual el sistema al confirmar.
 - SIN STOCK: si el menú trae una sección "SIN STOCK HOY", esos productos NO se pueden pedir. Si el cliente pide uno, decíselo con naturalidad ("hoy no nos queda X") y ofrecé seguir con el resto. NO lo cargues como ítem y NO derives a una persona por eso.
@@ -135,7 +142,9 @@ const schema = {
         { type: 'null' },
       ],
     },
-    paymentMethod: nullableEnum(['EFECTIVO', 'TRANSFERENCIA', 'MERCADO_PAGO']),
+    paymentMethod: nullableEnum(['EFECTIVO', 'TRANSFERENCIA', 'MERCADO_PAGO', 'MIXTO']),
+    cashAmount: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+    transferAmount: { anyOf: [{ type: 'number' }, { type: 'null' }] },
     customerName: nullableString,
     cashReceived: { anyOf: [{ type: 'number' }, { type: 'null' }] },
     scheduledFor: nullableString,
@@ -144,7 +153,7 @@ const schema = {
     humanReason: nullableString,
     reply: { type: 'string' },
   },
-  required: ['intent', 'items', 'deliveryType', 'address', 'paymentMethod', 'customerName', 'cashReceived', 'scheduledFor', 'ready', 'needsHuman', 'humanReason', 'reply'],
+  required: ['intent', 'items', 'deliveryType', 'address', 'paymentMethod', 'cashAmount', 'transferAmount', 'customerName', 'cashReceived', 'scheduledFor', 'ready', 'needsHuman', 'humanReason', 'reply'],
 };
 
 // Las instrucciones editables del local viven en la base (versionadas, editables

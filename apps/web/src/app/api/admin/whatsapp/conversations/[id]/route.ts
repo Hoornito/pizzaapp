@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { isStaff } from '@/lib/roles';
 import { z } from 'zod';
-import { getConversationView, markConversationRead, renameContact } from '@/services/whatsapp-inbox.service';
+import { getConversationView, markConversationRead, renameContact, clearConversation } from '@/services/whatsapp-inbox.service';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -34,4 +34,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   const convo = await renameContact(id, parsed.data.contactName);
   return NextResponse.json({ success: true, data: { contactName: convo.contactName } });
+}
+
+// Limpia el hilo para volver a probar desde cero (herramienta de prueba).
+// Borra los mensajes y el contexto; los pedidos ya tomados NO se tocan.
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  if (!session || !isStaff(session.user.role)) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
+  const { id } = await params;
+  await clearConversation(id);
+  return NextResponse.json({ success: true });
 }

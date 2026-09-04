@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { sendText } from '@/lib/whatsapp';
 import { logMessage } from './whatsapp.service';
@@ -107,6 +108,22 @@ export async function renameContact(conversationId: string, name: string) {
   return prisma.whatsAppConversation.update({
     where: { id: conversationId },
     data: { contactName: clean || null },
+  });
+}
+
+/**
+ * Borra el hilo y deja la conversación como recién estrenada: sin mensajes, sin
+ * contexto (pedido armado, sesión, color) y con el bot activo.
+ *
+ * Es una herramienta de PRUEBA: sirve para ensayar pedidos distintos desde el
+ * mismo teléfono sin que el bot arrastre lo anterior. Borra de verdad, no se
+ * puede deshacer, y NO toca los pedidos ya tomados (esos viven en Order).
+ */
+export async function clearConversation(conversationId: string) {
+  await prisma.whatsAppMessage.deleteMany({ where: { conversationId } });
+  return prisma.whatsAppConversation.update({
+    where: { id: conversationId },
+    data: { context: Prisma.DbNull, botPaused: false, unread: 0, lastMessageAt: null, state: 'AI_ORDERING' },
   });
 }
 

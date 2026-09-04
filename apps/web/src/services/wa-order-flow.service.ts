@@ -47,7 +47,10 @@ export interface ReadyOrder {
   total: number;
   deliveryType: 'DELIVERY' | 'PICKUP';
   address: { street: string; number: string; apartment: string | null; reference: string | null } | null;
-  paymentMethod: 'EFECTIVO' | 'TRANSFERENCIA';
+  paymentMethod: 'EFECTIVO' | 'TRANSFERENCIA' | 'MIXTO';
+  /** Mixto: reparto entre efectivo y transferencia (deben sumar el total). */
+  cashAmount: number | null;
+  transferAmount: number | null;
   customerName: string | null;
   /** Efectivo: con cuanto abona (para el vuelto). */
   cashReceived: number | null;
@@ -58,7 +61,7 @@ interface LastOrderSnapshot {
   number: string;
   at: number;
   deliveryType: 'DELIVERY' | 'PICKUP';
-  paymentMethod: 'EFECTIVO' | 'TRANSFERENCIA';
+  paymentMethod: ReadyOrder['paymentMethod'];
   address: ReadyOrder['address'];
   customerName: string | null;
 }
@@ -223,8 +226,12 @@ export async function handleAIOrder(
   }
 
   if (draft.intent === 'cancel') {
-    await saveContext(id, { session: { startedAt: Date.now() }, provider: ctx.provider });
     await botSay(id, phone, draft.reply || 'Listo, cancelé el pedido. Cuando quieras arrancamos de nuevo 🍕');
+    // El corte de sesión va DESPUÉS de avisar, no antes: si se guardaba primero,
+    // el propio aviso de cancelación caía dentro de la sesión nueva, el modelo lo
+    // veía como primer turno del historial siguiente y volvía a avisar que estaba
+    // cancelado en cada mensaje posterior.
+    await saveContext(id, { session: { startedAt: Date.now() }, provider: ctx.provider });
     return;
   }
 
@@ -313,7 +320,7 @@ async function stageAddon(
       paymentMethod: lo.paymentMethod, customerName: lo.customerName,
       // Un agregado se suma a un pedido ya tomado: ni vuelto ni horario propios,
       // los hereda del original.
-      cashReceived: null, scheduledFor: null,
+      cashReceived: null, scheduledFor: null, cashAmount: null, transferAmount: null,
     };
   } else {
     // No pudimos poner precio (o pidió algo raro): que la persona lo arme a mano.
@@ -355,6 +362,7 @@ async function assembleOrder(menu: WAMenu, draft: ParsedDraft): Promise<Assemble
       deliveryType: draft.deliveryType, address: draft.address,
       paymentMethod: draft.paymentMethod, customerName: draft.customerName,
       cashReceived: draft.cashReceived, scheduledFor: draft.scheduledFor,
+      cashAmount: draft.cashAmount, transferAmount: draft.transferAmount,
     },
   };
 }
@@ -367,13 +375,28 @@ function qtyLabel(it: ReadyOrderItem): string {
 
 /** Resumen corto con el total (desde la DB) para que el cliente confirme. */
 function summaryText(ro: ReadyOrder): string {
-  const pago = ro.paymentMethod === 'TRANSFERENCIA' ? 'transferencia' : 'efectivo';
+  // El mixto muestra el reparto: es justo el dato que el cliente quiere ver
+  // confirmado antes de decir que sí.
+  const pago =
+    ro.paymentMethod === 'TRANSFERENCIA'
+      ? 'transferencia'
+      : ro.paymentMethod === 'MIXTO'
+        ? `${money(ro.cashAmount ?? 0)} en efectivo + ${money(ro.transferAmount ?? 0)} por transferencia`
+        : ro.cashReceived
+          ? `efectivo (paga con ${money(ro.cashReceived)})`
+          : 'efectivo';
   const entrega = ro.deliveryType === 'DELIVERY'
     ? `Envío${ro.address ? ` a ${ro.address.street} ${ro.address.number}` : ''}`
     : 'Retira en el local';
   return [
     '📋 *Tu pedido:*',
-    ...ro.items.map((it) => `• ${qtyLabel(it)}`),
+    // En las promos a eleccion el detalle de gustos va debajo del item: es lo
+    // que el cliente necesita ver para confirmar que le anotamos bien.
+    ...ro.items.flatMap((it) => {
+      const linea = `• ${qtyLabel(it)}`;
+      const detalle = it.promotionId && it.notes ? it.notes.split('\n').filter((l) => l.trim()) : [];
+      return [linea, ...detalle.map((d) => `   ${d.trim()}`)];
+    }),
     `*Total: ${money(ro.total)}*`,
     `${entrega} · ${pago}`,
     '¿Confirmás? 🙂',
@@ -414,6 +437,23 @@ async function respondToDraft(
     return;
   }
   // a.status === 'ready': el pedido está COMPLETO.
+  // Mixto que no cierra: el cliente dio montos que no suman el total (o cambió
+  // el pedido después de decirlos). No lo corregimos solos —quién pone la
+  // diferencia es una decisión del local—: queda 🔴 con el motivo a la vista.
+  const ro = a.readyOrder;
+  if (ro.paymentMethod === 'MIXTO') {
+    const suma = (ro.cashAmount ?? 0) + (ro.transferAmount ?? 0);
+    if (Math.round(suma) !== Math.round(ro.total)) {
+      ctx.flow = 'needs_human';
+      ctx.readyOrder = ro;
+      ctx.humanReason = `Pago mixto que no cierra: ${money(ro.cashAmount ?? 0)} efectivo + ${money(ro.transferAmount ?? 0)} transferencia = ${money(suma)}, y el total es ${money(ro.total)}`;
+      await saveContext(id, ctx);
+      await pauseBot(id);
+      await botSay(id, phone, 'Con el pago dividido te confirma una persona en un ratito 🙌');
+      return;
+    }
+  }
+
   // Los extras cargados en la categoría "extras" ya vienen con precio: el pedido
   // sigue solo. Sólo frena (🔴) si quedó algún agregado sin precio.
   const pending = unpricedExtras(a.readyOrder);
@@ -476,8 +516,12 @@ export async function takeReadyOrder(conversationId: string, userId: string): Pr
     deliveryFee: ro.deliveryFee,
     total: ro.total,
     // Transferencia: se marca pagado automáticamente (si no pagan, se quita a mano).
-    // Efectivo: flujo normal, se cobra al entregar/retirar.
+    // Efectivo y mixto: flujo normal, se cobra al entregar/retirar (en el mixto
+    // el ticket de cocina imprime cuánto va en cada medio).
     paid: ro.paymentMethod === 'TRANSFERENCIA',
+    ...(ro.paymentMethod === 'MIXTO'
+      ? { cashAmount: ro.cashAmount ?? 0, transferAmount: ro.transferAmount ?? 0 }
+      : {}),
     phone: convo.phone,
     // El "Cliente: X · ..." es la convención que ya usa el mostrador; la tarjeta
     // de Pedidos lo levanta con splitClientNote y lo muestra destacado.
@@ -792,7 +836,12 @@ function resolveItem(menu: WAMenu, item: ParsedItem): ReadyOrderItem | { error: 
   if (item.kind === 'promo') {
     const promo = findByName(menu.promotions, item.name);
     if (!promo) return { error: `promo "${item.name}"` };
-    return { label: promo.name, productId: null, promotionId: promo.id, quantity: qty, unitPrice: promo.price, extra, extraPrice: resolveExtraPrice(menu, extra, null), notes: composeNotes(item.notes, item.molde) };
+    // Las promos "a elección" (empanadas, pizzas) traen la elección del cliente
+    // en `flavors`. Sin esto, el pedido llegaba a la cocina como "Promo 6" pelado
+    // y el gusto de cada empanada se perdía.
+    const eleccion = item.flavors.filter((f) => f.trim()).join(', ');
+    const notasPromo = [eleccion, item.notes?.trim() || ''].filter(Boolean).join('\n');
+    return { label: promo.name, productId: null, promotionId: promo.id, quantity: qty, unitPrice: promo.price, extra, extraPrice: resolveExtraPrice(menu, extra, null), notes: composeNotes(notasPromo || null, item.molde) };
   }
 
   if (item.kind === 'pizza') {

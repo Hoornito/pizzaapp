@@ -21,6 +21,7 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import EditIcon from '@mui/icons-material/Edit';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { useSnackbar } from '@/app/snackbar-context';
 import OrderReviewDialog, { type ReadyOrder } from './OrderReviewDialog';
 
@@ -174,6 +175,28 @@ export default function WhatsAppInboxPage() {
       setNameDraft(null);
     } catch {
       showError('Error de conexión');
+    }
+  };
+
+  // Limpiar el hilo: herramienta de PRUEBA para ensayar pedidos distintos desde
+  // el mismo teléfono sin que el bot arrastre la charla anterior.
+  const [clearing, setClearing] = useState(false);
+  const clearThread = async () => {
+    if (!selected) return;
+    const quien = selected.contactName || selected.phone;
+    if (!confirm(`¿Borrar todo el historial de ${quien}? Se borran los mensajes y el pedido armado; los pedidos ya tomados NO se tocan. No se puede deshacer.`)) return;
+    setClearing(true);
+    try {
+      const res = await fetch(`/api/admin/whatsapp/conversations/${selected.id}`, { method: 'DELETE' });
+      if (!res.ok) { showError('No se pudo limpiar el chat'); return; }
+      showSuccess('Chat limpio ✓');
+      setMessages([]);
+      loadConvos();
+      loadMessages(selected.id);
+    } catch {
+      showError('Error de conexión');
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -350,6 +373,17 @@ export default function WhatsAppInboxPage() {
                     {takeLabel}
                   </Button>
                 )}
+                <Button
+                  size="small"
+                  color="inherit"
+                  disabled={clearing}
+                  onClick={clearThread}
+                  startIcon={<DeleteSweepIcon />}
+                  sx={{ whiteSpace: 'nowrap', textTransform: 'none', opacity: 0.75 }}
+                  title="Borra el hilo para volver a probar desde cero"
+                >
+                  Limpiar
+                </Button>
                 <FormControlLabel
                   sx={{ mr: 0 }}
                   control={<Switch size="small" checked={selected.botPaused} onChange={toggleBot} />}

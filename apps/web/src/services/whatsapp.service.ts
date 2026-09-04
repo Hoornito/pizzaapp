@@ -85,11 +85,31 @@ export async function logMessage(
   });
 }
 
+// Meta reintenta la entrega de un webhook si tarda en recibir el 200 (y a veces
+// manda el mismo mensaje dos veces igual). Sin esto, el mismo mensaje se procesa
+// de nuevo y el cliente recibe la respuesta duplicada.
+const DEDUP_TTL_S = 6 * 60 * 60;
+async function alreadyProcessed(waMessageId: string): Promise<boolean> {
+  try {
+    // NX: solo escribe si no existía. Devuelve null si ya estaba.
+    const first = await redis.set(`wa:msg:${waMessageId}`, '1', 'EX', DEDUP_TTL_S, 'NX');
+    return first === null;
+  } catch {
+    // Sin Redis preferimos arriesgar un duplicado antes que perder el mensaje.
+    return false;
+  }
+}
+
 export async function processIncomingMessage(
   from: string,
   message: WAMessage,
   profileName?: string | null
 ): Promise<void> {
+  if (await alreadyProcessed(message.id)) {
+    console.log(`[WA] mensaje ${message.id} ya procesado, se ignora la reentrega`);
+    return;
+  }
+
   try {
     await markAsRead(message.id);
   } catch {}
