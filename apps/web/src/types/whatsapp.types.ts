@@ -30,10 +30,16 @@ export interface WAMessage {
   from: string;
   id: string;
   timestamp: string;
-  type: 'text' | 'image' | 'interactive' | 'button';
+  type: 'text' | 'image' | 'interactive' | 'button' | 'audio';
   text?: { body: string };
   interactive?: WAInteractive;
   button?: { payload: string; text: string };
+  /**
+   * Nota de voz o audio. WhatsApp NO manda el archivo: manda un id de media que
+   * hay que canjear contra la Graph API. `voice` distingue la nota de voz
+   * grabada en el momento de un archivo de audio adjunto.
+   */
+  audio?: { id: string; mime_type?: string; voice?: boolean };
 }
 
 export interface WAInteractive {

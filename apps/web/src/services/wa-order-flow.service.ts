@@ -82,7 +82,10 @@ interface WAContext {
 const SESSION_TTL_MS = 3 * 60 * 60 * 1000; // 3 h separa pedidos de distintos momentos
 // Ventana para sumar "agregados" a un pedido recién tomado (misma tanda/envío).
 const ADDON_WINDOW_MS = 60 * 60 * 1000;
-const HISTORY_LIMIT = 40; // últimos mensajes que ve la IA
+const HISTORY_LIMIT = 16; // últimos mensajes que ve la IA
+// 16 y no 40: el historial es la ÚNICA parte del prompt que cambia en cada
+// turno, así que es la única que no se puede cachear y se paga entera siempre.
+// Un pedido por chat rara vez pasa de 8 idas y vueltas.
 // Al iniciar una sesión, miramos un ratito hacia atrás para incluir el mensaje
 // entrante (que se guardó unos ms antes de calcular el corte).
 const NEW_SESSION_LOOKBACK_MS = 60 * 1000;

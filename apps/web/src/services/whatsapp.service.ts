@@ -96,11 +96,24 @@ export async function processIncomingMessage(
 
   const conversation = await getOrCreateConversation(from, message.from, profileName);
 
+  // Notas de voz: las transcribimos y seguimos como si el cliente hubiera
+  // escrito. Va antes del logMessage para que en el inbox quede el texto y no
+  // un "audio" mudo: el que atiende lee en vez de tener que escuchar.
+  let voiceText: string | null = null;
+  if (message.type === 'audio' && message.audio?.id) {
+    const { transcribeVoiceNote } = await import('./wa-transcribe.service');
+    voiceText = await transcribeVoiceNote(message.audio.id);
+  }
+
   // Guardamos el mensaje entrante en el hilo (para verlo en el inbox del panel).
   await logMessage(conversation.id, {
     direction: 'IN',
     type: message.type,
-    body: message.text?.body ?? message.button?.text ?? null,
+    body: voiceText
+      ? `🎤 ${voiceText}`
+      : message.type === 'audio'
+        ? '🎤 (audio que no se pudo transcribir)'
+        : (message.text?.body ?? message.button?.text ?? null),
     waMessageId: message.id,
   });
 
@@ -113,8 +126,9 @@ export async function processIncomingMessage(
   // para que lo tome una persona.
   //
   // Import dinámico para evitar el ciclo de imports con wa-order-flow.
-  if (message.type !== 'text') return;
-  const rawText = message.text?.body?.trim() || '';
+  // Un audio que no se pudo transcribir NO se responde: queda en el inbox para
+  // que lo escuche una persona. Preferimos eso antes que adivinar un pedido.
+  const rawText = voiceText?.trim() || (message.type === 'text' ? message.text?.body?.trim() || '' : '');
   if (!rawText) return;
 
   const { handleAIOrder } = await import('./wa-order-flow.service');

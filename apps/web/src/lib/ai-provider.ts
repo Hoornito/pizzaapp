@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import { getAnthropic, WA_EDITOR_MODEL, WA_PARSER_MODEL } from '@/lib/anthropic';
+import { redis } from '@/lib/redis';
 
 /**
  * Capa fina sobre el proveedor de IA, para poder correr el bot con Claude o con
@@ -209,6 +211,64 @@ interface GeminiResponse {
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [700, 2000];
 
+// ─── Cache de contexto ──────────────────────────────────────────────────────
+// El prefijo estable (prompt del sistema + instrucciones del local + menu) son
+// ~4k tokens que se pagaban ENTEROS en cada mensaje: `cache_read` venia siempre
+// en 0. Lo subimos una vez a la cache de Gemini y despues cada llamada lo
+// referencia por nombre, que se factura a una fraccion.
+//
+// La clave es un hash del contenido: si cambia el menu o las instrucciones, el
+// hash cambia y se crea una cache nueva sola, sin invalidar nada a mano.
+const CACHE_TTL_S = 3600;
+// Por debajo del minimo del modelo, Gemini rechaza la cache. Si no llega, no
+// pasa nada: se manda el systemInstruction como siempre.
+const CACHE_MIN_CHARS = 4096;
+
+async function geminiCacheName(model: string, systemBlocks: string[]): Promise<string | null> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+  const joined = systemBlocks.join('\n\n');
+  if (joined.length < CACHE_MIN_CHARS) return null;
+
+  const hash = createHash('sha256').update(`${model}\u0000${joined}`).digest('hex').slice(0, 32);
+  const redisKey = `wa:ai:gcache:${model}:${hash}`;
+  try {
+    const hit = await redis.get(redisKey);
+    if (hit) return hit;
+  } catch {
+    // Sin Redis no cacheamos, pero el bot sigue andando.
+    return null;
+  }
+
+  try {
+    const res = await fetch(`${GEMINI_API.replace('/models', '')}/cachedContents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        model: `models/${model}`,
+        systemInstruction: { parts: systemBlocks.map((text) => ({ text })) },
+        ttl: `${CACHE_TTL_S}s`,
+      }),
+    });
+    if (!res.ok) {
+      // Motivos tipicos: el modelo no soporta cache explicita, o el prefijo no
+      // llega al minimo de tokens. No es fatal: se sigue sin cache.
+      console.warn('[ai-provider] no se pudo crear la cache:', res.status, (await res.text().catch(() => '')).slice(0, 200));
+      return null;
+    }
+    const data = (await res.json()) as { name?: string };
+    if (!data.name) return null;
+    // Expiramos en Redis un poco antes que en Gemini, para no referenciar una
+    // cache ya vencida y comerse un 4xx.
+    await redis.setex(redisKey, CACHE_TTL_S - 120, data.name).catch(() => {});
+    console.log(`[ai-provider] cache de contexto creada: ${data.name} (${joined.length} chars)`);
+    return data.name;
+  } catch (e) {
+    console.warn('[ai-provider] error creando la cache:', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 async function callGemini(req: StructuredRequest): Promise<StructuredResponse> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('Falta GEMINI_API_KEY');
@@ -236,8 +296,14 @@ async function callGemini(req: StructuredRequest): Promise<StructuredResponse> {
     generationConfig.responseSchema = toGeminiSchema(req.schema);
   }
 
+  // Si el prefijo estable esta cacheado, se referencia por nombre y NO se manda
+  // el systemInstruction (ya vive adentro de la cache).
+  const cacheName = await geminiCacheName(model, req.systemBlocks);
+
   const body = {
-    systemInstruction: { parts: req.systemBlocks.map((text) => ({ text })) },
+    ...(cacheName
+      ? { cachedContent: cacheName }
+      : { systemInstruction: { parts: req.systemBlocks.map((text) => ({ text })) } }),
     contents: req.turns.map((t) => ({
       // Gemini llama 'model' a lo que Anthropic llama 'assistant'.
       role: t.role === 'assistant' ? 'model' : 'user',

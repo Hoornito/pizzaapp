@@ -106,13 +106,20 @@ function buildMenuText(
 
   // Pizzas: solo los gustos (tamaños fijos). Sin precios.
   if (pizzas.length) {
-    parts.push('# PIZZAS — gusto (precio Individual / Mediana / Grande; mitad y mitad cobra el promedio)');
+    // Agrupadas por escala de precio: hay ~42 gustos pero sólo ~12 escalas, así
+    // que listarlas una por una repetía el mismo trío de precios decenas de
+    // veces. Agrupado dice lo mismo en la mitad de tokens.
+    parts.push('# PIZZAS — precio Individual / Mediana / Grande (mitad y mitad cobra el promedio)');
+    const byPrice = new Map<string, string[]>();
     for (const p of pizzas) {
       const precios = (['priceSmall', 'priceMedium', 'priceLarge'] as const)
         .map((f) => (p[f] == null ? '—' : money(toNumber(p[f]))))
         .join(' / ');
-      parts.push(`- ${p.name}: ${precios}`);
+      const arr = byPrice.get(precios) ?? [];
+      arr.push(p.name);
+      byPrice.set(precios, arr);
     }
+    for (const [precios, names] of byPrice) parts.push(`- ${precios}: ${names.join(', ')}`);
   }
 
   // Resto de productos, agrupados por categoría. Solo nombres.
