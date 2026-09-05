@@ -23,6 +23,12 @@ import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { useSnackbar } from '@/app/snackbar-context';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Alert from '@mui/material/Alert';
+import ScienceIcon from '@mui/icons-material/Science';
 import OrderReviewDialog, { type ReadyOrder } from './OrderReviewDialog';
 
 type Flow = 'normal' | 'ready' | 'needs_human';
@@ -82,6 +88,13 @@ export default function WhatsAppInboxPage() {
   const [sending, setSending] = useState(false);
   const [takeOpen, setTakeOpen] = useState(false);
   const [aiDisabled, setAiDisabled] = useState(false);
+  // Modo simulación: hay una caja test abierta, así que el bot sólo atiende a
+  // los números de prueba que estén cargados acá.
+  const [simulacion, setSimulacion] = useState(false);
+  const [testPhones, setTestPhones] = useState<string[]>([]);
+  const [testDialog, setTestDialog] = useState(false);
+  const [testDraft, setTestDraft] = useState('');
+  const [savingPhones, setSavingPhones] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
 
   const loadConvos = useCallback(() => {
@@ -111,7 +124,39 @@ export default function WhatsAppInboxPage() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => { loadConvos(); loadAiStatus(); }, [loadConvos, loadAiStatus]);
+  const loadTestPhones = useCallback(() => {
+    fetch('/api/admin/whatsapp/test-phones', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        setTestPhones(d.phones || []);
+        setSimulacion(!!d.simulacion);
+      })
+      .catch(() => {});
+  }, []);
+
+  const saveTestPhones = async () => {
+    setSavingPhones(true);
+    try {
+      const phones = testDraft.split(/[\s,;]+/).map((p) => p.trim()).filter(Boolean);
+      const res = await fetch('/api/admin/whatsapp/test-phones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phones }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        showError(json.error || 'No se pudieron guardar los números');
+        return;
+      }
+      setTestPhones(json.phones || []);
+      setTestDialog(false);
+      showSuccess('Números de prueba guardados');
+    } finally {
+      setSavingPhones(false);
+    }
+  };
+
+  useEffect(() => { loadConvos(); loadAiStatus(); loadTestPhones(); }, [loadConvos, loadAiStatus, loadTestPhones]);
   useEffect(() => {
     const t = setInterval(() => {
       loadConvos();
@@ -261,7 +306,28 @@ export default function WhatsAppInboxPage() {
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, flexWrap: 'wrap' }}>
         <Typography variant="h4" fontWeight={700}>WhatsApp</Typography>
         {aiDisabled && <Chip color="error" size="small" label="IA apagada (global)" />}
+        {simulacion && (
+          <Chip
+            color="warning"
+            size="small"
+            icon={<ScienceIcon />}
+            label={
+              testPhones.length
+                ? `Modo prueba · ${testPhones.length} número${testPhones.length === 1 ? '' : 's'}`
+                : 'Modo prueba · sin números cargados'
+            }
+          />
+        )}
         <Box sx={{ flex: 1 }} />
+        <Button
+          onClick={() => { setTestDraft(testPhones.join('\n')); setTestDialog(true); }}
+          variant={simulacion && testPhones.length === 0 ? 'contained' : 'outlined'}
+          color={simulacion && testPhones.length === 0 ? 'warning' : 'inherit'}
+          size="small"
+          startIcon={<ScienceIcon />}
+        >
+          Números de prueba
+        </Button>
         <Button
           onClick={toggleGlobalAI}
           variant={aiDisabled ? 'contained' : 'outlined'}
@@ -452,6 +518,34 @@ export default function WhatsAppInboxPage() {
           )}
         </Box>
       </Paper>
+
+      {/* Números a los que el bot contesta durante una simulación */}
+      <Dialog open={testDialog} onClose={() => setTestDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Números de prueba del bot</DialogTitle>
+        <DialogContent>
+          <Alert severity={simulacion ? 'warning' : 'info'} sx={{ mb: 2 }}>
+            {simulacion
+              ? 'Hay una caja de SIMULACIÓN abierta: el bot contesta sólo a estos números. Al resto les responde que está cerrado, y los pedidos que se tomen son de prueba (se borran al cerrar la caja).'
+              : 'Con la caja normal abierta el bot atiende a todos. Estos números sólo mandan cuando abrís una caja de simulación, para probar la IA sin clientes reales.'}
+          </Alert>
+          <TextField
+            label="Un número por línea"
+            placeholder={'5491169878641\n1122334455'}
+            multiline
+            minRows={3}
+            fullWidth
+            value={testDraft}
+            onChange={(e) => setTestDraft(e.target.value)}
+            helperText="Se comparan los últimos 8 dígitos, así que da igual cómo los escribas."
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTestDialog(false)}>Cancelar</Button>
+          <Button variant="contained" onClick={saveTestPhones} disabled={savingPhones}>
+            Guardar
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <OrderReviewDialog
         open={takeOpen}

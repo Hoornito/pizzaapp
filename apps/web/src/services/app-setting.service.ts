@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { sanitizePhone } from '@/lib/utils';
 import { PIZZA_SIZES, type PizzaSize } from '@/types/product.types';
 
 /**
@@ -46,4 +47,43 @@ export async function saveMenuFlags(input: {
     });
   }
   return getMenuFlags();
+}
+
+// ─── Números de prueba del bot de WhatsApp ──────────────────────────────────
+// Con una caja de SIMULACIÓN abierta el bot no atiende al público (los pedidos
+// del entrenamiento se borran al cerrarla): sólo contesta a estos números, que
+// son los del local. Se guardan sin formato (solo dígitos) separados por coma.
+export const SETTING_WA_TEST_PHONES = 'wa-test-phones';
+
+export async function getWATestPhones(): Promise<string[]> {
+  const row = await prisma.appSetting.findUnique({ where: { key: SETTING_WA_TEST_PHONES } });
+  if (!row?.value) return [];
+  return row.value.split(',').map((p) => p.trim()).filter(Boolean);
+}
+
+/** Guarda la lista (acepta los números escritos como sea: se normalizan acá). */
+export async function setWATestPhones(phones: string[]): Promise<string[]> {
+  const limpios = Array.from(
+    new Set(phones.map((p) => sanitizePhone(p)).filter((p) => p.length >= 6))
+  );
+  const value = limpios.join(',');
+  await prisma.appSetting.upsert({
+    where: { key: SETTING_WA_TEST_PHONES },
+    update: { value },
+    create: { key: SETTING_WA_TEST_PHONES, value },
+  });
+  return limpios;
+}
+
+/**
+ * ¿Este número es uno de los de prueba? Compara por los últimos 8 dígitos: el
+ * mismo teléfono llega como 5491122334455, 91122334455 o 1122334455 según de
+ * dónde venga (webhook de Meta, simulador, cargado a mano).
+ */
+export async function isWATestPhone(phone: string): Promise<boolean> {
+  const cola = (p: string) => sanitizePhone(p).slice(-8);
+  const buscado = cola(phone);
+  if (buscado.length < 6) return false;
+  const lista = await getWATestPhones();
+  return lista.some((p) => cola(p) === buscado);
 }

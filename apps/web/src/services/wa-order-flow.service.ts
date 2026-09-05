@@ -6,7 +6,8 @@ import { toNumber } from '@/lib/utils';
 import { flavorPrice, pizzaPrice } from '@/lib/pizza';
 import { PIZZA_SIZE_LABELS, type PizzaSize, type ProductWithCategory } from '@/types/product.types';
 import { TRANSFER_INFO } from '@/lib/constants';
-import { isStoreOpen } from '@/services/finance.service';
+import { getStoreStatus } from '@/services/finance.service';
+import { isWATestPhone } from '@/services/app-setting.service';
 import { createOrder } from '@/services/order.service';
 import { getWAMenu, norm, type WAMenu } from '@/services/wa-menu.service';
 import { parseOrder, type ParsedDraft, type ParsedItem, type ParserTurn } from '@/services/wa-parser.service';
@@ -288,9 +289,17 @@ export async function handleAIOrder(
   // ninguna respuesta automática: el chat queda entero para atención humana.
   if (availableProviders().length === 0) return;
 
-  if (!opts?.skipStoreCheck && !(await isStoreOpen())) {
-    await botSay(id, phone, 'Hola! Ahora estamos cerrados. Escribinos cuando abramos y te tomamos el pedido, gracias!');
-    return;
+  if (!opts?.skipStoreCheck) {
+    const store = await getStoreStatus();
+    // Caja de SIMULACIÓN abierta: el bot atiende SOLO a los números de prueba
+    // del local (Configuración del panel de WhatsApp). Para el resto la
+    // pizzería sigue cerrada — un pedido real se borraría al cerrar la
+    // simulación, así que se entrena sin el movimiento de clientes normal.
+    const esPrueba = store.test && (await isWATestPhone(phone));
+    if (!store.open && !esPrueba) {
+      await botSay(id, phone, 'Hola! Ahora estamos cerrados. Escribinos cuando abramos y te tomamos el pedido, gracias!');
+      return;
+    }
   }
 
   const rate = await checkRate(phone);
@@ -675,7 +684,14 @@ export async function takeReadyOrder(conversationId: string, userId: string): Pr
   };
 
   // Al tomarlo desde el chat: confirmar e imprimir la comanda (como el mostrador).
-  const order = await createOrder(uid, input, { printOnCreate: true, confirmImmediately: true });
+  // Con una caja de simulación abierta el pedido nace de prueba (no toca stock
+  // ni reportes y se borra al cerrarla), igual que los del mostrador.
+  const { test: enSimulacion } = await getStoreStatus();
+  const order = await createOrder(uid, input, {
+    printOnCreate: true,
+    confirmImmediately: true,
+    isTest: enSimulacion,
+  });
 
   // Confirmación: mensaje AUTOMÁTICO (lleva emoji). Los datos de transferencia
   // van con las mismas palabras que venía mandando el local a mano.
@@ -762,11 +778,17 @@ export async function takeAddonOrder(conversationId: string, userId: string): Pr
   };
 
   // Número forzado #base-N; si choca (otro agregado a la vez), recalculamos.
+  const { test: enSimulacion } = await getStoreStatus();
   let order: Awaited<ReturnType<typeof createOrder>> | null = null;
   for (let i = 0; i < 6; i++) {
     const explicitOrderNumber = await nextAddonNumber(base);
     try {
-      order = await createOrder(uid, input, { printOnCreate: true, confirmImmediately: true, explicitOrderNumber });
+      order = await createOrder(uid, input, {
+        printOnCreate: true,
+        confirmImmediately: true,
+        explicitOrderNumber,
+        isTest: enSimulacion,
+      });
       break;
     } catch (e) {
       if ((e as { code?: string })?.code === 'P2002') continue;
