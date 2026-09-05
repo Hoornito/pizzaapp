@@ -5,7 +5,7 @@ import { sendText } from '@/lib/whatsapp';
 import { toNumber } from '@/lib/utils';
 import { flavorPrice, pizzaPrice } from '@/lib/pizza';
 import { PIZZA_SIZE_LABELS, type PizzaSize, type ProductWithCategory } from '@/types/product.types';
-import { TRANSFER_INFO } from '@/lib/constants';
+import { MENU_URL, TRANSFER_INFO } from '@/lib/constants';
 import { getStoreStatus } from '@/services/finance.service';
 import { isWATestPhone } from '@/services/app-setting.service';
 import { createOrder } from '@/services/order.service';
@@ -160,8 +160,81 @@ async function buildHistory(conversationId: string, sinceMs: number): Promise<Pa
   return turns;
 }
 
-/** Manda un texto por WhatsApp y lo registra en el hilo. */
-async function botSay(conversationId: string, phone: string, text: string) {
+// ─── Freno a las respuestas repetidas ───────────────────────────────────────
+// El modelo contesta una vez por tanda, pero si el cliente vuelve a escribir
+// mientras estamos contestando, la corrida siguiente ve casi el mismo historial
+// y dice lo mismo con otras palabras ("De qué tamaño las querés?" / "De qué
+// tamaño? la grande sale 15mil"). Para el cliente eso es un bot roto. Antes de
+// mandar comparamos con lo último que dijimos, y si es lo mismo no lo repetimos.
+const REPEAT_WINDOW_MS = 10 * 60 * 1000;
+const REPEAT_LOOKBACK = 3;
+// Alto a propósito: frena el mismo mensaje dicho de nuevo (aunque cambie el
+// orden o la puntuación), pero deja pasar una re-pregunta que agrega algo
+// ("de qué tamaño?" → "dale, de qué tamaño la pizza?"). Preferimos repetir de
+// más antes que dejar al cliente esperando una respuesta que nunca sale.
+const REPEAT_THRESHOLD = 0.85;
+
+/**
+ * Palabras "con contenido" de un mensaje, normalizadas para poder compararlo con
+ * otro: sin acentos ni puntuación, y con los precios escritos igual ("15mil",
+ * "15.000" y "$15000" terminan siendo la misma palabra).
+ */
+function contentWords(text: string): Set<string> {
+  const plano = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/(\d+)\s*mil\b/g, (_m, n) => `${n}000`)
+    .replace(/[.,]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ');
+  return new Set(plano.split(/\s+/).filter((w) => w.length > 1));
+}
+
+/** Parecido entre dos mensajes (0 a 1): cuánto comparten de lo que dicen. */
+function similarity(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0;
+  let comunes = 0;
+  for (const w of a) if (b.has(w)) comunes++;
+  return comunes / Math.max(a.size, b.size);
+}
+
+/** ¿Esto mismo ya lo dijimos hace un rato? */
+async function yaLoDijimos(conversationId: string, text: string): Promise<boolean> {
+  const nuevo = contentWords(text);
+  if (nuevo.size < 2) return false;
+  try {
+    const previos = await prisma.whatsAppMessage.findMany({
+      where: {
+        conversationId,
+        direction: 'OUT',
+        type: 'text',
+        createdAt: { gte: new Date(Date.now() - REPEAT_WINDOW_MS) },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: REPEAT_LOOKBACK,
+      select: { body: true },
+    });
+    return previos.some((m) => similarity(contentWords(m.body ?? ''), nuevo) >= REPEAT_THRESHOLD);
+  } catch {
+    // Si la consulta falla preferimos hablar de más antes que quedarnos mudos.
+    return false;
+  }
+}
+
+/**
+ * Manda un texto por WhatsApp y lo registra en el hilo.
+ *
+ * `force` es para los mensajes AUTOMÁTICOS que sí o sí tienen que salir aunque
+ * se parezcan a otro (la confirmación del pedido con su número, los datos de
+ * transferencia, el link de pago): ahí repetir es lo correcto.
+ */
+async function botSay(
+  conversationId: string,
+  phone: string,
+  text: string,
+  opts?: { force?: boolean }
+) {
+  if (!opts?.force && (await yaLoDijimos(conversationId, text))) return;
   let status: string | null = 'sent';
   try {
     await sendText(phone, text);
@@ -182,6 +255,10 @@ const WELCOME_TEXT = [
   '⚠️ Para *envío*: adjuntá dirección y entre qué calles.',
   '🙏 Para *retirar*: dejanos tu nombre.',
   '👇 Mandanos el pedido completo así lo vamos armando.',
+  '',
+  // El menú de la web se abre sin cuenta ni login: es la forma más rápida de
+  // contestar "qué tienen" y "cuánto sale" sin escribir la lista entera.
+  `🍕 Menú y promos: ${MENU_URL}`,
   '',
   '🔴 Horarios: 11:00 a 15:00 y 18:00 a 00:00. Domingo al mediodía cerrado. 🔴',
 ].join('\n');
@@ -336,7 +413,7 @@ export async function handleAIOrder(
   if (ctx.greetedAt !== startedAt && isOpeningGreeting(history)) {
     ctx.greetedAt = startedAt;
     await saveContext(id, ctx);
-    await botSay(id, phone, WELCOME_TEXT);
+    await botSay(id, phone, WELCOME_TEXT, { force: true });
     return;
   }
 
@@ -377,7 +454,10 @@ export async function handleAIOrder(
     return;
   }
 
-  await respondToDraft({ id, phone }, menu, draft, ctx);
+  // El último mensaje del cliente de la tanda: con el resumen ya mostrado, un
+  // "si" pelado alcanza para dar el pedido por confirmado.
+  const ultimoDelCliente = [...history].reverse().find((t) => t.role === 'user')?.text;
+  await respondToDraft({ id, phone }, menu, draft, ctx, ultimoDelCliente);
 }
 
 /** ¿El pedido suma algún agregado que se cobra? */
@@ -541,7 +621,10 @@ async function respondToDraft(
   conv: { id: string; phone: string },
   menu: WAMenu,
   draft: ParsedDraft,
-  ctx: WAContext
+  ctx: WAContext,
+  // Último mensaje del cliente. Sirve para leer un "si" pelado como confirmación
+  // aunque el modelo no lo haya marcado (ver más abajo).
+  lastCustomerText?: string
 ): Promise<void> {
   const { id, phone } = conv;
   const a = await assembleOrder(menu, draft);
@@ -549,7 +632,7 @@ async function respondToDraft(
   if (a.status === 'mp') {
     const token = await generatePurchaseToken(phone);
     ctx.flow = undefined; ctx.readyOrder = undefined; await saveContext(id, ctx);
-    await botSay(id, phone, `Para pagar con Mercado Pago armalo acá:\n${APP_URL}/pedido/${token}\n\n_El enlace vale 2 horas._`);
+    await botSay(id, phone, `Para pagar con Mercado Pago armalo acá:\n${APP_URL}/pedido/${token}\n\n_El enlace vale 2 horas._`, { force: true });
     return;
   }
   if (a.status === 'error') {
@@ -592,12 +675,60 @@ async function respondToDraft(
   }
   // Sin extra → 🟢: el botón "Tomar pedido" queda disponible aunque el cliente no
   // haya dado el OK final (la persona puede tomarlo igual).
+  //
+  // ¿El resumen YA se lo habíamos mostrado y el pedido quedó igual? Entonces
+  // este turno no trae nada nuevo: pasó que el cliente dijo "si" y el modelo no
+  // lo marcó como confirm. Volver a mandarle el mismo resumen con la misma
+  // pregunta ("¿te lo confirmo?") es lo que lo deja respondiendo que sí para
+  // siempre, así que en ese caso confirmamos nosotros.
+  const yaResumido = ctx.flow === 'ready' && !!ctx.readyOrder && mismoPedido(ctx.readyOrder, a.readyOrder);
+  const confirma = draft.intent === 'confirm' || (yaResumido && esAfirmacion(lastCustomerText));
+
   ctx.flow = 'ready'; ctx.readyOrder = a.readyOrder; ctx.addonOf = undefined; await saveContext(id, ctx);
-  if (draft.intent === 'confirm') {
+  if (confirma) {
     await botSay(id, phone, 'Genial, ya lo paso a cocina. Muchas gracias!');
+  } else if (yaResumido) {
+    // Nada cambió y no confirmó: si el modelo tiene algo para decir lo mandamos
+    // (el filtro de repetidos lo frena si vuelve a decir lo mismo), pero el
+    // resumen no se repite.
+    if (draft.reply?.trim()) await botReply(id, phone, draft.reply.trim());
   } else {
     await botSay(id, phone, summaryText(a.readyOrder));
   }
+}
+
+/**
+ * ¿Es el mismo pedido que ya le resumimos? Comparamos lo que el cliente vería en
+ * el resumen: qué lleva, cuánto sale, cómo lo recibe y cómo lo paga.
+ */
+function mismoPedido(a: ReadyOrder, b: ReadyOrder): boolean {
+  const foto = (o: ReadyOrder) =>
+    JSON.stringify([
+      o.items.map((it) => [it.label, it.quantity, it.unitPrice, it.extra, it.notes]),
+      o.total,
+      o.deliveryType,
+      o.paymentMethod,
+      o.cashAmount,
+      o.transferAmount,
+    ]);
+  return foto(a) === foto(b);
+}
+
+/**
+ * "si", "dale", "ok", "sisi", "confirmo"… Un mensaje corto que no dice otra cosa
+ * que "sí". Se usa sólo cuando ya le mostramos el resumen: ahí no hay nada más
+ * que pueda estar aceptando.
+ */
+const AFIRMACIONES = new Set([
+  'si', 'sii', 'siii', 'sisi', 'sip', 'dale', 'dalee', 'dale si', 'ok', 'oka', 'okey', 'okay',
+  'listo', 'confirmo', 'confirmado', 'confirma', 'perfecto', 'genial', 'joya', 'barbaro',
+  'va', 'vale', 'bueno', 'correcto', 'exacto', 'obvio', 'de una', 'asi es', 'yes', 'si dale',
+  'dale gracias', 'si gracias', 'si porfa', 'si por favor', 'si confirmo', 'ok gracias',
+]);
+function esAfirmacion(text?: string): boolean {
+  if (!text) return false;
+  const limpio = greetingTokens(text).join(' ');
+  return !!limpio && AFIRMACIONES.has(limpio);
 }
 
 /** Mensaje para pedirle al cliente que aclare un ítem que no pudimos identificar. */
@@ -708,7 +839,7 @@ export async function takeReadyOrder(conversationId: string, userId: string): Pr
     lines.push('', '💵 Abonás en efectivo al recibir/retirar.');
   }
   lines.push('', 'Gracias! Te avisamos cuando esté listo 🍕');
-  await botSay(conversationId, convo.phone, lines.join('\n'));
+  await botSay(conversationId, convo.phone, lines.join('\n'), { force: true });
 
   // Pedido cerrado: reiniciamos la sesión DESPUÉS de la confirmación (así, si el
   // cliente suma algo, la IA no vuelve a ver el pedido viejo y solo toma lo nuevo)
@@ -805,7 +936,7 @@ export async function takeAddonOrder(conversationId: string, userId: string): Pr
   if (ro.paymentMethod === 'TRANSFERENCIA') {
     lines.push('', `💳 Sumá ${money(ro.subtotal)} a la transferencia al alias *${TRANSFER_INFO.alias}*.`);
   }
-  await botSay(conversationId, convo.phone, lines.join('\n'));
+  await botSay(conversationId, convo.phone, lines.join('\n'), { force: true });
 
   // Reiniciamos sesión DESPUÉS de confirmar (para no re-ver lo ya tomado),
   // mantenemos la ventana de agregados abierta por si suma algo más, y reactivamos.

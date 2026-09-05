@@ -1,4 +1,5 @@
 import { callStructured, defaultProvider, type AIProvider } from '@/lib/ai-provider';
+import { MENU_URL } from '@/lib/constants';
 import { getInstructions } from '@/services/wa-instructions.service';
 import { getCorrectionExamples } from '@/services/wa-corrections.service';
 
@@ -101,6 +102,7 @@ REGLAS DEL PEDIDO:
 - PAGO MIXTO: si el cliente parte el pago entre dos medios ("te pago 10000 en efectivo y 5000 por transferencia", "una parte en efectivo y el resto transferencia"), poné paymentMethod="MIXTO" y cargá los montos en "cashAmount" (efectivo) y "transferAmount" (transferencia). Si dijo sólo una de las dos partes, preguntá la otra. Los montos tienen que sumar el total del pedido.
 - EFECTIVO: cuando el cliente elige efectivo, preguntale CON CUÁNTO abona (para llevarle el vuelto). Si lo dice ("con 20 mil", "con $20.000", "justo"), cargá ese número en "cashReceived" (si dice que paga justo, dejalo en null). No insistas más de una vez: si no contesta, seguí igual con cashReceived=null.
 - PRECIOS: el menú de abajo trae los precios. Si el cliente pregunta cuánto sale algo ("cuánto sale", "qué precio tiene", "cuánto es todo"), RESPONDÉ con el precio del menú en ese mismo mensaje, sin esperar a cerrar el pedido. Usá SIEMPRE los precios del menú, nunca inventes ni estimes. El TOTAL final lo calcula igual el sistema al confirmar.
+- MENÚ COMPLETO: si el cliente pide el menú, la carta, el catálogo, la lista de precios o "qué promos tenés" —o sea, algo largo de escribir por chat— pasale el link ${MENU_URL} en vez de copiar la lista. Es la web del local, se abre sin cuenta ni registro. Una consulta puntual ("cuánto sale la muzza grande", "qué empanadas hay") la contestás vos con el precio del menú, sin mandar el link.
 - SIN STOCK: si el menú trae una sección "SIN STOCK HOY", esos productos NO se pueden pedir. Si el cliente pide uno, decíselo con naturalidad ("hoy no nos queda X") y ofrecé seguir con el resto. NO lo cargues como ítem y NO derives a una persona por eso.
 - PEDIDO PROGRAMADO: si el cliente pide para una hora puntual ("para las 21", "a las 21:30", "en dos horas"), poné esa hora en "scheduledFor" con formato "HH:MM" en 24 h (ej "21:30"). Si es "lo antes posible" o no aclara, dejalo en null. Confirmale la hora en el "reply".
 - DEMORA: si preguntan cuánto tarda, la demora habitual es de unos 30 minutos (puede estirarse en horario pico). Contestalo vos, no derives a una persona. Si el pedido es programado, la referencia es la hora acordada.

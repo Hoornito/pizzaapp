@@ -177,6 +177,11 @@ export const ORDER_PAYMENT_METHOD_EMOJI: Record<string, string> = {
 export const BUSINESS_WHATSAPP_DISPLAY = '+54 9 11 6987-8641';
 export const BUSINESS_WHATSAPP_LINK = 'https://wa.me/5491169878641';
 
+// Menú público de la web: se abre sin cuenta ni login (recién para terminar un
+// pedido online hace falta entrar). Es lo que el bot le pasa al que pide la
+// carta, el catálogo o la lista de precios por WhatsApp.
+export const MENU_URL = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/menu`;
+
 // ─── Control de stock ────────────────────────────────────────────────────────
 // Categorías cuyo stock se descuenta solo al vender y bloquean la compra cuando
 // se agotan. El resto (pizzas, empanadas, fainá…) se hace al momento y se

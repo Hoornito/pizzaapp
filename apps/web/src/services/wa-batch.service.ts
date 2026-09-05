@@ -30,15 +30,22 @@ function envMs(raw: string | undefined, fallback: number): number {
  * Silencio que esperamos desde el último mensaje antes de contestar. Ajustado a
  * cómo escribe la gente en los chats reales: los mensajes de una misma tanda
  * llegan con 10-40 s entre el primero y el último, pero de a ráfagas de pocos
- * segundos. 7 s corta la ráfaga sin que la respuesta se sienta lenta.
+ * segundos. 10 s corta la ráfaga sin que la respuesta se sienta lenta —con 7 s
+ * se colaban tandas partidas al medio ("cuanto me sale?" contestado aparte de
+ * "te puedo pagar con transfe?", con la misma pregunta repetida en las dos).
  */
-const QUIET_MS = envMs(process.env.WA_BATCH_QUIET_MS, 7_000);
+const QUIET_MS = envMs(process.env.WA_BATCH_QUIET_MS, 10_000);
 /** Tope duro: por más que siga escribiendo, a los 25 s le contestamos. */
 const MAX_WAIT_MS = envMs(process.env.WA_BATCH_MAX_MS, 25_000);
 const KEY_TTL_S = 120;
+/** Cuánto esperamos a que termine una respuesta en curso antes de largar la nuestra. */
+const LOCK_TTL_S = 90;
+const LOCK_WAIT_MS = 30_000;
+const LOCK_POLL_MS = 1_000;
 
 const seqKey = (id: string) => `wa:batch:seq:${id}`;
 const sinceKey = (id: string) => `wa:batch:since:${id}`;
+const lockKey = (id: string) => `wa:batch:lock:${id}`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -82,7 +89,30 @@ export async function scheduleAIReply(conversationId: string): Promise<void> {
     // Redis se cayó en el medio: mejor contestar igual.
   }
 
-  await runAI(conversationId);
+  // Una sola respuesta a la vez POR CHAT. Llamar al modelo tarda unos segundos:
+  // si en el medio entra otro mensaje, arranca otra tanda que corre en paralelo
+  // y termina contestando lo mismo dos veces (con otras palabras). Con el lock,
+  // la segunda espera a que la primera termine y recién ahí mira el hilo, ya
+  // completo y con nuestra respuesta adentro.
+  let lock = false;
+  const hasta = Date.now() + LOCK_WAIT_MS;
+  try {
+    while (Date.now() < hasta) {
+      if (await redis.set(lockKey(conversationId), '1', 'EX', LOCK_TTL_S, 'NX')) {
+        lock = true;
+        break;
+      }
+      await sleep(LOCK_POLL_MS);
+    }
+  } catch {
+    // Sin Redis no hay lock: contestamos igual (peor es no contestar).
+  }
+
+  try {
+    await runAI(conversationId);
+  } finally {
+    if (lock) await redis.del(lockKey(conversationId)).catch(() => {});
+  }
 }
 
 /**
