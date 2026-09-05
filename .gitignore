@@ -46,3 +46,4 @@ redis_data/
 # Exports de conversaciones de WhatsApp (datos reales de clientes): se usan
 # como material para ajustar el tono del bot, no van al repo.
 Chat de WhatsApp con *.txt
+WhatsApp Chat with *.txt
