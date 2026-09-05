@@ -145,17 +145,16 @@ export async function processIncomingMessage(
   // bot no puede contestar, no contestamos nada y el mensaje queda en el inbox
   // para que lo tome una persona.
   //
-  // Import dinámico para evitar el ciclo de imports con wa-order-flow.
   // Un audio que no se pudo transcribir NO se responde: queda en el inbox para
   // que lo escuche una persona. Preferimos eso antes que adivinar un pedido.
   const rawText = voiceText?.trim() || (message.type === 'text' ? message.text?.body?.trim() || '' : '');
   if (!rawText) return;
 
-  const { handleAIOrder } = await import('./wa-order-flow.service');
-  await handleAIOrder(
-    { id: conversation.id, phone: conversation.phone, context: conversation.context },
-    rawText
-  );
+  // No contestamos ESTE mensaje: esperamos a que el cliente termine de escribir
+  // y contestamos la tanda entera de una (ver wa-batch.service). Import dinámico
+  // para evitar el ciclo de imports con wa-order-flow.
+  const { scheduleAIReply } = await import('./wa-batch.service');
+  await scheduleAIReply(conversation.id);
 }
 
 async function getOrCreateConversation(phone: string, waId: string, profileName?: string | null) {
@@ -184,25 +183,66 @@ export async function sendOrderConfirmationWA(
 ): Promise<void> {
   await sendText(
     phone,
-    `✅ *¡Pedido confirmado!*\n\n*Número:* ${orderNumber}\n*Total:* $${total.toLocaleString('es-AR')}\n\nTe avisamos cuando esté listo. 🍕`
+    `✅ *¡Pedido confirmado!*  #${orderNumber}
+
+*Total:* $${total.toLocaleString('es-AR')}
+
+Te avisamos cuando esté listo 🍕`
   );
 }
 
+/**
+ * Estados que SÍ se le avisan al cliente por WhatsApp.
+ *
+ * A propósito es una lista corta: el cliente ya recibió la confirmación al
+ * tomarse el pedido ("te avisamos cuando esté listo"), así que los pasos
+ * internos de cocina (RECIBIDO, CONFIRMADO, PREPARANDO, EN_HORNO) no le dicen
+ * nada nuevo y sólo llenan el chat. El mail y el push siguen recibiendo todos
+ * los estados; esto acota únicamente WhatsApp.
+ */
+const WA_NOTIFIED_STATUSES = new Set(['LISTO', 'EN_REPARTO', 'CANCELADO']);
+
+export function whatsappNotifiesStatus(status: string): boolean {
+  return WA_NOTIFIED_STATUSES.has(status);
+}
+
+/**
+ * Aviso de cambio de estado. Es un mensaje AUTOMÁTICO (por eso lleva emoji, a
+ * diferencia de las respuestas del bot, que imitan al que atiende).
+ *
+ * Se manda UNA sola vez por transición: quien decide eso es notification.service
+ * comparando el estado anterior con el nuevo. Acá sólo se arma el texto.
+ */
 export async function sendOrderStatusUpdateWA(
   phone: string,
   orderNumber: string,
-  status: string
+  status: string,
+  info?: { deliveryType?: string | null; driverName?: string | null }
 ): Promise<void> {
-  const statusMessages: Record<string, string> = {
-    CONFIRMADO: '✅ Tu pedido fue *confirmado*',
-    PREPARANDO: '👨‍🍳 Tu pedido está siendo *preparado*',
-    EN_HORNO: '🔥 Tu pedido está en el *horno*',
-    LISTO: '🎉 Tu pedido está *listo*',
-    EN_REPARTO: '🛵 Tu pedido está *en camino*',
-    ENTREGADO: '🏠 Tu pedido fue *entregado*. ¡Buen provecho!',
-    CANCELADO: '❌ Tu pedido fue *cancelado*',
-  };
+  if (!whatsappNotifiesStatus(status)) return;
 
-  const message = statusMessages[status] || `Estado actualizado: ${status}`;
-  await sendText(phone, `🍕 *Pedido #${orderNumber}*\n\n${message}`);
+  let message: string;
+  if (status === 'LISTO') {
+    message =
+      info?.deliveryType === 'PICKUP'
+        ? `🍕 *Pedido #${orderNumber}*
+
+Ya está listo, te esperamos por el local.`
+        : `🍕 *Pedido #${orderNumber}*
+
+Ya está listo, en un ratito sale para allá.`;
+  } else if (status === 'EN_REPARTO') {
+    message =
+      `🛵 *Pedido #${orderNumber}*
+
+El chico ya salió para allá, así están atentos.` +
+      (info?.driverName ? `
+Repartidor: ${info.driverName}.` : '');
+  } else {
+    message = `❌ *Pedido #${orderNumber}*
+
+Quedó cancelado. Cualquier cosa escribinos por acá.`;
+  }
+
+  await sendText(phone, message);
 }

@@ -28,7 +28,10 @@ import Alert from '@mui/material/Alert';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import FormHelperText from '@mui/material/FormHelperText';
+import InputAdornment from '@mui/material/InputAdornment';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import SearchIcon from '@mui/icons-material/Search';
+import ClearIcon from '@mui/icons-material/Clear';
 import { StatCard } from '@/components/admin/StatCard';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useSnackbar } from '@/app/snackbar-context';
@@ -67,6 +70,36 @@ const needsEmployee = (category: string) =>
   category === FINANCE_CATEGORY_ADELANTOS ||
   category === FINANCE_CATEGORY_PROPINA ||
   category === FINANCE_CATEGORY_RETIRO_EMPLEADO;
+
+/**
+ * ¿La fila del libro entra en la búsqueda? Pensado para el caso de uso real:
+ * "tengo este monto anotado, ¿de qué movimiento salió?". Si lo que se escribe
+ * tiene dígitos, se buscan por monto (total, y en los mixtos también cada
+ * parte); si es texto, por concepto, detalle, empleado o método.
+ */
+function matchesLedgerSearch(row: any, query: string): boolean {
+  const term = query.trim().toLowerCase();
+  if (!term) return true;
+
+  const texto = [
+    row.category,
+    row.description,
+    row.employeeName,
+    FINANCE_PAYMENT_METHOD_LABELS[row.paymentMethod] || row.paymentMethod,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (texto.includes(term)) return true;
+
+  // "27.000", "$27000" y "27000" tienen que encontrar lo mismo.
+  const digits = term.replace(/[^0-9]/g, '');
+  if (!digits) return false;
+  return [row.amount, row.cashPart, row.virtualPart, row.accumulate, row.devolucionAdelanto]
+    .map((v) => Number(v ?? 0))
+    .filter((v) => v > 0)
+    .some((v) => String(Math.round(v)).includes(digits));
+}
 
 function FinanceContent() {
   const router = useRouter();
@@ -127,6 +160,12 @@ function FinanceContent() {
   const totals = summary?.totals || null;
   const ledger: any[] = summary?.ledger || [];
   const history: any[] = summary?.history || [];
+
+  // Buscador del libro: filtra en el cliente (el turno entero ya está cargado).
+  const [ledgerSearch, setLedgerSearch] = useState('');
+  const ledgerFiltrado = ledgerSearch.trim()
+    ? ledger.filter((row) => matchesLedgerSearch(row, ledgerSearch))
+    : ledger;
 
   // ─── Movimientos manuales ──────────────────────────────────────────────
   const openTxnDialog = (type: TxnType) => {
@@ -443,7 +482,38 @@ function FinanceContent() {
         {/* Libro de movimientos */}
         <Grid item xs={12} md={7}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" fontWeight={600} gutterBottom>Libro de movimientos del turno</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 1 }}>
+              <Typography variant="h6" fontWeight={600}>Libro de movimientos del turno</Typography>
+              <TextField
+                size="small"
+                placeholder="Buscar monto o concepto"
+                value={ledgerSearch}
+                onChange={(e) => setLedgerSearch(e.target.value)}
+                sx={{ ml: 'auto', minWidth: 220 }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" color="action" />
+                    </InputAdornment>
+                  ),
+                  endAdornment: ledgerSearch ? (
+                    <InputAdornment position="end">
+                      <IconButton size="small" onClick={() => setLedgerSearch('')} aria-label="Limpiar búsqueda">
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    </InputAdornment>
+                  ) : null,
+                }}
+              />
+            </Box>
+            {ledgerSearch.trim() && (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                {ledgerFiltrado.length} de {ledger.length} movimiento{ledger.length === 1 ? '' : 's'}
+                {ledgerFiltrado.length > 0
+                  ? ` · suman ${formatCurrency(ledgerFiltrado.reduce((acc, r) => acc + Number(r.amount || 0), 0))}`
+                  : ''}
+              </Typography>
+            )}
             <TableContainer>
               <Table size="small">
                 <TableHead>
@@ -456,14 +526,18 @@ function FinanceContent() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {ledger.length === 0 && (
+                  {ledgerFiltrado.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                        {register ? 'Sin movimientos en el turno' : 'Abrí la caja para registrar el turno'}
+                        {ledgerSearch.trim()
+                          ? `Ningún movimiento coincide con "${ledgerSearch.trim()}"`
+                          : register
+                            ? 'Sin movimientos en el turno'
+                            : 'Abrí la caja para registrar el turno'}
                       </TableCell>
                     </TableRow>
                   )}
-                  {ledger.map((row) => {
+                  {ledgerFiltrado.map((row) => {
                     const isIncome = row.type === 'INCOME';
                     return (
                       <TableRow key={row.id} hover>
@@ -493,6 +567,13 @@ function FinanceContent() {
                         </TableCell>
                         <TableCell>
                           {FINANCE_PAYMENT_METHOD_LABELS[row.paymentMethod] || row.paymentMethod}
+                          {/* En un mixto el método solo no dice nada: lo que hay
+                              que ver es cuánto fue en efectivo y cuánto virtual. */}
+                          {row.paymentMethod === 'MIXTO' && row.amount > 0 && (
+                            <Typography variant="caption" color="text.secondary" display="block">
+                              E {formatCurrency(row.cashPart ?? 0)} · T {formatCurrency(row.virtualPart ?? 0)}
+                            </Typography>
+                          )}
                         </TableCell>
                         <TableCell align="right">
                           {row.amount > 0 ||

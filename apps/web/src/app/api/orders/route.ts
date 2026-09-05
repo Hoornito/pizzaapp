@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getOrders, createOrder } from '@/services/order.service';
-import { isStoreOpen } from '@/services/finance.service';
+import { getStoreStatus } from '@/services/finance.service';
 import { isWithinBusinessHours, todayHoursLabel } from '@/services/schedule.service';
 import { findBlockedArea } from '@/services/delivery-area.service';
 import { createOrderSchema } from '@/lib/validators';
@@ -40,9 +40,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Demasiadas solicitudes' }, { status: 429 });
   }
 
+  // Caja de SIMULACIÓN abierta: la web sigue cerrada para el público, pero el
+  // staff puede cargar un pedido de prueba desde el sitio como un cliente más
+  // (queda como isTest y se borra al cerrar el entrenamiento).
+  const store = await getStoreStatus();
+  const esStaff = session.user.role === 'ADMIN' || session.user.role === 'MOSTRADOR';
+  const pedidoDeSimulacion = !store.open && store.test && esStaff;
+
   // Dos condiciones para tomar un pedido por la app: estar dentro del horario
-  // de atención (Configuración → Horarios) y tener la caja abierta.
-  if (!(await isWithinBusinessHours())) {
+  // de atención (Configuración → Horarios) y tener la caja abierta. La
+  // simulación no mira el horario: se entrena cuando el local está cerrado.
+  if (!pedidoDeSimulacion && !(await isWithinBusinessHours())) {
     const horario = await todayHoursLabel();
     return NextResponse.json(
       {
@@ -53,7 +61,7 @@ export async function POST(req: NextRequest) {
       { status: 409 }
     );
   }
-  if (!(await isStoreOpen())) {
+  if (!store.open && !pedidoDeSimulacion) {
     return NextResponse.json({ error: 'Aún estamos cerrados 🕒 Volvé en un rato.' }, { status: 409 });
   }
 
@@ -105,6 +113,9 @@ export async function POST(req: NextRequest) {
       // El descuento de la app es solo para clientes: los pedidos que toma el
       // local (admin/mostrador) se cargan a precio de lista.
       applyAppDiscount: session.user.role === 'CUSTOMER',
+      // Pedido cargado durante una simulación: no toca stock ni reportes y se
+      // borra al cerrar la caja test.
+      isTest: pedidoDeSimulacion,
     });
     return NextResponse.json({ success: true, data: order }, { status: 201 });
   } catch (e) {

@@ -6,8 +6,6 @@ import { controlsStock } from '@/lib/constants';
 import { isValidSlot } from '@/services/schedule.service';
 import { getActiveAppDiscount, discountAmount } from '@/services/discount.service';
 import { esDireccionUbicable } from '@/services/delivery-area.service';
-import { sendText } from '@/lib/whatsapp';
-import { sanitizePhone } from '@/lib/utils';
 import type { CreateOrderInput, UpdateOrderStatusInput } from '@/lib/validators';
 import type { OrderStatus, Prisma } from '@prisma/client';
 import { format } from 'date-fns';
@@ -489,7 +487,8 @@ export async function promoteOrderAfterPayment(orderId: string) {
   await adjustStockForOrder(orderId, 'sell');
   await notifyOrderReceived(order);
   emitOrderStatusChanged(orderId, 'RECIBIDO', order);
-  eventBus.emit('order:status_changed', order as never);
+  // No emitimos 'order:status_changed': notifyOrderReceived ya avisó el pedido
+  // (mail + WhatsApp de confirmación). El evento acá sólo repetía el mensaje.
   return order;
 }
 
@@ -544,27 +543,6 @@ export async function updateOrderStatus(
     });
   }
 
-  // Al pasar a "en reparto", avisamos al cliente por WhatsApp (best-effort).
-  // Sólo en la TRANSICIÓN: guardar el tiempo estimado reenvía el mismo estado y
-  // el cliente recibía "tu pedido está en camino" de nuevo.
-  if (data.status === 'EN_REPARTO' && existing.status !== 'EN_REPARTO') {
-    const clientPhone = order.phone || order.user.phone;
-    if (clientPhone) {
-      const driverName = order.deliveryEmployee
-        ? `${order.deliveryEmployee.firstName} ${order.deliveryEmployee.lastName}`
-        : null;
-      const msg =
-        `🛵 ¡Tu pedido #${order.orderNumber} está en camino!` +
-        (driverName ? `\nRepartidor: ${driverName}.` : '') +
-        `\n¡Gracias por tu compra!`;
-      try {
-        await sendText(sanitizePhone(clientPhone), msg);
-      } catch (err) {
-        console.warn('[updateOrderStatus] No se pudo enviar WhatsApp al cliente:', err);
-      }
-    }
-  }
-
   // Al confirmar el pedido, disparamos la impresión de los tickets en la
   // estación de impresión (cocina + comanda). Sólo en la TRANSICIÓN: guardar el
   // tiempo estimado reenvía el mismo estado, y sin esta guarda volvía a imprimir
@@ -576,7 +554,10 @@ export async function updateOrderStatus(
   // Mandamos también el tiempo estimado: si el local acaba de cargarlo, el
   // cliente que está mirando su pedido lo ve al instante.
   emitOrderStatusChanged(orderId, data.status, order, order.estimatedTime);
-  eventBus.emit('order:status_changed', order as never);
+  // El aviso al cliente (mail, push, WhatsApp) sale del evento, y el evento
+  // lleva el estado anterior: si esto fue sólo guardar el tiempo estimado sobre
+  // el mismo estado, el listener no avisa nada.
+  eventBus.emit('order:status_changed', order as never, existing.status);
 
   return order;
 }
@@ -648,8 +629,10 @@ export async function markOrderPaid(
   }
 
   if (order) {
+    // Refresco de la UI nada más. Cobrar NO cambia el estado del pedido, así que
+    // no emitimos 'order:status_changed': hacerlo le repetía al cliente el
+    // último aviso ("tu pedido está listo") cada vez que se lo cobraba.
     emitOrderStatusChanged(orderId, order.status, order);
-    eventBus.emit('order:status_changed', order as never);
   }
 
   return order;
@@ -695,8 +678,8 @@ export async function changeOrderPaymentMethod(
     });
   }
   if (order) {
+    // Igual que en markOrderPaid: cambia el medio de pago, no el estado.
     emitOrderStatusChanged(orderId, order.status, order);
-    eventBus.emit('order:status_changed', order as never);
   }
   return order;
 }
@@ -767,7 +750,7 @@ export async function cancelStaleUnpaidMercadoPagoOrders(maxAgeMinutes = 30) {
     data: { status: 'CANCELADO', cancelSource: 'SISTEMA', cancelledAt: new Date() },
   });
   for (const id of ids) {
-    eventBus.emit('order:status_changed', { id, status: 'CANCELADO' } as never);
+    eventBus.emit('order:status_changed', { id, status: 'CANCELADO' } as never, 'PENDIENTE_PAGO');
   }
   return { cancelled: ids.length };
 }
@@ -822,7 +805,7 @@ export async function cancelPendingPaymentOrder(orderId: string, userId: string)
   });
 
   emitOrderStatusChanged(orderId, 'CANCELADO', order);
-  eventBus.emit('order:status_changed', order as never);
+  eventBus.emit('order:status_changed', order as never, existing.status);
   return order;
 }
 
@@ -868,8 +851,8 @@ export async function changePickupPaymentMethod(
       data: { status: 'APPROVED', paidAt: new Date() },
     });
   }
+  // Sólo refresco de UI: cambiar el medio de pago no cambia el estado.
   emitOrderStatusChanged(orderId, order.status, order);
-  eventBus.emit('order:status_changed', order as never);
   return order;
 }
 

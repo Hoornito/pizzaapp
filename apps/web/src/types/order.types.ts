@@ -6,6 +6,7 @@ import type {
   User,
   Address,
   Payment,
+  Employee,
   OrderStatus,
   DeliveryType,
   PaymentMethod,
@@ -19,6 +20,9 @@ export type OrderWithRelations = Order & {
     promotion: Promotion | null;
   })[];
   payment: Payment | null;
+  // Repartidor asignado. Lo trae ORDER_INCLUDE y se usa, por ejemplo, para
+  // nombrar al repartidor en el aviso de "ya salió" que se manda por WhatsApp.
+  deliveryEmployee?: Pick<Employee, 'id' | 'firstName' | 'lastName' | 'phone'> | null;
 };
 
 export interface CreateOrderPayload {

@@ -3,7 +3,11 @@ import type { OrderWithRelations } from '@/types/order.types';
 
 type EventMap = {
   'order:created': [order: OrderWithRelations];
-  'order:status_changed': [order: OrderWithRelations];
+  // `previousStatus` es el estado que tenía el pedido ANTES del cambio. Va en el
+  // evento (y no se deduce en el listener) porque es lo único que distingue un
+  // cambio real de un re-guardado del mismo estado: sin eso, cobrar un pedido o
+  // guardarle el tiempo estimado le mandaba al cliente el mismo aviso de nuevo.
+  'order:status_changed': [order: OrderWithRelations, previousStatus: string | null];
   'order:paid': [order: OrderWithRelations];
 };
 

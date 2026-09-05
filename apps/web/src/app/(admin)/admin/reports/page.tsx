@@ -22,11 +22,43 @@ import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import Chip from '@mui/material/Chip';
+import InputAdornment from '@mui/material/InputAdornment';
+import IconButton from '@mui/material/IconButton';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import SearchIcon from '@mui/icons-material/Search';
+import ClearIcon from '@mui/icons-material/Clear';
 import { RevenueChart } from '@/components/admin/RevenueChart';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { FINANCE_PAYMENT_METHOD_LABELS } from '@/lib/constants';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+
+/**
+ * ¿El gasto entra en la búsqueda? Mismo criterio que el libro de Finanzas: con
+ * dígitos busca por monto (total, efectivo y virtual) y con texto por categoría,
+ * detalle, empleado o forma de pago.
+ */
+function matchesExpenseSearch(e: any, query: string): boolean {
+  const term = query.trim().toLowerCase();
+  if (!term) return true;
+
+  const texto = [
+    e.category,
+    e.description,
+    e.employee,
+    FINANCE_PAYMENT_METHOD_LABELS[e.paymentMethod] || e.paymentMethod,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (texto.includes(term)) return true;
+
+  const digits = term.replace(/[^0-9]/g, '');
+  if (!digits) return false;
+  return [e.amount, e.cash, e.virtual]
+    .map((v) => Number(v ?? 0))
+    .filter((v) => v > 0)
+    .some((v) => String(Math.round(v)).includes(digits));
+}
 
 export default function AdminReportsPage() {
   const [period, setPeriod] = useState('week');
@@ -34,6 +66,8 @@ export default function AdminReportsPage() {
   const [shift, setShift] = useState<'BOTH' | 'MANANA' | 'NOCHE'>('BOTH');
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  // Buscador del detalle de gastos ("¿de dónde salió este monto?").
+  const [expenseSearch, setExpenseSearch] = useState('');
 
   const shiftQS = `&shift=${shift}`;
 
@@ -70,6 +104,18 @@ export default function AdminReportsPage() {
       a.click();
     }
   };
+
+  // Gastos que se muestran (todos, o los que matchean la búsqueda) y su total:
+  // buscando un monto, el pie tiene que sumar lo buscado y no el período entero.
+  const gastos: any[] = (report?.finance?.expenses ?? []).filter((e: any) =>
+    matchesExpenseSearch(e, expenseSearch)
+  );
+  const gastosTotales = expenseSearch.trim()
+    ? gastos.reduce(
+        (acc, e) => ({ cash: acc.cash + Number(e.cash || 0), virtual: acc.virtual + Number(e.virtual || 0) }),
+        { cash: 0, virtual: 0 }
+      )
+    : { cash: report?.finance?.cashExpense ?? 0, virtual: report?.finance?.virtualExpense ?? 0 };
 
   return (
     <Box>
@@ -194,11 +240,35 @@ export default function AdminReportsPage() {
           {report.finance?.expenses?.length > 0 && (
             <Grid item xs={12}>
               <Paper sx={{ p: 3 }}>
-                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexWrap: 'wrap' }}>
                   <Typography variant="h6" fontWeight={600}>Detalle de gastos</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    ({report.finance.expenses.length} movimiento{report.finance.expenses.length === 1 ? '' : 's'})
+                    ({expenseSearch.trim()
+                      ? `${gastos.length} de ${report.finance.expenses.length}`
+                      : report.finance.expenses.length}{' '}
+                    movimiento{report.finance.expenses.length === 1 ? '' : 's'})
                   </Typography>
+                  <TextField
+                    size="small"
+                    placeholder="Buscar monto o concepto"
+                    value={expenseSearch}
+                    onChange={(e) => setExpenseSearch(e.target.value)}
+                    sx={{ ml: 'auto', minWidth: 220 }}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon fontSize="small" color="action" />
+                        </InputAdornment>
+                      ),
+                      endAdornment: expenseSearch ? (
+                        <InputAdornment position="end">
+                          <IconButton size="small" onClick={() => setExpenseSearch('')} aria-label="Limpiar búsqueda">
+                            <ClearIcon fontSize="small" />
+                          </IconButton>
+                        </InputAdornment>
+                      ) : null,
+                    }}
+                  />
                 </Box>
                 {/* Alto acotado a ~10 filas: con muchos gastos la tarjeta se
                     estiraba y empujaba todo el reporte para abajo. El encabezado
@@ -217,7 +287,14 @@ export default function AdminReportsPage() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {report.finance.expenses.map((e: any) => (
+                      {gastos.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={7} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+                            Ningún gasto coincide con &quot;{expenseSearch.trim()}&quot;
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {gastos.map((e: any) => (
                         <TableRow key={e.id} hover>
                           <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(e.at)}</TableCell>
                           <TableCell>{e.category}</TableCell>
@@ -254,17 +331,17 @@ export default function AdminReportsPage() {
                       }}
                     >
                       <TableRow>
-                        <TableCell colSpan={4}><strong>Total gastado</strong></TableCell>
-                        <TableCell align="right">
-                          <strong>{formatCurrency(report.finance.cashExpense)}</strong>
+                        <TableCell colSpan={4}>
+                          <strong>{expenseSearch.trim() ? 'Total de lo buscado' : 'Total gastado'}</strong>
                         </TableCell>
                         <TableCell align="right">
-                          <strong>{formatCurrency(report.finance.virtualExpense)}</strong>
+                          <strong>{formatCurrency(gastosTotales.cash)}</strong>
                         </TableCell>
                         <TableCell align="right">
-                          <strong>
-                            {formatCurrency(report.finance.cashExpense + report.finance.virtualExpense)}
-                          </strong>
+                          <strong>{formatCurrency(gastosTotales.virtual)}</strong>
+                        </TableCell>
+                        <TableCell align="right">
+                          <strong>{formatCurrency(gastosTotales.cash + gastosTotales.virtual)}</strong>
                         </TableCell>
                       </TableRow>
                     </TableFooter>

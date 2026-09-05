@@ -35,6 +35,7 @@ import { CopyButton } from '@/components/ui/CopyButton';
 import { pointInPolygon, DELIVERY_ZONE_POLYGON } from '@/lib/geo';
 import { buscarBarrio } from '@/lib/delivery-areas';
 import { useSnackbar } from '@/app/snackbar-context';
+import { fetchStoreStatus } from '@/lib/store-status';
 
 const STEPS = ['Tu pedido', 'Datos de entrega', 'Pago'];
 
@@ -74,6 +75,10 @@ export default function CheckoutPage() {
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(true);
   const [slot, setSlot] = useState('');
+  // Caja de simulación abierta: el pedido que se cargue acá es de prueba y se
+  // borra al cerrar el entrenamiento. Sólo lo ve el staff (para el público la
+  // tienda figura cerrada y no llega hasta acá).
+  const [modoSimulacion, setModoSimulacion] = useState(false);
   const [form, setForm] = useState<CheckoutForm>({
     deliveryType: 'DELIVERY',
     paymentMethod: 'EFECTIVO',
@@ -144,6 +149,10 @@ export default function CheckoutPage() {
       .then((r) => r.json())
       .then((d) => setAreas(d.data || []))
       .catch(() => setAreas([]));
+  }, []);
+
+  useEffect(() => {
+    fetchStoreStatus().then((st) => setModoSimulacion(st.test));
   }, []);
 
   useEffect(() => {
@@ -475,6 +484,13 @@ export default function CheckoutPage() {
       <Typography variant="h4" fontWeight={700} gutterBottom>
         Confirmar Pedido
       </Typography>
+
+      {modoSimulacion && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <strong>Modo simulación:</strong> hay una caja de prueba abierta. Este pedido se carga como
+          test y se borra al cerrar la caja.
+        </Alert>
+      )}
 
       <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
         {STEPS.map((label) => (

@@ -80,6 +80,9 @@ interface WAContext {
   // Proveedor de IA fijado para ESTE chat (para comparar Claude vs Gemini con
   // el mismo pedido). Ausente = el configurado por env.
   provider?: AIProvider;
+  // Sesión en la que ya mandamos el saludo de bienvenida (session.startedAt).
+  // Evita saludar dos veces al que escribe "hola" y después "buenas noches".
+  greetedAt?: number;
 }
 
 const SESSION_TTL_MS = 3 * 60 * 60 * 1000; // 3 h separa pedidos de distintos momentos
@@ -146,6 +149,11 @@ async function buildHistory(conversationId: string, sinceMs: number): Promise<Pa
   for (const m of msgs) {
     const text = m.type === 'image' ? '[el cliente envió una imagen]' : (m.body ?? '').trim();
     if (!text) continue;
+    // El saludo de bienvenida no le dice NADA al modelo (no es parte del pedido)
+    // y son ~100 tokens que se pagan en cada mensaje de la conversación. Además
+    // es el único texto nuestro lleno de emojis: dejándolo afuera, el modelo no
+    // lo toma como ejemplo de cómo escribimos.
+    if (m.direction === 'OUT' && text === WELCOME_TEXT) continue;
     turns.push({ role: m.direction === 'IN' ? 'user' : 'assistant', text });
   }
   return turns;
@@ -160,6 +168,98 @@ async function botSay(conversationId: string, phone: string, text: string) {
     status = 'failed';
   }
   await logMessage(conversationId, { direction: 'OUT', type: 'text', body: text, status });
+}
+
+// ─── Saludo inicial (sin IA) ────────────────────────────────────────────────
+// Es un mensaje AUTOMÁTICO, igual que el que venía mandando el local a mano: acá
+// SÍ van emojis. Las respuestas del bot dentro del pedido no llevan (imitan a la
+// persona que atiende, que no usa).
+const WELCOME_TEXT = [
+  '🔴 Gracias por comunicarte con *Pizza Cambalache San Vicente* 🔴',
+  'En breve te tomamos el pedido.',
+  '',
+  '⚠️ Para *envío*: adjuntá dirección y entre qué calles.',
+  '🙏 Para *retirar*: dejanos tu nombre.',
+  '👇 Mandanos el pedido completo así lo vamos armando.',
+  '',
+  '🔴 Horarios: 11:00 a 15:00 y 18:00 a 00:00. Domingo al mediodía cerrado. 🔴',
+].join('\n');
+
+/**
+ * Palabras que pueden aparecer en un saludo de apertura y en nada más. Si el
+ * mensaje del cliente está hecho SÓLO con estas, todavía no dijo qué quiere.
+ *
+ * Está armada a partir de los chats reales: casi todas las conversaciones
+ * arrancan con "hola buenas noches" o "buenas noches, están tomando pedidos?".
+ * A propósito es una lista corta y aburrida: cualquier palabra de comida
+ * ("pizza", "empanadas", "muzza") queda afuera, así que un "hola, te pido una
+ * muzza" NO cae acá y va derecho al modelo.
+ */
+const GREETING_WORDS = new Set([
+  'hola', 'holaa', 'holaaa', 'holis', 'ola', 'buenas', 'buenass', 'buen', 'buenos',
+  'dia', 'dias', 'tarde', 'tardes', 'noche', 'noches', 'bnas', 'bns', 'saludos',
+  'que', 'tal', 'como', 'estas', 'esta', 'estan', 'andan', 'andas', 'va', 'todo',
+  'bien', 'gente', 'chicos', 'muy', 'ahi', 'hoy', 'ahora', 'se', 'puede', 'puedo',
+  'tomando', 'toman', 'tomas', 'anotando', 'atendiendo', 'atienden',
+  'trabajando', 'abierto', 'abiertos', 'abiertas', 'abren', 'pedidos', 'pedido',
+  'pedir', 'hacer', 'un', 'una', 'el', 'la', 'de', 'y', 'a', 'por', 'favor',
+  'gracias', 'disculpa', 'disculpame', 'perdon', 'les', 'te', 'me',
+]);
+
+/** Saca acentos, emojis y signos para comparar palabra por palabra. */
+function greetingTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * ¿La conversación arranca con un saludo pelado, sin pedido?
+ *
+ * Pide dos cosas: que todavía no le hayamos contestado nada en esta sesión, y
+ * que TODO lo que escribió sea saludo. Con eso mandamos la bienvenida fija y nos
+ * ahorramos una llamada al modelo —con menú e instrucciones adentro— por pedido.
+ * (Que no hayamos SALUDADO ya lo controla `greetedAt`, no esto.)
+ */
+function isOpeningGreeting(history: ParserTurn[]): boolean {
+  if (!history.length) return false;
+  if (history.some((t) => t.role === 'assistant')) return false;
+
+  return history.every((t) => {
+    const words = greetingTokens(t.text);
+    // Un mensaje largo no es un saludo aunque las palabras coincidan.
+    if (!words.length || words.length > 10) return false;
+    return words.every((w) => GREETING_WORDS.has(w));
+  });
+}
+
+/**
+ * Manda la respuesta del modelo. Si el texto trae una línea en blanco, sale como
+ * DOS mensajes seguidos: es como escribe el que atiende ("dale genial" / "seria
+ * 28000" / "en 30 min esta"), y en el chat se lee mucho más natural que un
+ * párrafo solo.
+ */
+const REPLY_MAX_PARTS = 3;
+const REPLY_GAP_MS = 700;
+async function botReply(conversationId: string, phone: string, text: string) {
+  const parts = text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .slice(0, REPLY_MAX_PARTS);
+
+  if (parts.length <= 1) {
+    await botSay(conversationId, phone, text.trim() || text);
+    return;
+  }
+  for (let i = 0; i < parts.length; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, REPLY_GAP_MS));
+    await botSay(conversationId, phone, parts[i]);
+  }
 }
 
 async function setRed(conversationId: string, ctx: WAContext) {
@@ -189,18 +289,17 @@ export async function handleAIOrder(
   if (availableProviders().length === 0) return;
 
   if (!opts?.skipStoreCheck && !(await isStoreOpen())) {
-    await botSay(id, phone, 'Por ahora estamos cerrados 🕒 Escribinos cuando abramos y te tomamos el pedido. ¡Gracias!');
+    await botSay(id, phone, 'Hola! Ahora estamos cerrados. Escribinos cuando abramos y te tomamos el pedido, gracias!');
     return;
   }
 
   const rate = await checkRate(phone);
   if (rate === 'just-blocked') {
-    await botSay(id, phone, 'Estamos con mucha demanda 🙌 En un ratito te responde una persona.');
+    await botSay(id, phone, 'Estamos con mucho pedido, en un ratito te respondemos.');
     return;
   }
   if (rate === 'blocked') return;
 
-  const menu = await getWAMenu();
   const ctx = loadContext(conversation.context);
   // Proveedor de IA: el que pidió el simulador manda y queda fijado en el chat;
   // si no, el que ya tenía; si no, el de la configuración.
@@ -216,17 +315,34 @@ export async function handleAIOrder(
 
   // El mensaje entrante ya quedó guardado en el hilo antes de llamarnos.
   const history = await buildHistory(id, startedAt);
+
+  // Saludo pelado ("hola buenas noches", "están tomando pedidos?"): contestamos
+  // el mensaje de bienvenida SIN llamar al modelo. Es el arranque de casi todas
+  // las conversaciones, así que es la llamada más fácil de ahorrar: una por
+  // pedido, con el prompt entero adentro, para producir un texto fijo.
+  //
+  // `greetedAt` guarda en qué sesión ya saludamos. No alcanza con mirar el hilo:
+  // el saludo se filtra del historial (ver buildHistory), así que un segundo
+  // "hola" volvería a parecer el arranque de la conversación.
+  if (ctx.greetedAt !== startedAt && isOpeningGreeting(history)) {
+    ctx.greetedAt = startedAt;
+    await saveContext(id, ctx);
+    await botSay(id, phone, WELCOME_TEXT);
+    return;
+  }
+
+  const menu = await getWAMenu();
   const draft = await parseOrder(menu.menuText, history, provider);
 
   // IA no disponible / falló → derivamos a una persona.
   if (!draft) {
     await setRed(id, ctx);
-    await botSay(id, phone, 'Dame un momento que te atiende una persona 🙌');
+    await botSay(id, phone, 'Dame un minuto y te atiendo.');
     return;
   }
 
   if (draft.intent === 'cancel') {
-    await botSay(id, phone, draft.reply || 'Listo, cancelé el pedido. Cuando quieras arrancamos de nuevo 🍕');
+    await botReply(id, phone, draft.reply || 'Listo, lo cancelo. Cuando quieras nos escribis.');
     // El corte de sesión va DESPUÉS de avisar, no antes: si se guardaba primero,
     // el propio aviso de cancelación caía dentro de la sesión nueva, el modelo lo
     // veía como primer turno del historial siguiente y volvía a avisar que estaba
@@ -241,7 +357,7 @@ export async function handleAIOrder(
   if (draft.needsHuman && !hasExtra(draft)) {
     ctx.humanReason = draft.humanReason?.trim() || draft.reply || 'Consulta fuera del menú';
     await setRed(id, ctx);
-    await botSay(id, phone, draft.reply || 'Buena pregunta 🙌 Dejame que te confirma una persona en un ratito.');
+    await botReply(id, phone, draft.reply || 'Dejame que te confirmo en un ratito.');
     return;
   }
 
@@ -286,7 +402,7 @@ async function stageExtra(
   ctx.humanReason = list ? `Extra sin precio: ${list}` : 'Extra a cobrar';
   await saveContext(id, ctx);
   await pauseBot(id);
-  await botSay(id, phone, `El agregado${list ? ` de ${list}` : ''} te lo confirma una persona con el precio 🙌 En un ratito seguimos.`);
+  await botSay(id, phone, `El agregado${list ? ` de ${list}` : ''} te lo confirmo en un ratito con el precio.`);
 }
 
 /**
@@ -329,7 +445,7 @@ async function stageAddon(
 
   await saveContext(id, ctx);
   await pauseBot(id);
-  await botSay(id, phone, `Perfecto, se lo sumo a tu pedido #${lo.number} 🙌 En un ratito te confirmo.`);
+  await botSay(id, phone, `Dale, se lo sumo a tu pedido #${lo.number}. En un ratito te confirmo.`);
 }
 
 type AssembleResult =
@@ -373,7 +489,13 @@ function qtyLabel(it: ReadyOrderItem): string {
   return it.extra ? `${base} + ${it.extra}` : base;
 }
 
-/** Resumen corto con el total (desde la DB) para que el cliente confirme. */
+/**
+ * Resumen corto con el total (desde la DB) para que el cliente confirme.
+ *
+ * Sin emojis ni encabezado: el que atiende manda "seria 28000" y sigue. Igual
+ * repetimos el detalle en una línea por ítem, que es donde se atajan los errores
+ * caros (la mitad de roquefort que no era, la empanada de más).
+ */
 function summaryText(ro: ReadyOrder): string {
   // El mixto muestra el reparto: es justo el dato que el cliente quiere ver
   // confirmado antes de decir que sí.
@@ -389,17 +511,15 @@ function summaryText(ro: ReadyOrder): string {
     ? `Envío${ro.address ? ` a ${ro.address.street} ${ro.address.number}` : ''}`
     : 'Retira en el local';
   return [
-    '📋 *Tu pedido:*',
     // En las promos a eleccion el detalle de gustos va debajo del item: es lo
     // que el cliente necesita ver para confirmar que le anotamos bien.
     ...ro.items.flatMap((it) => {
-      const linea = `• ${qtyLabel(it)}`;
+      const linea = `- ${qtyLabel(it)}`;
       const detalle = it.promotionId && it.notes ? it.notes.split('\n').filter((l) => l.trim()) : [];
       return [linea, ...detalle.map((d) => `   ${d.trim()}`)];
     }),
-    `*Total: ${money(ro.total)}*`,
-    `${entrega} · ${pago}`,
-    '¿Confirmás? 🙂',
+    `${entrega}, ${pago}.`,
+    `Serían ${money(ro.total)}. ¿Te lo confirmo?`,
   ].join('\n');
 }
 
@@ -420,20 +540,20 @@ async function respondToDraft(
   if (a.status === 'mp') {
     const token = await generatePurchaseToken(phone);
     ctx.flow = undefined; ctx.readyOrder = undefined; await saveContext(id, ctx);
-    await botSay(id, phone, `Para pagar con Mercado Pago armá tu pedido acá 👇\n${APP_URL}/pedido/${token}\n\n_El enlace vale 2 horas._`);
+    await botSay(id, phone, `Para pagar con Mercado Pago armalo acá:\n${APP_URL}/pedido/${token}\n\n_El enlace vale 2 horas._`);
     return;
   }
   if (a.status === 'error') {
     // No entendimos un ítem: pedimos que lo aclare (no frenamos el pedido).
     ctx.flow = undefined; ctx.readyOrder = undefined; await saveContext(id, ctx);
-    await botSay(id, phone, clarifyItemText(a.item));
+    await botReply(id, phone, clarifyItemText(a.item));
     return;
   }
   if (a.status === 'ask') {
     // Falta info: dejamos que el modelo maneje la charla (preguntar tamaño,
     // variedad de empanada, etc.); su "reply" es más natural que el mensaje fijo.
     ctx.flow = undefined; ctx.readyOrder = undefined; await saveContext(id, ctx);
-    await botSay(id, phone, draft.reply || a.message);
+    await botReply(id, phone, draft.reply || a.message);
     return;
   }
   // a.status === 'ready': el pedido está COMPLETO.
@@ -449,7 +569,7 @@ async function respondToDraft(
       ctx.humanReason = `Pago mixto que no cierra: ${money(ro.cashAmount ?? 0)} efectivo + ${money(ro.transferAmount ?? 0)} transferencia = ${money(suma)}, y el total es ${money(ro.total)}`;
       await saveContext(id, ctx);
       await pauseBot(id);
-      await botSay(id, phone, 'Con el pago dividido te confirma una persona en un ratito 🙌');
+      await botSay(id, phone, 'Con el pago dividido te confirmo en un ratito.');
       return;
     }
   }
@@ -465,7 +585,7 @@ async function respondToDraft(
   // haya dado el OK final (la persona puede tomarlo igual).
   ctx.flow = 'ready'; ctx.readyOrder = a.readyOrder; ctx.addonOf = undefined; await saveContext(id, ctx);
   if (draft.intent === 'confirm') {
-    await botSay(id, phone, '¡Genial! 🍕 Ya paso tu pedido al local, en un ratito te confirmamos. ¡Gracias!');
+    await botSay(id, phone, 'Genial, ya lo paso a cocina. Muchas gracias!');
   } else {
     await botSay(id, phone, summaryText(a.readyOrder));
   }
@@ -473,9 +593,9 @@ async function respondToDraft(
 
 /** Mensaje para pedirle al cliente que aclare un ítem que no pudimos identificar. */
 function clarifyItemText(item: string): string {
-  if (item.toLowerCase().includes('tamaño')) return '¿De qué tamaño la pizza? Individual, Mediana o Grande 🍕';
+  if (item.toLowerCase().includes('tamaño')) return 'De qué tamaño la pizza? individual, mediana o grande';
   const clean = item.replace(/^"|"$/g, '');
-  return `Perdón, no me quedó claro lo de ${clean} 🤔 ¿Me confirmás qué es? (por ejemplo: empanada, pizza, bebida…)`;
+  return `Perdón, no me quedó claro lo de ${clean}. Me confirmás qué es?`;
 }
 
 /**
@@ -515,10 +635,10 @@ export async function takeReadyOrder(conversationId: string, userId: string): Pr
     subtotal: ro.subtotal,
     deliveryFee: ro.deliveryFee,
     total: ro.total,
-    // Transferencia: se marca pagado automáticamente (si no pagan, se quita a mano).
-    // Efectivo y mixto: flujo normal, se cobra al entregar/retirar (en el mixto
-    // el ticket de cocina imprime cuánto va en cada medio).
-    paid: ro.paymentMethod === 'TRANSFERENCIA',
+    // Ningún pedido del bot nace cobrado, tampoco los de transferencia: que el
+    // cliente diga que transfiere no es que la plata haya entrado. Se marca
+    // pagado a mano desde Pedidos cuando se verifica el comprobante.
+    paid: false,
     ...(ro.paymentMethod === 'MIXTO'
       ? { cashAmount: ro.cashAmount ?? 0, transferAmount: ro.transferAmount ?? 0 }
       : {}),
@@ -557,14 +677,21 @@ export async function takeReadyOrder(conversationId: string, userId: string): Pr
   // Al tomarlo desde el chat: confirmar e imprimir la comanda (como el mostrador).
   const order = await createOrder(uid, input, { printOnCreate: true, confirmImmediately: true });
 
-  const lines = [`✅ *¡Pedido confirmado!*  #${order.orderNumber}`, '', `*Total:* ${money(ro.total)}`];
+  // Confirmación: mensaje AUTOMÁTICO (lleva emoji). Los datos de transferencia
+  // van con las mismas palabras que venía mandando el local a mano.
+  const lines = [`✅ *Pedido tomado*  #${order.orderNumber}`, '', `*Total:* ${money(ro.total)}`];
   if (ro.deliveryType === 'DELIVERY') lines.push(`_(incluye envío ${money(ro.deliveryFee)})_`);
   if (ro.paymentMethod === 'TRANSFERENCIA') {
-    lines.push('', `💳 Transferí a *${TRANSFER_INFO.alias}* (${TRANSFER_INFO.holder}) y mandanos el comprobante por acá.`);
+    lines.push(
+      '',
+      `💳 Alias: *${TRANSFER_INFO.alias}*`,
+      `A nombre de: ${TRANSFER_INFO.holder}`,
+      'Ni bien ingrese la captura del pago, el pedido sale a cocina.'
+    );
   } else {
     lines.push('', '💵 Abonás en efectivo al recibir/retirar.');
   }
-  lines.push('', '¡Gracias! Te avisamos cuando esté listo 🍕');
+  lines.push('', 'Gracias! Te avisamos cuando esté listo 🍕');
   await botSay(conversationId, convo.phone, lines.join('\n'));
 
   // Pedido cerrado: reiniciamos la sesión DESPUÉS de la confirmación (así, si el
@@ -624,7 +751,8 @@ export async function takeAddonOrder(conversationId: string, userId: string): Pr
     subtotal: ro.subtotal,
     deliveryFee: 0, // el envío ya se cobró en el pedido original
     total: ro.subtotal,
-    paid: ro.paymentMethod === 'TRANSFERENCIA',
+    // Igual que el pedido original: el cobro se marca a mano al verificarlo.
+    paid: false,
     phone: convo.phone,
     notes: `AGREGADO AL PEDIDO #${base}`,
     items: ro.items.map(toOrderItemInput),
@@ -648,12 +776,12 @@ export async function takeAddonOrder(conversationId: string, userId: string): Pr
   if (!order) throw new Error('No se pudo crear el agregado (numeración).');
 
   const lines = [
-    `✅ *¡Agregado confirmado!*  #${order.orderNumber}`,
-    ...ro.items.map((it) => `• ${qtyLabel(it)}`),
-    `*Total agregado:* ${money(ro.subtotal)}`,
+    `✅ *Agregado tomado*  #${order.orderNumber}`,
+    ...ro.items.map((it) => `- ${qtyLabel(it)}`),
+    `*Total del agregado:* ${money(ro.subtotal)}`,
   ];
   if (ro.paymentMethod === 'TRANSFERENCIA') {
-    lines.push('', `💳 Sumá ${money(ro.subtotal)} a la transferencia a *${TRANSFER_INFO.alias}*.`);
+    lines.push('', `💳 Sumá ${money(ro.subtotal)} a la transferencia al alias *${TRANSFER_INFO.alias}*.`);
   }
   await botSay(conversationId, convo.phone, lines.join('\n'));
 

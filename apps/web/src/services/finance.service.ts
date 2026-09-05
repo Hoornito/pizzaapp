@@ -81,6 +81,19 @@ export async function isStoreOpen(): Promise<boolean> {
   return !!register && !register.isTest;
 }
 
+/**
+ * Estado de la tienda para la web del cliente.
+ * - `open`: hay una caja real abierta, se toman pedidos del público.
+ * - `test`: la caja abierta es de SIMULACIÓN. Para el público la tienda sigue
+ *   cerrada (un pedido real se borraría al cerrar el entrenamiento), pero el
+ *   staff sí puede cargar un pedido de prueba y recorrer el circuito completo.
+ */
+export async function getStoreStatus(): Promise<{ open: boolean; test: boolean }> {
+  const register = await getOpenCashRegister();
+  if (!register) return { open: false, test: false };
+  return { open: !register.isTest, test: !!register.isTest };
+}
+
 export async function openCashRegister(input: OpenCashRegisterInput, userId?: string) {
   const existing = await getOpenCashRegister();
   if (existing) {
@@ -290,6 +303,18 @@ export async function deleteFinanceTransaction(id: string) {
 }
 
 const isVirtualMethod = (m: string) => m === 'TRANSFERENCIA' || m === 'TARJETA';
+
+/**
+ * Porción en efectivo de un movimiento manual: en MIXTO es `cashAmount` (el
+ * resto se pagó/cobró por transferencia o tarjeta) y en el resto de los métodos
+ * el total va entero a un solo lado.
+ */
+const txnCashPart = (t: { paymentMethod: string; amount: unknown; cashAmount?: unknown }): number =>
+  t.paymentMethod === 'EFECTIVO'
+    ? toNumber(t.amount)
+    : t.paymentMethod === 'MIXTO'
+      ? toNumber(t.cashAmount ?? 0)
+      : 0;
 
 /**
  * Totales financieros de un período [from, to] para el panel de reportes.
@@ -565,6 +590,11 @@ export interface LedgerRow {
   description: string | null;
   paymentMethod: string;
   amount: number;
+  // Reparto del monto entre caja y medios virtuales. Sólo tiene sentido mirarlo
+  // en MIXTO (es el único caso donde el total no va entero a un solo medio),
+  // pero se completa siempre para no tener que recalcularlo en la pantalla.
+  cashPart: number;
+  virtualPart: number;
   employeeName?: string | null;
   // Solo sueldos: monto que quedó "a favor" del empleado (no sale de caja).
   accumulate?: number;
@@ -628,6 +658,7 @@ export async function getFinanceSummary() {
         total: true,
         paymentMethod: true,
         cashAmount: true,
+        transferAmount: true,
         createdAt: true,
         payment: { select: { paidAt: true } },
       },
@@ -681,6 +712,8 @@ export async function getFinanceSummary() {
       description: `Pedido #${o.orderNumber}`,
       paymentMethod: o.paymentMethod,
       amount: toNumber(o.total),
+      cashPart: orderCashPortion(o),
+      virtualPart: toNumber(o.total) - orderCashPortion(o),
     })),
     ...manualTxns.map((t) => ({
       id: t.id,
@@ -691,6 +724,10 @@ export async function getFinanceSummary() {
       description: t.description,
       paymentMethod: t.paymentMethod,
       amount: toNumber(t.amount),
+      // MIXTO: lo que salió/entró por caja es cashAmount y el resto es virtual.
+      // En el resto de los métodos el total va entero a uno de los dos lados.
+      cashPart: txnCashPart(t),
+      virtualPart: toNumber(t.amount) - txnCashPart(t),
       employeeName: t.employee ? `${t.employee.firstName} ${t.employee.lastName}` : null,
       accumulate: accByTxn.get(t.id) ?? 0,
       devolucionAdelanto: devByTxn.get(t.id) ?? 0,
