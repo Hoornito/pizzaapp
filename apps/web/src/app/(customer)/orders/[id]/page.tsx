@@ -208,6 +208,34 @@ function OrderDetailContent({ params }: Props) {
 
   return (
     <Container maxWidth="md">
+      {/* Bien arriba de todo: recién acá (ya confirmado el pedido) mostramos a
+          dónde transferir. En checkout sólo avisamos que se lo íbamos a pasar
+          después de confirmar. */}
+      {order.paymentMethod === 'TRANSFERENCIA' && order.payment?.status !== 'APPROVED' && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="body2" fontWeight={700} gutterBottom>
+            Para que confirmemos tu pedido tenés que hacer la transferencia a:
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Typography variant="body2">Alias: <strong>{TRANSFER_INFO.alias}</strong></Typography>
+            <CopyButton text={TRANSFER_INFO.alias} label="Copiar alias" />
+          </Box>
+          {TRANSFER_INFO.cbu && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mt: 0.5 }}>
+              <Typography variant="body2">CBU: <strong>{TRANSFER_INFO.cbu}</strong></Typography>
+              <CopyButton text={TRANSFER_INFO.cbu} label="Copiar CBU" />
+            </Box>
+          )}
+          <Typography variant="body2">Titular: {TRANSFER_INFO.holder}</Typography>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            Enviá el comprobante por WhatsApp al{' '}
+            <a href={TRANSFER_INFO.whatsappLink} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700, color: 'inherit' }}>
+              {TRANSFER_INFO.whatsapp}
+            </a>
+          </Typography>
+        </Alert>
+      )}
+
       <Box sx={{ mb: 3 }}>
         <Button onClick={() => router.push('/orders')} sx={{ mb: 1 }}>
           ← Mis Pedidos

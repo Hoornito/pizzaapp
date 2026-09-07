@@ -30,8 +30,7 @@ import { useCart } from '@/hooks/useCart';
 import { CartSummary } from '@/components/cart/CartSummary';
 import { CartItem } from '@/components/cart/CartItem';
 import { formatCurrency } from '@/lib/utils';
-import { TRANSFER_INFO, isCityInDeliveryZone, DELIVERY_ZONE_LABEL } from '@/lib/constants';
-import { CopyButton } from '@/components/ui/CopyButton';
+import { isCityInDeliveryZone, DELIVERY_ZONE_LABEL } from '@/lib/constants';
 import { pointInPolygon, DELIVERY_ZONE_POLYGON } from '@/lib/geo';
 import { buscarBarrio } from '@/lib/delivery-areas';
 import { useSnackbar } from '@/app/snackbar-context';
@@ -451,31 +450,11 @@ export default function CheckoutPage() {
 
   if (items.length === 0) return null;
 
-  const transferInfoAlert = (
+  // Los datos de la cuenta (alias/CBU) no se muestran acá: recién se ven
+  // arriba de todo en la pantalla del pedido, una vez que ya lo confirmó.
+  const transferAviso = (
     <Alert severity="info" sx={{ mb: 3 }}>
-      <Typography variant="body2" fontWeight={700} gutterBottom>
-        Datos para la transferencia:
-      </Typography>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-        <Typography variant="body2">Alias: <strong>{TRANSFER_INFO.alias}</strong></Typography>
-        <CopyButton text={TRANSFER_INFO.alias} label="Copiar alias" />
-      </Box>
-      {TRANSFER_INFO.cbu && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mt: 0.5 }}>
-          <Typography variant="body2">CBU: <strong>{TRANSFER_INFO.cbu}</strong></Typography>
-          <CopyButton text={TRANSFER_INFO.cbu} label="Copiar CBU" />
-        </Box>
-      )}
-      <Typography variant="body2">Titular: {TRANSFER_INFO.holder}</Typography>
-      <Typography variant="body2" sx={{ mt: 1 }}>
-        Enviá el comprobante por WhatsApp al{' '}
-        <a href={TRANSFER_INFO.whatsappLink} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700, color: 'inherit' }}>
-          {TRANSFER_INFO.whatsapp}
-        </a>
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-        El pedido queda como “pago pendiente” hasta que el negocio confirme la transferencia.
-      </Typography>
+      Te vamos a mostrar los datos para transferir apenas confirmes el pedido.
     </Alert>
   );
 
@@ -840,7 +819,7 @@ export default function CheckoutPage() {
                 </Box>
               )}
 
-              {form.paymentMethod === 'TRANSFERENCIA' && transferInfoAlert}
+              {form.paymentMethod === 'TRANSFERENCIA' && transferAviso}
 
               {form.paymentMethod === 'MIXTO' && (
                 (() => {
@@ -874,7 +853,7 @@ export default function CheckoutPage() {
                           ? `Suma correcta: ${formatCurrency(cash)} + ${formatCurrency(transfer)} = ${formatCurrency(payTotal)}`
                           : `La suma (${formatCurrency(cash + transfer)}) debe ser igual al total (${formatCurrency(payTotal)})`}
                       </Alert>
-                      {transfer > 0 && <Box sx={{ mt: 1.5 }}>{transferInfoAlert}</Box>}
+                      {transfer > 0 && <Box sx={{ mt: 1.5 }}>{transferAviso}</Box>}
                     </Box>
                   );
                 })()
