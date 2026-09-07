@@ -56,10 +56,22 @@ export class PostrePayoutRates {
   private constructor(private readonly rows: RateRow[]) {}
 
   static async load(): Promise<PostrePayoutRates> {
-    const rows = await prisma.postrePayoutRate.findMany({
-      orderBy: { effectiveFrom: 'asc' },
-      select: { size: true, amount: true, effectiveFrom: true },
-    });
+    let rows: { size: string; amount: unknown; effectiveFrom: Date }[] = [];
+    try {
+      rows = await prisma.postrePayoutRate.findMany({
+        orderBy: { effectiveFrom: 'asc' },
+        select: { size: true, amount: true, effectiveFrom: true },
+      });
+    } catch (e) {
+      // La tabla puede no existir todavía: en producción la imagen se construye
+      // con el código nuevo y la migración corre unos segundos después. Sin
+      // tarifas guardadas el resultado es el mismo (se usan los valores de
+      // siempre), así que preferimos que el panel funcione antes que reventar.
+      console.warn(
+        '[postre-payout] no se pudieron leer las tarifas, se usan los valores por defecto:',
+        e instanceof Error ? e.message : e
+      );
+    }
     return new PostrePayoutRates(
       rows.map((r) => ({
         size: r.size,
