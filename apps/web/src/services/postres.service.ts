@@ -1,6 +1,13 @@
 import { prisma } from '@/lib/prisma';
 import { toNumber } from '@/lib/utils';
 import { adjustStock } from './product.service';
+import {
+  loadPostreSales,
+  sumPostreSales,
+  PostrePayoutRates,
+  DEFAULT_POSTRE_PAYOUT,
+  type PostreSize,
+} from './postre-payout.service';
 import { parseLocalDate } from './finance.service';
 import {
   format,
@@ -48,6 +55,8 @@ export interface PostreVentaDia {
   total: number;
 }
 
+export type PostresData = Awaited<ReturnType<typeof getPostresData>>;
+
 export interface GetPostresParams {
   period?: PostresPeriod;
   date?: string; // YYYY-MM-DD
@@ -75,6 +84,11 @@ export async function getPostresData(params?: GetPostresParams) {
       stockTotal: 0,
       entradas: 0,
       period: params?.period ?? 'month',
+      resumenPeriodo: sumPostreSales([]),
+      resumenHistorico: sumPostreSales([]),
+      ajustes: 0,
+      conciliacion: { dineroAFavorAnterior: 0, dineroAFavorReal: 0, diferencia: 0 },
+      pagoActual: { ...DEFAULT_POSTRE_PAYOUT },
     };
   }
 
@@ -112,7 +126,7 @@ export async function getPostresData(params?: GetPostresParams) {
         items: { some: { product: { categoryId: catId } } },
       };
 
-  const [products, periodOrders, retiros, adjustAgg, allTimeIngresoAgg, entradasAgg] = await Promise.all([
+  const [products, periodOrders, retiros, adjustAgg, entradasAgg, historico, rates] = await Promise.all([
     prisma.product.findMany({ where: { categoryId: catId }, orderBy: { name: 'asc' } }),
     prisma.order.findMany({
       where: periodWhere,
@@ -124,19 +138,15 @@ export async function getPostresData(params?: GetPostresParams) {
     }),
     prisma.postreWithdrawal.findMany({ select: { amount: true } }),
     prisma.postreAdjustment.aggregate({ _sum: { amount: true } }),
-    // Ingresos HISTÓRICOS por postres (para el saldo a favor, no depende del período).
-    prisma.orderItem.aggregate({
-      _sum: { subtotal: true },
-      where: {
-        product: { categoryId: catId },
-        order: { status: { not: 'CANCELADO' }, isTest: false, payment: { status: 'APPROVED' } },
-      },
-    }),
     // Entradas de stock (carga) en el período.
     prisma.stockMovement.aggregate({
       _sum: { quantity: true },
       where: { kind: 'ENTRADA', createdAt: { gte: from, lte: to }, product: { categoryId: catId } },
     }),
+    // TODAS las ventas de postres cobradas, sin recorte de fecha: el dinero a
+    // favor es un saldo acumulado, no una foto del período.
+    loadPostreSales(catId),
+    PostrePayoutRates.load(),
   ]);
 
   // Agregado por día (fecha de cobro) + totales del período.
@@ -161,8 +171,28 @@ export async function getPostresData(params?: GetPostresParams) {
 
   const totalRetiros = retiros.reduce((s, r) => s + toNumber(r.amount), 0);
   const ajustes = toNumber(adjustAgg._sum.amount ?? 0);
-  const ingresosHistoricos = toNumber(allTimeIngresoAgg._sum.subtotal ?? 0);
-  const dineroAFavor = ingresosHistoricos - totalRetiros + ajustes;
+
+  // Totales del período (para el resumen de arriba) y de TODA la historia (para
+  // el saldo). Los del período se filtran sobre las mismas líneas ya resueltas,
+  // así el pago del período y el acumulado no pueden discrepar.
+  const totales = sumPostreSales(historico);
+  const enRango = (d: Date) => d >= from && d <= to;
+  const totalesPeriodo = sumPostreSales(
+    shift
+      ? historico.filter((l) => paidWindows.some((w) => l.paidAt >= w.from && l.paidAt <= w.to))
+      : historico.filter((l) => enRango(l.paidAt))
+  );
+
+  // Dinero a favor REAL: lo que se le debe por lo vendido, menos lo que ya se le
+  // entregó. Los retiros y ajustes son movimientos históricos y se respetan tal
+  // cual están cargados; acá no se toca ninguno.
+  const dineroAFavor = round2(totales.pago - totalRetiros + ajustes);
+
+  // Conciliación con el número viejo, que acreditaba el PRECIO DE VENTA completo
+  // ($6.000) en vez del pago real ($5.000). Se muestra para poder revisar la
+  // diferencia antes de darla por buena; no cambia ningún dato.
+  const dineroAFavorAnterior = round2(totales.bruto - totalRetiros + ajustes);
+
   const stockTotal = products.reduce((s, p) => s + (p.stock ?? 0), 0);
   const entradas = entradasAgg._sum.quantity ?? 0;
 
@@ -182,7 +212,28 @@ export async function getPostresData(params?: GetPostresParams) {
     stockTotal,
     entradas,
     period,
+    // Resumen del período y acumulado histórico, ya con descuentos prorrateados
+    // y el pago que corresponde a la persona de postres.
+    resumenPeriodo: totalesPeriodo,
+    resumenHistorico: totales,
+    ajustes,
+    // Conciliación: qué daba el cálculo viejo (precio de venta completo) y qué
+    // da el nuevo (pago real). La diferencia es lo que estaba de más.
+    conciliacion: {
+      dineroAFavorAnterior,
+      dineroAFavorReal: dineroAFavor,
+      diferencia: round2(dineroAFavor - dineroAFavorAnterior),
+    },
+    // Tarifas vigentes HOY (las que se editan en el panel).
+    pagoActual: {
+      GRANDE: rates.current('GRANDE'),
+      CHICO: rates.current('CHICO'),
+    } as Record<PostreSize, number>,
   };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 /**

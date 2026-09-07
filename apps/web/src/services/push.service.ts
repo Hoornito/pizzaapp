@@ -216,3 +216,45 @@ export async function sendOrderStatusPush(order: OrderForPush): Promise<void> {
     })
     .catch(() => {});
 }
+
+/**
+ * Push de "pago recibido". Sale cuando el local marca **Pagó** un pedido de
+ * TRANSFERENCIA: hasta ese momento el cliente mandó la plata y se quedó sin
+ * saber si le entró, que es el único punto del flujo donde queda en el aire.
+ *
+ * Va SÓLO por push (no por WhatsApp) a propósito: es un aviso para el que pidió
+ * por la app. Quien no tenga dispositivos registrados no recibe nada, sin ruido
+ * ni error.
+ */
+export async function sendPaymentReceivedPush(order: {
+  id: string;
+  orderNumber: string;
+  userId: string;
+}): Promise<void> {
+  if (!order.userId) return;
+
+  const payload: PushPayload = {
+    title: `💸 Pago recibido · #${order.orderNumber}`,
+    body: 'Confirmamos tu transferencia. ¡Gracias!',
+    url: '/orders',
+    // Hilo propio, distinto del de los estados: este aviso no tiene que pisar
+    // ni ser pisado por el "tu pedido está listo".
+    tag: `order-${order.id}-pago`,
+    data: { orderId: order.id, event: 'payment:received' },
+  };
+
+  const { dispositivos, enviados } = await sendPushToUser(order.userId, payload);
+  if (dispositivos === 0) return;
+
+  await prisma.notification
+    .create({
+      data: {
+        userId: order.userId,
+        type: 'order:payment',
+        title: payload.title,
+        body: payload.body,
+        data: { orderId: order.id, pushDelivered: enviados },
+      },
+    })
+    .catch(() => {});
+}

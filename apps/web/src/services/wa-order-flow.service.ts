@@ -10,6 +10,7 @@ import { getStoreStatus } from '@/services/finance.service';
 import { isWATestPhone } from '@/services/app-setting.service';
 import { createOrder } from '@/services/order.service';
 import { getWAMenu, norm, type WAMenu } from '@/services/wa-menu.service';
+import { formatPromoNotes, promoEmpanadaCount } from '@/lib/promos';
 import { parseOrder, type ParsedDraft, type ParsedItem, type ParserTurn } from '@/services/wa-parser.service';
 import { generatePurchaseToken, logMessage } from '@/services/whatsapp.service';
 import { availableProviders, defaultProvider, type AIProvider } from '@/lib/ai-provider';
@@ -26,6 +27,17 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 //   arranca desde ahí.
 export type WAFlow = 'ready' | 'needs_human';
 
+/**
+ * Un gusto elegido dentro de una promo "a elección", contra el producto real de
+ * la base. `productId` es lo que viaja al pedido (composición para cocina y
+ * reportes); `name` es sólo para mostrarlo en el chat y en el panel.
+ */
+export interface PromoChoice {
+  productId: string;
+  name: string;
+  quantity: number;
+}
+
 interface ReadyOrderItem {
   label: string; // sin la cantidad adelante (la agrega la UI/los mensajes)
   productId: string | null;
@@ -40,6 +52,12 @@ interface ReadyOrderItem {
    */
   extraPrice: number;
   notes: string | null; // molde / sustituciones (NO el extra)
+  /**
+   * Promos "a elección": qué eligió el cliente. Va al pedido como
+   * `promoChoices`, igual que en el mostrador, para que la composición quede
+   * guardada en OrderPromotionItem y no sólo escrita en las notas.
+   */
+  promoChoices?: PromoChoice[];
 }
 export interface ReadyOrder {
   items: ReadyOrderItem[];
@@ -67,7 +85,10 @@ interface LastOrderSnapshot {
   customerName: string | null;
 }
 interface WAContext {
-  session?: { startedAt: number };
+  // startedAt: desde dónde arranca el historial que ve la IA.
+  // lastAt: última vez que hubo movimiento en el chat. La sesión se corta por
+  //   INACTIVIDAD contra este valor, no por lo que duró la charla.
+  session?: { startedAt: number; lastAt?: number };
   flow?: WAFlow;
   readyOrder?: ReadyOrder;
   // Último pedido tomado en este chat: si el cliente vuelve a escribir dentro de
@@ -86,7 +107,12 @@ interface WAContext {
   greetedAt?: number;
 }
 
-const SESSION_TTL_MS = 3 * 60 * 60 * 1000; // 3 h separa pedidos de distintos momentos
+// Silencio que separa un pedido del siguiente. Se mide desde el ÚLTIMO mensaje,
+// no desde que arrancó la charla: hay clientes que contestan de a ratos porque
+// están trabajando, y un pedido que tarda 3 h en cerrarse sigue siendo el mismo
+// pedido. Midiéndolo desde el arranque, a las 3 h el bot se olvidaba de todo y
+// volvía a preguntar el pedido desde cero.
+const SESSION_IDLE_MS = 3 * 60 * 60 * 1000;
 // Ventana para sumar "agregados" a un pedido recién tomado (misma tanda/envío).
 const ADDON_WINDOW_MS = 60 * 60 * 1000;
 const HISTORY_LIMIT = 16; // últimos mensajes que ve la IA
@@ -139,13 +165,44 @@ async function saveContext(conversationId: string, ctx: WAContext | null) {
   });
 }
 
-/** Reconstruye el historial para la IA desde el hilo (IN=cliente, OUT=nosotros). */
+/**
+ * Ventana de la sesión: desde dónde leer el historial para este turno.
+ *
+ * Si el chat se movió hace menos de SESSION_IDLE_MS, seguimos el MISMO pedido
+ * (aunque haya arrancado hace horas). Si estuvo callado más que eso, arranca uno
+ * nuevo, mirando un ratito hacia atrás para no dejar afuera el mensaje que
+ * acaba de entrar. Deja la sesión actualizada en `ctx`.
+ */
+function openSession(ctx: WAContext): number {
+  const ahora = Date.now();
+  // `lastAt` puede no estar en chats que vienen de antes de este campo: ahí
+  // caemos a startedAt, que es lo que se usaba.
+  const ultimo = ctx.session?.lastAt ?? ctx.session?.startedAt;
+  const sigue = ctx.session && ultimo !== undefined && ahora - ultimo < SESSION_IDLE_MS;
+
+  const startedAt = sigue ? ctx.session!.startedAt : ahora - NEW_SESSION_LOOKBACK_MS;
+  ctx.session = { startedAt, lastAt: ahora };
+  return startedAt;
+}
+
+/**
+ * Reconstruye el historial para la IA desde el hilo (IN=cliente, OUT=nosotros).
+ *
+ * Trae los ÚLTIMOS `HISTORY_LIMIT` mensajes de la sesión, no los primeros: se
+ * ordena descendente para que el corte deje afuera lo viejo, y recién después se
+ * da vuelta para que la charla quede en orden. Al revés (ascendente + take), una
+ * conversación que pasaba los 16 mensajes se quedaba clavada en los primeros 16
+ * y el bot no volvía a ver lo que el cliente escribía: repreguntaba lo mismo una
+ * y otra vez. Justo lo que pasa en los chats largos, los del cliente que
+ * responde de a ratos.
+ */
 async function buildHistory(conversationId: string, sinceMs: number): Promise<ParserTurn[]> {
-  const msgs = await prisma.whatsAppMessage.findMany({
+  const recientes = await prisma.whatsAppMessage.findMany({
     where: { conversationId, createdAt: { gte: new Date(sinceMs) } },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: 'desc' },
     take: HISTORY_LIMIT,
   });
+  const msgs = recientes.reverse();
   const turns: ParserTurn[] = [];
   for (const m of msgs) {
     const text = m.type === 'image' ? '[el cliente envió una imagen]' : (m.body ?? '').trim();
@@ -316,6 +373,44 @@ function isOpeningGreeting(history: ParserTurn[]): boolean {
 }
 
 /**
+ * Palabras de un mensaje de cortesía, de esos que no piden nada: "ok", "dale",
+ * "gracias", "a vos", "listo", "genial". En los chats reales el que atiende no
+ * los contesta, y el bot tampoco debería.
+ */
+const ACK_WORDS = new Set([
+  'ok', 'oka', 'okis', 'okey', 'oki', 'dale', 'dalee', 'listo', 'lista', 'genial',
+  'perfecto', 'barbaro', 'buenisimo', 'joya', 'bien', 'si', 'sisi', 'sip', 'claro',
+  'gracias', 'graciass', 'muchas', 'mil', 'muy', 'amables', 'a', 'vos', 'ustedes',
+  'les', 'te', 'agradezco', 'de', 'nada', 'espero', 'los', 'ya', 'esta', 'estamos',
+  'buenas', 'noches', 'tardes', 'saludos', 'abrazo', 'genia', 'genio', 'crack',
+]);
+
+/**
+ * ¿El cliente sólo está agradeciendo un pedido YA tomado?
+ *
+ * Sirve para no gastar una llamada al modelo (ni contestar) en el "Ok" que llega
+ * después de "el chico ya salió". Es a propósito muy conservador: exige que el
+ * pedido ya esté cerrado y que no haya nada armándose, porque en pleno pedido un
+ * "dale" puede ser la confirmación y eso SÍ tiene que ver el modelo.
+ */
+function isPostOrderAck(ctx: WAContext, history: ParserTurn[]): boolean {
+  const cerrado = !!ctx.lastOrder && Date.now() - ctx.lastOrder.at < ADDON_WINDOW_MS;
+  if (!cerrado || ctx.readyOrder) return false;
+
+  const delCliente = history.filter((t) => t.role === 'user');
+  if (!delCliente.length) return false;
+
+  return delCliente.every((t) => {
+    const words = greetingTokens(t.text);
+    // Sin palabras pero con texto = un emoji suelto ("❤️", "👌"). En los chats
+    // reales eso cierra la conversación y nadie lo contesta.
+    if (!words.length) return !/[a-z0-9]/i.test(t.text.normalize('NFD'));
+    if (words.length > 6) return false;
+    return words.every((w) => ACK_WORDS.has(w));
+  });
+}
+
+/**
  * Manda la respuesta del modelo. Si el texto trae una línea en blanco, sale como
  * DOS mensajes seguidos: es como escribe el que atiende ("dale genial" / "seria
  * 28000" / "en 30 min esta"), y en el chat se lee mucho más natural que un
@@ -330,8 +425,13 @@ async function botReply(conversationId: string, phone: string, text: string) {
     .filter(Boolean)
     .slice(0, REPLY_MAX_PARTS);
 
-  if (parts.length <= 1) {
-    await botSay(conversationId, phone, text.trim() || text);
+  // Reply vacío = el modelo decidió que este mensaje no necesita respuesta (un
+  // "ok", un "gracias", el comprobante ya agradecido). Una persona tampoco
+  // contesta eso, así que no mandamos nada.
+  if (!parts.length) return;
+
+  if (parts.length === 1) {
+    await botSay(conversationId, phone, parts[0]);
     return;
   }
   for (let i = 0; i < parts.length; i++) {
@@ -355,7 +455,17 @@ async function setRed(conversationId: string, ctx: WAContext) {
 export async function handleAIOrder(
   conversation: { id: string; phone: string; context: unknown },
   _incomingText: string,
-  opts?: { skipStoreCheck?: boolean; provider?: AIProvider }
+  opts?: {
+    skipStoreCheck?: boolean;
+    provider?: AIProvider;
+    /**
+     * Devuelve true si mientras corríamos entró un mensaje más nuevo. Se
+     * consulta justo después de llamar al modelo: si la tanda quedó vieja,
+     * tiramos la respuesta en vez de mandarla, porque ya no contesta lo
+     * último que escribió el cliente y la tanda nueva va a contestar todo.
+     */
+    stale?: () => Promise<boolean>;
+  }
 ): Promise<void> {
   const { id, phone } = conversation;
 
@@ -391,13 +501,7 @@ export async function handleAIOrder(
   // si no, el que ya tenía; si no, el de la configuración.
   if (opts?.provider) ctx.provider = opts.provider;
   const provider = ctx.provider ?? defaultProvider();
-  // Límite de sesión: si venció, arranca un pedido nuevo (mirando un ratito atrás
-  // para no dejar afuera el mensaje que acaba de entrar).
-  const startedAt =
-    ctx.session && Date.now() - ctx.session.startedAt < SESSION_TTL_MS
-      ? ctx.session.startedAt
-      : Date.now() - NEW_SESSION_LOOKBACK_MS;
-  ctx.session = { startedAt };
+  const startedAt = openSession(ctx);
 
   // El mensaje entrante ya quedó guardado en el hilo antes de llamarnos.
   const history = await buildHistory(id, startedAt);
@@ -417,8 +521,20 @@ export async function handleAIOrder(
     return;
   }
 
+  // "Ok" / "Muchas gracias" sobre un pedido ya cerrado: no se contesta y no se
+  // llama al modelo. Es el mensaje más frecuente después de "el chico ya salió".
+  if (isPostOrderAck(ctx, history)) {
+    await saveContext(id, ctx);
+    return;
+  }
+
   const menu = await getWAMenu();
   const draft = await parseOrder(menu.menuText, history, provider);
+
+  // El cliente siguió escribiendo mientras el modelo pensaba: esta respuesta ya
+  // nació vieja. La descartamos sin efectos (no guardamos contexto ni mandamos
+  // nada) y deja que conteste la tanda nueva, que ve el hilo completo.
+  if (await opts?.stale?.()) return;
 
   // IA no disponible / falló → derivamos a una persona.
   if (!draft) {
@@ -433,7 +549,7 @@ export async function handleAIOrder(
     // el propio aviso de cancelación caía dentro de la sesión nueva, el modelo lo
     // veía como primer turno del historial siguiente y volvía a avisar que estaba
     // cancelado en cada mensaje posterior.
-    await saveContext(id, { session: { startedAt: Date.now() }, provider: ctx.provider });
+    await saveContext(id, { session: { startedAt: Date.now(), lastAt: Date.now() }, provider: ctx.provider });
     return;
   }
 
@@ -514,7 +630,9 @@ async function stageAddon(
   let ok = true;
   for (const it of draft.items) {
     const r = resolveItem(menu, it);
-    if ('error' in r) { ok = false; break; }
+    // Un agregado que no cierra solo (no se entendió, o la promo está
+    // incompleta) lo arma una persona: acá el chat ya queda en 🔴.
+    if ('error' in r || 'ask' in r) { ok = false; break; }
     items.push(r);
   }
   if (ok && items.length) {
@@ -538,7 +656,10 @@ async function stageAddon(
 }
 
 type AssembleResult =
-  | { status: 'ask'; message: string }
+  // `fixed` = la pregunta la escribimos NOSOTROS y es más precisa que la del
+  // modelo (el modelo no sabe cuántas empanadas lleva la promo), así que en ese
+  // caso pisa al "reply".
+  | { status: 'ask'; message: string; fixed?: boolean }
   | { status: 'mp' }
   | { status: 'error'; item: string }
   | { status: 'ready'; readyOrder: ReadyOrder };
@@ -556,6 +677,7 @@ async function assembleOrder(menu: WAMenu, draft: ParsedDraft): Promise<Assemble
   for (const item of draft.items) {
     const r = resolveItem(menu, item);
     if ('error' in r) return { status: 'error', item: r.error };
+    if ('ask' in r) return { status: 'ask', message: r.ask, fixed: true };
     items.push(r);
   }
   const subtotal = items.reduce((s, r) => s + lineTotal(r), 0);
@@ -644,8 +766,10 @@ async function respondToDraft(
   if (a.status === 'ask') {
     // Falta info: dejamos que el modelo maneje la charla (preguntar tamaño,
     // variedad de empanada, etc.); su "reply" es más natural que el mensaje fijo.
+    // La excepción es `fixed`: ahí la pregunta la sabemos NOSOTROS mejor que el
+    // modelo (cuántas empanadas faltan para completar la promo) y manda la nuestra.
     ctx.flow = undefined; ctx.readyOrder = undefined; await saveContext(id, ctx);
-    await botReply(id, phone, draft.reply || a.message);
+    await botReply(id, phone, a.fixed ? a.message : draft.reply || a.message);
     return;
   }
   // a.status === 'ready': el pedido está COMPLETO.
@@ -846,7 +970,7 @@ export async function takeReadyOrder(conversationId: string, userId: string): Pr
   // y guardamos el snapshot para "agregados" (próxima hora). Reactivamos el bot.
   await pauseBot(conversationId, false);
   await saveContext(conversationId, {
-    session: { startedAt: Date.now() },
+    session: { startedAt: Date.now(), lastAt: Date.now() },
     provider: ctx.provider,
     lastOrder: {
       number: order.orderNumber,
@@ -942,7 +1066,7 @@ export async function takeAddonOrder(conversationId: string, userId: string): Pr
   // mantenemos la ventana de agregados abierta por si suma algo más, y reactivamos.
   await pauseBot(conversationId, false);
   await saveContext(conversationId, {
-    session: { startedAt: Date.now() },
+    session: { startedAt: Date.now(), lastAt: Date.now() },
     provider: ctx.provider,
     lastOrder: { ...ctx.lastOrder!, at: Date.now() },
   });
@@ -964,6 +1088,8 @@ export interface EditItemInput {
   extra?: string | null;
   extraPrice?: number;
   notes?: string | null;
+  /** Composición de la promo: el panel la devuelve tal cual la recibió. */
+  promoChoices?: PromoChoice[];
 }
 export async function editReadyOrder(conversationId: string, editItems: EditItemInput[]): Promise<void> {
   const convo = await prisma.whatsAppConversation.findUnique({ where: { id: conversationId } });
@@ -982,6 +1108,10 @@ export async function editReadyOrder(conversationId: string, editItems: EditItem
       extra: e.extra?.trim() ? e.extra.trim() : null,
       extraPrice: Math.max(0, Math.round(e.extraPrice || 0)),
       notes: e.notes?.trim() ? e.notes.trim() : null,
+      // La composición de la promo viaja de ida y vuelta sin que el panel la
+      // toque: no se edita ahí, pero si no la devolviéramos, editar cualquier
+      // otra cosa del pedido borraría los gustos elegidos.
+      ...(e.promoChoices?.length ? { promoChoices: e.promoChoices } : {}),
     }));
   if (!items.length) throw new Error('El pedido no puede quedar vacío.');
 
@@ -1004,11 +1134,7 @@ export async function resumeAI(conversationId: string): Promise<void> {
   if (!convo) return;
   const ctx = loadContext(convo.context);
   ctx.flow = undefined;
-  const startedAt =
-    ctx.session?.startedAt && Date.now() - ctx.session.startedAt < SESSION_TTL_MS
-      ? ctx.session.startedAt
-      : Date.now() - NEW_SESSION_LOOKBACK_MS;
-  ctx.session = { startedAt };
+  const startedAt = openSession(ctx);
   await saveContext(conversationId, ctx);
 
   const menu = await getWAMenu();
@@ -1027,6 +1153,51 @@ export async function resumeAI(conversationId: string): Promise<void> {
 }
 
 // ─── Resolución de precios (SIEMPRE desde la DB, nunca del modelo) ───────────
+
+// ─── Promos "a elección" ────────────────────────────────────────────────────
+
+/**
+ * Elección del cliente para una promo, normalizada: agrupada por gusto y con
+ * cantidad. El modelo la manda en `choices`, pero antes la mandaba en `flavors`
+ * repitiendo el nombre una vez por unidad ("Carne a Cuchillo" 16 veces). Si
+ * todavía llega así, la contamos acá: es un modelo, no un contrato, y el
+ * historial de un chat abierto puede traer las dos formas.
+ */
+function promoPicks(item: ParsedItem): { name: string; quantity: number }[] {
+  const acc = new Map<string, { name: string; quantity: number }>();
+  const sumar = (nombre: string, cantidad: number) => {
+    const name = nombre.trim();
+    if (!name || cantidad <= 0) return;
+    const key = norm(name);
+    const prev = acc.get(key);
+    if (prev) prev.quantity += cantidad;
+    else acc.set(key, { name, quantity: cantidad });
+  };
+
+  for (const c of item.choices ?? []) sumar(c.name, Math.floor(c.quantity || 0));
+  // Sólo miramos `flavors` si `choices` vino vacío: si el modelo mandó las dos,
+  // `flavors` es la lista larga que `choices` ya resume y sumarla duplicaría todo.
+  if (!acc.size) for (const f of item.flavors ?? []) sumar(f, 1);
+
+  return [...acc.values()];
+}
+
+/**
+ * Notas del ítem de promo para el ticket de cocina. Mismo formato que arma el
+ * mostrador (`formatPromoNotes`): los componentes fijos con su tamaño y después
+ * los gustos elegidos, uno por línea con su cantidad.
+ */
+function promoNotes(promoId: string, choices: PromoChoice[], extraNote: string | null): string | null {
+  const lines = formatPromoNotes(promoId, {
+    flavors: choices.map((c) => ({ productId: c.productId, name: c.name, quantity: c.quantity })),
+  });
+  // Promo que no está en PROMO_DEFS (cargada a mano desde el panel): no sabemos
+  // sus componentes fijos, pero los gustos elegidos igual tienen que salir.
+  const fallback = choices.map((c) => `${c.quantity}× ${c.name}`).join('\n');
+  const cuerpo = lines || fallback;
+  const todo = [cuerpo, extraNote?.trim() || ''].filter(Boolean).join('\n');
+  return todo || null;
+}
 
 // Notas del ítem SIN el extra (el extra se guarda aparte, con su precio, y se
 // compone recién al crear el pedido — ver finalItemNote/finalUnitPrice).
@@ -1058,6 +1229,11 @@ function toOrderItemInput(r: ReadyOrderItem) {
     quantity: r.quantity,
     unitPrice: unitWithExtra(r),
     notes: finalItemNote(r) ?? undefined,
+    // Composición elegida de la promo: la misma que manda el mostrador, para que
+    // createOrder la guarde en OrderPromotionItem (reportes, compras, stock).
+    ...(r.promoChoices?.length
+      ? { promoChoices: r.promoChoices.map((c) => ({ productId: c.productId, quantity: c.quantity })) }
+      : {}),
   };
 }
 
@@ -1110,19 +1286,61 @@ function resolveExtraPrice(menu: WAMenu, extra: string | null, size: PizzaSize |
   return toNumber(prod.price);
 }
 
-function resolveItem(menu: WAMenu, item: ParsedItem): ReadyOrderItem | { error: string } {
+/**
+ * Resuelve un ítem del borrador contra el menú real.
+ *  - ReadyOrderItem  → resuelto, con el precio de la base.
+ *  - { error }       → no se entendió qué es; se le pide que aclare.
+ *  - { ask }         → se entendió, pero falta algo puntual y ya sabemos
+ *                      exactamente qué preguntar (ej: cuántas empanadas
+ *                      faltan para completar la promo).
+ */
+type ResolvedItem = ReadyOrderItem | { error: string } | { ask: string };
+function resolveItem(menu: WAMenu, item: ParsedItem): ResolvedItem {
   const qty = Math.max(1, Math.floor(item.quantity || 1));
   const extra = item.extra && item.extra.trim() ? item.extra.trim() : null;
 
   if (item.kind === 'promo') {
     const promo = findByName(menu.promotions, item.name);
     if (!promo) return { error: `promo "${item.name}"` };
-    // Las promos "a elección" (empanadas, pizzas) traen la elección del cliente
-    // en `flavors`. Sin esto, el pedido llegaba a la cocina como "Promo 6" pelado
-    // y el gusto de cada empanada se perdía.
-    const eleccion = item.flavors.filter((f) => f.trim()).join(', ');
-    const notasPromo = [eleccion, item.notes?.trim() || ''].filter(Boolean).join('\n');
-    return { label: promo.name, productId: null, promotionId: promo.id, quantity: qty, unitPrice: promo.price, extra, extraPrice: resolveExtraPrice(menu, extra, null), notes: composeNotes(notasPromo || null, item.molde) };
+
+    // Elección del cliente, agrupada por gusto y contra el producto real de la
+    // base. Es lo mismo que arma el modal del mostrador: así el pedido de la IA
+    // y el cargado a mano llegan IDÉNTICOS a cocina y a los reportes.
+    const picks = promoPicks(item);
+    const choices: PromoChoice[] = [];
+    for (const p of picks) {
+      const prod = findByName(menu.products, p.name);
+      if (!prod) return { error: `"${p.name}" de la ${promo.name}` };
+      choices.push({ productId: prod.id, name: prod.name, quantity: p.quantity });
+    }
+
+    // ¿La promo pide elegir N y el cliente no llegó a N? Lo preguntamos en vez de
+    // mandar a cocina una promo incompleta.
+    const aElegir = promoEmpanadaCount(promo.id);
+    if (aElegir) {
+      const suma = choices.reduce((s, c) => s + c.quantity, 0);
+      if (suma !== aElegir) {
+        const falta = aElegir - suma;
+        return {
+          ask:
+            falta > 0
+              ? `De la ${promo.name} van ${aElegir} empanadas y llevamos ${suma}. De qué son las ${falta} que faltan?`
+              : `De la ${promo.name} van ${aElegir} empanadas y me pasaste ${suma}. Cuáles saco?`,
+        };
+      }
+    }
+
+    return {
+      label: promo.name,
+      productId: null,
+      promotionId: promo.id,
+      quantity: qty,
+      unitPrice: promo.price,
+      extra,
+      extraPrice: resolveExtraPrice(menu, extra, null),
+      notes: composeNotes(promoNotes(promo.id, choices, item.notes), item.molde),
+      promoChoices: choices,
+    };
   }
 
   if (item.kind === 'pizza') {

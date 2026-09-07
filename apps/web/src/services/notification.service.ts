@@ -3,7 +3,7 @@ import { redis } from '@/lib/redis';
 import { sendOrderConfirmationEmail, sendOrderStatusEmail } from './email.service';
 import { sendOrderConfirmationWA, sendOrderStatusUpdateWA } from './whatsapp.service';
 import { eventBus } from '@/lib/event-bus';
-import { sendOrderStatusPush } from './push.service';
+import { sendOrderStatusPush, sendPaymentReceivedPush } from './push.service';
 import type { OrderWithRelations } from '@/types/order.types';
 import type { OrderStatus } from '@prisma/client';
 
@@ -28,6 +28,23 @@ async function shouldNotifyStatus(orderId: string, status: OrderStatus): Promise
   }
 }
 
+/**
+ * ¿Este cambio de estado tiene sentido avisárselo al cliente? Vale para TODOS
+ * los canales (mail, push y WhatsApp): si el aviso no le sirve, no le sirve por
+ * ninguno.
+ *
+ * El único caso hoy es ENTREGADO en un pedido que sale con reparto. Ese estado
+ * no se marca cuando el cliente recibe la pizza, sino cuando el repartidor
+ * vuelve al local con la plata —puede ser una hora después—, así que un "tu
+ * pedido fue entregado" a esa altura le llega a alguien que ya comió y sólo
+ * confunde. En el retiro por el local sí es fiel: se marca al entregarlo en el
+ * mostrador, con el cliente enfrente.
+ */
+function leInteresaAlCliente(order: OrderWithRelations): boolean {
+  if (order.status !== 'ENTREGADO') return true;
+  return order.deliveryType === 'PICKUP';
+}
+
 function setupEventListeners() {
   eventBus.on('order:created', async (order: OrderWithRelations) => {
     const tasks = [sendOrderConfirmationEmail(order).catch(() => {})];
@@ -46,6 +63,24 @@ function setupEventListeners() {
     await Promise.allSettled(tasks);
   });
 
+  /**
+   * Pago confirmado. Sólo avisa por PUSH (no mail ni WhatsApp) y sólo en pedidos
+   * de TRANSFERENCIA: es el único caso donde el cliente ya mandó la plata y se
+   * queda esperando a que alguien del local le diga que entró. En efectivo no
+   * hay nada que confirmar, y Mercado Pago ya le avisa por su cuenta.
+   *
+   * Se dispara cuando el local toca "Pagó" en el panel (markOrderPaid).
+   */
+  eventBus.on('order:paid', async (order: OrderWithRelations) => {
+    if (order.paymentMethod !== 'TRANSFERENCIA') return;
+    if (!order.userId) return;
+    await sendPaymentReceivedPush({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      userId: order.userId,
+    }).catch(() => {});
+  });
+
   eventBus.on('order:status_changed', async (order: OrderWithRelations, previousStatus: string | null) => {
     // Un cambio de estado se avisa UNA vez, y sólo si el estado cambió de verdad.
     // Cobrar el pedido, asignarle repartidor o guardarle el tiempo estimado
@@ -53,6 +88,7 @@ function setupEventListeners() {
     // de esas acciones le repetía al cliente el último aviso ("tu pedido está
     // listo" tres veces seguidas).
     if (previousStatus === order.status) return;
+    if (!leInteresaAlCliente(order)) return;
     if (!(await shouldNotifyStatus(order.id, order.status))) return;
 
     const tasks = [sendOrderStatusEmail(order, order.status).catch(() => {})];

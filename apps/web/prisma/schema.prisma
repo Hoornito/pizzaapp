@@ -247,6 +247,27 @@ model PostreAdjustment {
   @@index([createdAt])
 }
 
+// Cuanto se le paga a la persona de postres por cada postre vendido, con
+// historia. Es append-only: guardar valores nuevos NO pisa los viejos, crea una
+// fila con `effectiveFrom` = ahora. Una venta se paga con la tarifa vigente a su
+// fecha de cobro, asi que cambiar el precio hoy no recalcula lo de ayer.
+//
+// Si para un tamano no hay ninguna fila con effectiveFrom <= la venta, se usa el
+// valor por defecto del codigo (DEFAULT_POSTRE_PAYOUT), que es lo que se venia
+// pagando antes de que existiera esta configuracion.
+model PostrePayoutRate {
+  id            String   @id @default(cuid())
+  // 'GRANDE' | 'CHICO'. El tamano de cada postre sale de su nombre: el que
+  // dice "chico"/"chica" es chico, el resto es grande.
+  size          String
+  amount        Decimal  @db.Decimal(10, 2)
+  effectiveFrom DateTime
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  @@index([size, effectiveFrom])
+}
+
 // ─── Promotions ───────────────────────────────────────────────────────────────
 
 model Promotion {

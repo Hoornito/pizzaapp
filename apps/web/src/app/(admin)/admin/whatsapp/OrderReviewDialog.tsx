@@ -24,6 +24,8 @@ export interface ReadyOrderItem {
   extra?: string | null;
   extraPrice?: number;
   notes: string | null;
+  /** Composición elegida de una promo. No se edita acá: viaja de ida y vuelta. */
+  promoChoices?: { productId: string; name: string; quantity: number }[];
 }
 export interface ReadyOrder {
   items: ReadyOrderItem[];
@@ -140,6 +142,9 @@ export default function OrderReviewDialog({ open, onClose, conversationId, ready
             extra: it.extra ?? null,
             extraPrice: it.extraPrice ?? 0,
             notes: it.notes,
+            // Sin esto, editar el precio de un extra borraba los gustos que el
+            // cliente eligió para la promo.
+            ...(it.promoChoices?.length ? { promoChoices: it.promoChoices } : {}),
           })),
         }),
       });

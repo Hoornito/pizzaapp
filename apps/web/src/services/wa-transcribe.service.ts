@@ -8,6 +8,37 @@ const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta/models';
 const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
 
 /**
+ * Vocabulario del local para el transcriptor: los nombres tal cual figuran en el
+ * menú, para que los escriba bien en vez de fonéticamente.
+ *
+ * Se arma del menú cacheado (`getWAMenu`), así que se mantiene solo cuando el
+ * local carga o saca productos. Va acotado: los nombres, sin precios ni
+ * descripciones, que para transcribir no aportan.
+ */
+async function menuVocabulary(): Promise<string> {
+  try {
+    const { getWAMenu } = await import('./wa-menu.service');
+    const menu = await getWAMenu();
+    const promos = menu.promotions.map((p) => p.name);
+    const productos = menu.products.map((p) => p.name);
+    const pizzas = menu.pizzas.map((p) => p.name);
+
+    return [
+      'Escribí los nombres del local TAL CUAL figuran en esta lista (respetá mayúsculas y ortografía).',
+      'Las promos se escriben con número: "Promo 6", nunca "promo seis".',
+      promos.length ? `PROMOS: ${promos.join(', ')}` : '',
+      pizzas.length ? `GUSTOS DE PIZZA: ${pizzas.join(', ')}` : '',
+      productos.length ? `OTROS: ${productos.join(', ')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  } catch {
+    // Si el menú no está disponible, transcribimos igual sin vocabulario.
+    return '';
+  }
+}
+
+/**
  * Transcribe una nota de voz de WhatsApp.
  *
  * Va en una llamada APARTE y pelada, a propósito: sólo el audio y una consigna
@@ -37,9 +68,16 @@ export async function transcribeVoiceNote(mediaId: string): Promise<string | nul
 
   const model = geminiModelFor('parser');
   const prompt =
-    'Transcribí este audio de un cliente de una pizzería, en español rioplatense. ' +
+    'Transcribí este audio de un cliente de una pizzería de San Vicente (Buenos Aires), ' +
+    'en español rioplatense. ' +
     'Devolvé SOLO la transcripción literal, sin comillas, sin comentarios y sin agregar nada. ' +
-    'Si el audio está vacío o no se entiende nada, devolvé exactamente: (inaudible)';
+    'Si el audio está vacío o no se entiende nada, devolvé exactamente: (inaudible)\n\n' +
+    // Sin esto el modelo escribe lo que le suena ("musarela", "la promo seis",
+    // "roquefor") y después el parser no encuentra el producto en el menú y le
+    // contesta al cliente que no lo tenemos. Pasarle el vocabulario del local
+    // cuesta unos pocos cientos de tokens por audio y es lo que hace que un
+    // "cuánto está la promo 6" caiga en el ítem correcto.
+    (await menuVocabulary());
 
   try {
     const res = await fetch(`${GEMINI_API}/${model}:generateContent`, {

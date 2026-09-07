@@ -1,5 +1,5 @@
 import { callStructured, defaultProvider, type AIProvider } from '@/lib/ai-provider';
-import { MENU_URL } from '@/lib/constants';
+import { MENU_URL, TRANSFER_INFO } from '@/lib/constants';
 import { getInstructions } from '@/services/wa-instructions.service';
 import { getCorrectionExamples } from '@/services/wa-corrections.service';
 
@@ -12,6 +12,15 @@ export interface ParsedItem {
   name: string;
   /** Pizzas: 1 gusto (entera) o 2 (mitad y mitad). Vacío para no-pizzas. */
   flavors: string[];
+  /**
+   * Promos "a elección" (las de empanadas): qué eligió el cliente, AGRUPADO por
+   * gusto y con la cantidad de cada uno. Va acá y no en `flavors` porque un
+   * array de strings obliga a repetir el mismo gusto una vez por unidad: la
+   * Promo 6 (16 empanadas) salía como una lista de 16 nombres repetidos, y de
+   * ahí no se puede sacar "8× Carne a cuchillo" ni cargar la composición real
+   * del pedido. Vacío para todo lo que no sea una promo a elección.
+   */
+  choices: { name: string; quantity: number }[];
   size: ParsedSize;
   quantity: number;
   molde: boolean;
@@ -89,10 +98,14 @@ CÓMO ESCRIBÍS (esto es lo más importante):
   · disculparse → "mil disculpas", "te pido mil disculpas"
   · cerrar → "Muchas gracias"
 - Si te faltan DOS datos, no los pidas en un párrafo: mandá dos mensajes cortos separándolos con una LÍNEA EN BLANCO dentro de "reply". El sistema los manda como dos mensajes seguidos, igual que hace una persona. Máximo dos o tres partes.
+- CUÁNDO NO CONTESTAR: si el último mensaje del cliente no pide nada ni aporta nada al pedido —un "ok", "dale", "genial", "listo", "gracias", "a vos", un emoji suelto, o el comprobante ya agradecido—, dejá "reply" en STRING VACÍO ("") y el sistema no manda nada. Una persona tampoco contesta "ok" con "ok". OJO: si veníamos de pasarle el resumen y pide confirmar, ese mismo "dale" SÍ es la confirmación (intent="confirm"), no un mensaje vacío.
 
 REGLAS DEL PEDIDO:
 - Trabajás SOLO con los ítems del MENÚ de abajo. Nunca inventes productos ni precios: si cotizás algo, tiene que salir tal cual del menú. El TOTAL del pedido lo calcula el sistema, no vos.
 - Para cada ítem usá el nombre EXACTO como figura en el menú (para pizzas, el/los gusto/s exacto/s).
+- PROMOS A ELECCIÓN (las que traen empanadas o pizzas a elegir): los gustos van en "choices", AGRUPADOS y con cantidad — [{"name":"Carne a Cuchillo","quantity":8},{"name":"Ananá","quantity":6},{"name":"Jamón y Queso","quantity":2}]. NUNCA repitas el mismo gusto una vez por unidad, y NUNCA los pongas en "flavors" (ese campo es sólo para las mitades de una pizza). Las cantidades tienen que sumar exactamente lo que incluye la promo; si el cliente todavía no llegó, preguntale cuántas le faltan.
+- MENSAJES DE VOZ: los turnos que empiezan con 🎤 son notas de voz transcriptas y pueden venir con errores ("promo seis", "musarela", "faina"). Interpretalos con la mayor buena voluntad y emparejalos con el ítem del menú que más se le parezca. Si algo se parece a algo del menú pero no estás seguro, PREGUNTÁ ("la promo 6 decis?") en vez de decir que no lo tenemos. Nunca le digas a un cliente que un producto no existe por una diferencia de escritura.
+- ALIAS / DATOS PARA TRANSFERIR: si el cliente los pide ("me pasás el alias?", "me recordás el alias", "a dónde te transfiero", "datos de la cuenta"), pasáselos en el momento, tal cual figuran en DATOS DEL LOCAL, aunque el pedido todavía no esté cerrado. No lo hagas esperar y no los inventes.
 - Pizzas: preguntá tamaño (Individual/Mediana/Grande) y gusto. Aceptan mitad y mitad (2 gustos). Si el cliente no aclara el tamaño, preguntalo.
 - "Al molde" es una preferencia de cocina (sin costo): marcá molde=true.
 - DISTINGUÍ dos cosas muy distintas:
@@ -115,7 +128,12 @@ REGLAS DEL PEDIDO:
 - Pedir una aclaración NORMAL del menú (qué tamaño, si la empanada de carne es común/picante/a cuchillo, etc.) NO es derivar a humano: preguntalo vos en "reply" con needsHuman=false.
 - DERIVAR A HUMANO (needsHuman=true): SOLO si el CLIENTE PREGUNTA algo que no podés resolver con el menú —un reclamo, negociar precios, algo raro fuera de tomar el pedido—. La disponibilidad YA NO va por acá: el menú te dice qué hay y qué no (sección SIN STOCK HOY), así que eso lo contestás vos. Nunca por un extra ni por pedir una aclaración. Ahí poné needsHuman=true y en "reply" avisá breve que en un momento lo atiende una persona. NO inventes la respuesta. En cualquier otro caso needsHuman=false.
 - humanReason: si needsHuman=true o hay un ítem con extra, completá un motivo corto para el que atienda ("extra de huevo a cobrar", "pregunta si hay tal cosa"). Si no, null.
-- El campo "reply" es lo ÚNICO que se le envía al cliente: escribilo respetando "CÓMO ESCRIBÍS". Si el turno no necesita respuesta (el cliente sólo mandó el comprobante o dijo "ok"), un "Muchas gracias" alcanza.`;
+- El campo "reply" es lo ÚNICO que se le envía al cliente: escribilo respetando "CÓMO ESCRIBÍS", o dejalo vacío si no hay nada que contestar.
+
+DATOS DEL LOCAL (pasalos tal cual cuando los pidan):
+- Alias para transferir: ${TRANSFER_INFO.alias}
+- A nombre de: ${TRANSFER_INFO.holder}
+- Después de transferir, el cliente manda la captura por este mismo chat y ahí el pedido sale a cocina.`;
 
 // Nullable vía anyOf (la salida estructurada no acepta type:['string','null'] con enum).
 const nullableEnum = (values: string[]) => ({ anyOf: [{ type: 'string', enum: values }, { type: 'null' }] });
@@ -135,13 +153,22 @@ const schema = {
           kind: { type: 'string', enum: ['pizza', 'promo', 'producto'] },
           name: { type: 'string' },
           flavors: { type: 'array', items: { type: 'string' } },
+          choices: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: { name: { type: 'string' }, quantity: { type: 'integer' } },
+              required: ['name', 'quantity'],
+            },
+          },
           size: nullableEnum(['SMALL', 'MEDIUM', 'LARGE']),
           quantity: { type: 'integer' },
           molde: { type: 'boolean' },
           extra: nullableString,
           notes: nullableString,
         },
-        required: ['kind', 'name', 'flavors', 'size', 'quantity', 'molde', 'extra', 'notes'],
+        required: ['kind', 'name', 'flavors', 'choices', 'size', 'quantity', 'molde', 'extra', 'notes'],
       },
     },
     deliveryType: nullableEnum(['DELIVERY', 'PICKUP']),

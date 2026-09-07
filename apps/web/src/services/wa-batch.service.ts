@@ -27,16 +27,19 @@ function envMs(raw: string | undefined, fallback: number): number {
 }
 
 /**
- * Silencio que esperamos desde el último mensaje antes de contestar. Ajustado a
- * cómo escribe la gente en los chats reales: los mensajes de una misma tanda
- * llegan con 10-40 s entre el primero y el último, pero de a ráfagas de pocos
- * segundos. 10 s corta la ráfaga sin que la respuesta se sienta lenta —con 7 s
- * se colaban tandas partidas al medio ("cuanto me sale?" contestado aparte de
- * "te puedo pagar con transfe?", con la misma pregunta repetida en las dos).
+ * Silencio que esperamos desde el último mensaje antes de contestar. Las ráfagas
+ * de una misma tanda llegan de a pocos segundos, así que 4 s alcanza para
+ * juntarlas sin que la respuesta se sienta lenta.
+ *
+ * Antes esto estaba en 10 s porque con 7 s se partían las tandas al medio
+ * ("cuanto me sale?" contestado aparte de "te puedo pagar con transfe?"). Eso
+ * ya no depende de la ventana: lo resuelven el lock de más abajo y el chequeo
+ * de tanda vencida (ver `isStale`), que descartan una respuesta que quedó vieja
+ * en vez de mandarla igual.
  */
-const QUIET_MS = envMs(process.env.WA_BATCH_QUIET_MS, 10_000);
-/** Tope duro: por más que siga escribiendo, a los 25 s le contestamos. */
-const MAX_WAIT_MS = envMs(process.env.WA_BATCH_MAX_MS, 25_000);
+const QUIET_MS = envMs(process.env.WA_BATCH_QUIET_MS, 4_000);
+/** Tope duro: por más que siga escribiendo, a los 20 s le contestamos. */
+const MAX_WAIT_MS = envMs(process.env.WA_BATCH_MAX_MS, 20_000);
 const KEY_TTL_S = 120;
 /** Cuánto esperamos a que termine una respuesta en curso antes de largar la nuestra. */
 const LOCK_TTL_S = 90;
@@ -108,10 +111,33 @@ export async function scheduleAIReply(conversationId: string): Promise<void> {
     // Sin Redis no hay lock: contestamos igual (peor es no contestar).
   }
 
+  // Mientras hacíamos cola por el lock pudo entrar otro mensaje. Si pasó, ESA
+  // tanda contesta todo junto y nosotros nos borramos: si no, el cliente recibe
+  // nuestra respuesta (que ya no incluye lo último que escribió) y enseguida
+  // otra, contestando lo mismo con otras palabras.
+  if (await isStale(conversationId, seq)) return;
+
   try {
-    await runAI(conversationId);
+    // El chequeo se repite DESPUÉS de llamar al modelo (tarda unos segundos) y
+    // justo antes de mandar: ahí es donde más se cuela un mensaje nuevo.
+    await runAI(conversationId, () => isStale(conversationId, seq));
   } finally {
     if (lock) await redis.del(lockKey(conversationId)).catch(() => {});
+  }
+}
+
+/**
+ * ¿Llegó un mensaje más nuevo que el que dispara esta tanda?
+ *
+ * Ante un error de Redis contesta que no: si no podemos saberlo, preferimos
+ * mandar una respuesta de más antes que dejar al cliente sin ninguna.
+ */
+async function isStale(conversationId: string, seq: number): Promise<boolean> {
+  try {
+    const actual = Number(await redis.get(seqKey(conversationId)));
+    return !!actual && actual !== seq;
+  } catch {
+    return false;
   }
 }
 
@@ -120,12 +146,12 @@ export async function scheduleAIReply(conversationId: string): Promise<void> {
  * que llegó el mensaje y que se venció la espera, el pedido pudo haber cambiado
  * (o alguien pudo haber tomado el chat a mano desde el panel).
  */
-async function runAI(conversationId: string): Promise<void> {
+async function runAI(conversationId: string, stale?: () => Promise<boolean>): Promise<void> {
   const convo = await prisma.whatsAppConversation.findUnique({ where: { id: conversationId } });
   if (!convo) return;
   // Takeover humano mientras esperábamos: el bot ya no responde este chat.
   if (convo.botPaused) return;
 
   const { handleAIOrder } = await import('./wa-order-flow.service');
-  await handleAIOrder({ id: convo.id, phone: convo.phone, context: convo.context }, '');
+  await handleAIOrder({ id: convo.id, phone: convo.phone, context: convo.context }, '', { stale });
 }

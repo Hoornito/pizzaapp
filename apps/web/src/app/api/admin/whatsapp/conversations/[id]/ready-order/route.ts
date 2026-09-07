@@ -13,6 +13,17 @@ const itemSchema = z.object({
   extra: z.string().nullish(),
   extraPrice: z.coerce.number().min(0).optional(),
   notes: z.string().nullish(),
+  // Composición elegida de una promo. El panel no la edita: la manda de vuelta
+  // tal cual la recibió para no perderla al tocar cualquier otra cosa del pedido.
+  promoChoices: z
+    .array(
+      z.object({
+        productId: z.string(),
+        name: z.string(),
+        quantity: z.coerce.number().int().min(1),
+      })
+    )
+    .optional(),
 });
 const bodySchema = z.object({ items: z.array(itemSchema).min(1) });
 

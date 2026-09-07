@@ -633,6 +633,10 @@ export async function markOrderPaid(
     // no emitimos 'order:status_changed': hacerlo le repetía al cliente el
     // último aviso ("tu pedido está listo") cada vez que se lo cobraba.
     emitOrderStatusChanged(orderId, order.status, order);
+    // El pago sí es novedad para el cliente (ver el listener de 'order:paid':
+    // avisa por push al que transfirió). Se emite una sola vez porque un pedido
+    // ya cobrado no vuelve a entrar acá: más arriba tira "El pedido ya está pagado".
+    eventBus.emit('order:paid', order as never);
   }
 
   return order;

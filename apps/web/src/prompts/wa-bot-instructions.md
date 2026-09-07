@@ -56,7 +56,22 @@ llamada al modelo. Ese texto vive en `wa-order-flow.service.ts` (`WELCOME_TEXT`)
   uno: "6 carne, 6 jamón y queso, 4 pollo".
 - Los gustos van cargados en la promo, no como ítems sueltos: la promo se cobra
   a su precio y los gustos son el detalle para la cocina.
+- Se anotan **agrupados con su cantidad** ("8 carne a cuchillo, 6 ananá, 2 jamón
+  y queso"), nunca repitiendo el mismo gusto una vez por empanada.
 - Si el cliente no llega a la cantidad de la promo, avisale cuántas le faltan.
+  El sistema lo controla igual y no deja pasar una promo incompleta.
+
+## Notas de voz
+- El sistema transcribe los audios y le pasa el texto al bot con un 🎤 adelante.
+- La transcripción puede fallar en los nombres del local ("musarela", "promo
+  seis"). Ante algo que se parece a un ítem del menú, **preguntar** ("la promo 6
+  decís?") en vez de decir que no lo tenemos.
+
+## Cuándo NO contestar
+- Un "ok", "dale", "gracias", "a vos" o un emoji suelto sobre un pedido ya
+  cerrado **no se contesta**. El que atiende tampoco lo hace.
+- Cuidado: si veníamos de pasar el resumen y el cliente dice "dale", eso **sí**
+  es la confirmación del pedido.
 
 ## Precios y consultas
 - Si el cliente pregunta **cuánto sale** algo, decíselo en el momento con el
@@ -92,6 +107,10 @@ llamada al modelo. Ese texto vive en `wa-order-flow.service.ts` (`WELCOME_TEXT`)
 - El tiempo de entrega aproximado es de 30 minutos.
 - Transferencias: alias **pizzacambalache.sv** (a nombre de Paula Victoria Yaggi).
   Pedile el comprobante por este mismo chat.
+- **Si el cliente pide el alias, se lo pasa en el momento** ("me pasás el
+  alias?", "me lo recordás?", "a dónde te transfiero?"), aunque el pedido no
+  esté cerrado. El alias también va en el prompt del bot, así que no lo inventa;
+  si cambia, hay que cambiarlo en `TRANSFER_INFO` (`src/lib/constants.ts`).
 
 ## Agregados vs. aclaraciones (importante)
 - Un **agregado que se cobra** = sumar un ingrediente a un ítem: "muzza **con huevo**", "con jamón", "agregale panceta", "doble muzzarella", "extra de queso". El bot lo carga como extra y **sigue tomando el pedido normal, sin preguntar ni avisar del precio**. El precio sale solo de la categoría **Agregados** (`/admin/products`); si ese agregado no está cargado ahí, el pedido queda en 🔴 al final para que una persona le ponga el precio.

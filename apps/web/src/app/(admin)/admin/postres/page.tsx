@@ -35,6 +35,19 @@ interface VentaDia {
   cantidad: number;
   total: number;
 }
+/** Totales de postres ya con descuentos prorrateados y el pago a la persona. */
+interface PostreTotals {
+  unidadesGrandes: number;
+  unidadesChicas: number;
+  unidades: number;
+  bruto: number;
+  descuentos: number;
+  cobrado: number;
+  pagoGrandes: number;
+  pagoChicos: number;
+  pago: number;
+  resultadoNegocio: number;
+}
 interface PostresData {
   products: PostreRow[];
   ventasDiarias: VentaDia[];
@@ -44,9 +57,40 @@ interface PostresData {
   dineroAFavor: number;
   stockTotal: number;
   entradas: number;
+  resumenPeriodo: PostreTotals;
+  resumenHistorico: PostreTotals;
+  ajustes: number;
+  conciliacion: {
+    dineroAFavorAnterior: number;
+    dineroAFavorReal: number;
+    diferencia: number;
+  };
+  pagoActual: { GRANDE: number; CHICO: number };
 }
 
 const fmtDate = (d: string) => d.split('-').reverse().join('/');
+
+/** Fila etiqueta/valor de los cuadros de cuentas. */
+function SummaryRow({
+  label,
+  value,
+  strong,
+  color,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  color?: string;
+}) {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1, py: 0.4 }}>
+      <Typography variant="body2" color="text.secondary">{label}</Typography>
+      <Typography variant="body2" fontWeight={strong ? 800 : 500} color={color} sx={{ whiteSpace: 'nowrap' }}>
+        {value}
+      </Typography>
+    </Box>
+  );
+}
 
 export default function PostresPage() {
   const { showSuccess, showError } = useSnackbar();
@@ -70,6 +114,10 @@ export default function PostresPage() {
   // Modal editar precio
   const [priceCtx, setPriceCtx] = useState<PostreRow | null>(null);
   const [priceValue, setPriceValue] = useState('');
+
+  // Modal "pago por postre" (lo que se le paga a la persona de postres)
+  const [pagoOpen, setPagoOpen] = useState(false);
+  const [pagoForm, setPagoForm] = useState({ GRANDE: '', CHICO: '' });
 
   const load = () => {
     setLoading(true);
@@ -115,6 +163,32 @@ export default function PostresPage() {
       if (!res.ok) { showError(json.error || 'Error al guardar el precio'); return; }
       showSuccess('Precio actualizado');
       setPriceCtx(null);
+      load();
+    } catch {
+      showError('Error de conexión');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openPago = () => {
+    if (!data) return;
+    setPagoForm({ GRANDE: String(data.pagoActual.GRANDE), CHICO: String(data.pagoActual.CHICO) });
+    setPagoOpen(true);
+  };
+
+  const savePago = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/admin/postres/payout', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ GRANDE: Number(pagoForm.GRANDE), CHICO: Number(pagoForm.CHICO) }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { showError(json.error || 'No se pudo guardar el pago'); return; }
+      showSuccess('Pago actualizado. Rige para las ventas de acá en adelante.');
+      setPagoOpen(false);
       load();
     } catch {
       showError('Error de conexión');
@@ -178,7 +252,7 @@ export default function PostresPage() {
   // Métricas del período seleccionado (+ "Total retirado" que es saldo histórico).
   const metrics = [
     { label: 'Vendidos del período (unidades)', value: String(data.totalVendidos), color: 'text.primary' },
-    { label: 'Ingresos del período', value: formatCurrency(data.totalIngresos), color: 'success.main' },
+    { label: 'Ingresos del período (bruto)', value: formatCurrency(data.totalIngresos), color: 'success.main' },
     { label: 'Entradas del período (carga)', value: String(data.entradas), color: 'info.main' },
     { label: 'Total retirado (histórico)', value: formatCurrency(data.totalRetiros), color: 'error.main' },
   ];
@@ -192,6 +266,7 @@ export default function PostresPage() {
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
           <Button variant="contained" onClick={openCargar}>📥 Cargar stock</Button>
+          <Button variant="outlined" onClick={openPago}>🧾 Pago por postre</Button>
           <Button variant="outlined" color="warning" onClick={() => setRetirarOpen(true)}>💸 Retirar dinero</Button>
         </Box>
       </Box>
@@ -230,7 +305,9 @@ export default function PostresPage() {
             <Typography variant="h4" fontWeight={800} color={data.dineroAFavor >= 0 ? 'success.main' : 'error.main'}>
               {formatCurrency(data.dineroAFavor)}
             </Typography>
-            <Typography variant="caption" color="text.secondary">Saldo histórico (ingresos − retiros + ajustes)</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Saldo real: lo que se le debe por lo vendido − retiros + ajustes
+            </Typography>
           </Paper>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
@@ -251,6 +328,115 @@ export default function PostresPage() {
           </Grid>
         ))}
       </Grid>
+
+      {/* ── Cuentas de postres ─────────────────────────────────────────────
+          Tres columnas que responden, en orden: qué se vendió, cuánto se le
+          debe a la persona de postres, y qué le queda al negocio. Las cifras
+          de venta son del PERÍODO elegido arriba; el pago acumulado y el saldo
+          son históricos (no dependen del filtro). */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid item xs={12} md={4}>
+          <Paper sx={{ p: 2.5, height: '100%' }}>
+            <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+              VENTAS DEL PERÍODO
+            </Typography>
+            <SummaryRow label="Postres grandes" value={String(data.resumenPeriodo.unidadesGrandes)} />
+            <SummaryRow label="Postres chicos" value={String(data.resumenPeriodo.unidadesChicas)} />
+            <SummaryRow label="Total bruto vendido" value={formatCurrency(data.resumenPeriodo.bruto)} />
+            <SummaryRow
+              label="Descuentos aplicados"
+              value={`− ${formatCurrency(data.resumenPeriodo.descuentos)}`}
+              color={data.resumenPeriodo.descuentos > 0 ? 'warning.main' : undefined}
+            />
+            <SummaryRow label="Cobrado a los clientes" value={formatCurrency(data.resumenPeriodo.cobrado)} strong />
+          </Paper>
+        </Grid>
+
+        <Grid item xs={12} md={4}>
+          <Paper sx={{ p: 2.5, height: '100%' }}>
+            <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+              PAGO A LA PERSONA DE POSTRES
+            </Typography>
+            <SummaryRow
+              label={`Grandes (${formatCurrency(data.pagoActual.GRANDE)} c/u)`}
+              value={formatCurrency(data.resumenPeriodo.pagoGrandes)}
+            />
+            <SummaryRow
+              label={`Chicos (${formatCurrency(data.pagoActual.CHICO)} c/u)`}
+              value={formatCurrency(data.resumenPeriodo.pagoChicos)}
+            />
+            <SummaryRow label="Total del período" value={formatCurrency(data.resumenPeriodo.pago)} strong />
+            <SummaryRow
+              label="Acumulado histórico"
+              value={formatCurrency(data.resumenHistorico.pago)}
+            />
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+              Cada venta se paga con la tarifa que regía ese día.
+            </Typography>
+          </Paper>
+        </Grid>
+
+        <Grid item xs={12} md={4}>
+          <Paper sx={{ p: 2.5, height: '100%' }}>
+            <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+              RESULTADO DEL NEGOCIO
+            </Typography>
+            <SummaryRow label="Cobrado por postres" value={formatCurrency(data.resumenPeriodo.cobrado)} />
+            <SummaryRow label="Menos pago a la persona" value={`− ${formatCurrency(data.resumenPeriodo.pago)}`} />
+            <Box sx={{ borderTop: '1px solid', borderColor: 'divider', mt: 1, pt: 1 }}>
+              <Typography
+                variant="h5"
+                fontWeight={800}
+                color={data.resumenPeriodo.resultadoNegocio >= 0 ? 'success.main' : 'error.main'}
+              >
+                {formatCurrency(data.resumenPeriodo.resultadoNegocio)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {data.resumenPeriodo.resultadoNegocio >= 0
+                  ? 'Le queda al negocio en el período'
+                  : 'El negocio PIERDE en el período (el descuento deja el cobro por debajo del pago)'}
+              </Typography>
+            </Box>
+          </Paper>
+        </Grid>
+      </Grid>
+
+      {/* Conciliación: sólo tiene sentido mientras el número viejo y el nuevo
+          difieran. Es informativa: no cambia ni un movimiento. */}
+      {Math.abs(data.conciliacion.diferencia) >= 1 && (
+        <Paper sx={{ p: 2.5, mb: 3, border: '1px solid', borderColor: 'warning.light', bgcolor: 'warning.50' }}>
+          <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+            ⚠️ CONCILIACIÓN DEL DINERO A FAVOR
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            El cálculo anterior acreditaba el <strong>precio de venta completo</strong> del postre en vez
+            de lo que se le paga a la persona. Éste es el impacto de la corrección sobre el saldo. No se
+            borró ni modificó ningún retiro ni ajuste.
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={4}>
+              <SummaryRow label="Saldo con el cálculo viejo" value={formatCurrency(data.conciliacion.dineroAFavorAnterior)} />
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <SummaryRow label="Saldo real (nuevo)" value={formatCurrency(data.conciliacion.dineroAFavorReal)} strong />
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <SummaryRow
+                label="Diferencia"
+                value={formatCurrency(data.conciliacion.diferencia)}
+                color={data.conciliacion.diferencia >= 0 ? 'success.main' : 'error.main'}
+                strong
+              />
+            </Grid>
+          </Grid>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1.5 }}>
+            Desglose del saldo real: pago por lo vendido {formatCurrency(data.resumenHistorico.pago)} −
+            retiros {formatCurrency(data.totalRetiros)}
+            {data.ajustes !== 0 ? ` ${data.ajustes >= 0 ? '+' : '−'} ajustes ${formatCurrency(Math.abs(data.ajustes))}` : ''}
+            {' '}= {formatCurrency(data.dineroAFavor)}
+          </Typography>
+        </Paper>
+      )}
 
       <Grid container spacing={3}>
         {/* Stock de postres */}
@@ -412,6 +598,48 @@ export default function PostresPage() {
             disabled={saving || !retirarForm.amount || Number(retirarForm.amount) <= 0}
           >
             Retirar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal: pago por postre (lo que se le paga a la persona de postres) */}
+      <Dialog open={pagoOpen} onClose={() => setPagoOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Pago por postre</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Cuánto se le paga a la persona de postres por cada uno. Es el valor que se descuenta del
+            precio de venta para saber qué le queda al negocio.
+          </Typography>
+          <TextField
+            fullWidth
+            label="Postre grande"
+            type="number"
+            value={pagoForm.GRANDE}
+            onChange={(e) => setPagoForm((f) => ({ ...f, GRANDE: e.target.value }))}
+            InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="Postre chico"
+            type="number"
+            value={pagoForm.CHICO}
+            onChange={(e) => setPagoForm((f) => ({ ...f, CHICO: e.target.value }))}
+            InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+          />
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
+            ⚠️ El valor nuevo rige <strong>de ahora en adelante</strong>. Las ventas ya hechas se siguen
+            pagando con la tarifa que correspondía ese día: cambiar esto no recalcula el pasado.
+          </Typography>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+            El tamaño de cada postre sale de su nombre: el que dice “chico” o “chica” cuenta como chico,
+            el resto como grande.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPagoOpen(false)}>Cancelar</Button>
+          <Button variant="contained" onClick={savePago} disabled={saving}>
+            {saving ? 'Guardando...' : 'Guardar'}
           </Button>
         </DialogActions>
       </Dialog>
