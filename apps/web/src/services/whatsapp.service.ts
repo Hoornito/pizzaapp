@@ -217,7 +217,7 @@ export async function sendOrderStatusUpdateWA(
   phone: string,
   orderNumber: string,
   status: string,
-  info?: { deliveryType?: string | null; driverName?: string | null }
+  info?: { deliveryType?: string | null }
 ): Promise<void> {
   if (!whatsappNotifiesStatus(status)) return;
 
@@ -232,12 +232,11 @@ Ya está listo, te esperamos por el local.`
 
 Ya está listo, en un ratito sale para allá.`;
   } else if (status === 'EN_REPARTO') {
-    message =
-      `🛵 *Pedido #${orderNumber}*
+    // A propósito NO lleva el nombre del repartidor: es un dato interno del
+    // local, no algo que el cliente necesite.
+    message = `🛵 *Pedido #${orderNumber}*
 
-El chico ya salió para allá, así están atentos.` +
-      (info?.driverName ? `
-Repartidor: ${info.driverName}.` : '');
+El chico ya salió para allá, así están atentos.`;
   } else {
     message = `❌ *Pedido #${orderNumber}*
 

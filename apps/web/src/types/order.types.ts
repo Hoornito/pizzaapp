@@ -13,15 +13,16 @@ import type {
 } from '@prisma/client';
 
 export type OrderWithRelations = Order & {
-  user: Pick<User, 'id' | 'name' | 'email' | 'phone'>;
+  user: Pick<User, 'id' | 'name' | 'email' | 'phone' | 'role'>;
   address: Address | null;
   items: (OrderItem & {
     product: Product | null;
     promotion: Promotion | null;
   })[];
   payment: Payment | null;
-  // Repartidor asignado. Lo trae ORDER_INCLUDE y se usa, por ejemplo, para
-  // nombrar al repartidor en el aviso de "ya salió" que se manda por WhatsApp.
+  // Repartidor asignado. Lo trae ORDER_INCLUDE; es sólo para uso interno del
+  // panel (a quién avisarle que le tocó el reparto) — nunca se le menciona al
+  // cliente en un aviso, ni por WhatsApp ni por push.
   deliveryEmployee?: Pick<Employee, 'id' | 'firstName' | 'lastName' | 'phone'> | null;
 };
 
