@@ -26,6 +26,11 @@ export function DiscountBanner() {
 
   if (!discount) return null;
 
+  // 0% = solo anuncio (ver discount.service): todavía no hay descuento para
+  // aplicar, así que no mostramos "0% de descuento" ni la leyenda de que se
+  // aplica al pedido — sólo el título que cargó el local.
+  const soloAnuncio = discount.percentage <= 0;
+
   // El porcentaje se muestra sin decimales cuando es redondo (10%, no 10.00%).
   const pct = Number.isInteger(discount.percentage)
     ? discount.percentage
@@ -46,11 +51,13 @@ export function DiscountBanner() {
         fontWeight={900}
         sx={{ fontSize: { xs: '1.1rem', sm: '1.6rem' }, lineHeight: 1.15, textTransform: 'uppercase' }}
       >
-        {discount.label} · {pct}% de descuento!
+        {soloAnuncio ? discount.label : `${discount.label} · ${pct}% de descuento!`}
       </Typography>
-      <Typography variant="caption" sx={{ opacity: 0.9 }}>
-        Se aplica solo a los pedidos hechos desde la app
-      </Typography>
+      {!soloAnuncio && (
+        <Typography variant="caption" sx={{ opacity: 0.9 }}>
+          Se aplica solo a los pedidos hechos desde la app
+        </Typography>
+      )}
     </Box>
   );
 }

@@ -33,13 +33,16 @@ export default function DiscountsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const pct = parseFloat(percentage);
-  const pctOk = Number.isFinite(pct) && pct > 0 && pct <= 100;
+  const pct = percentage === '' ? 0 : parseFloat(percentage);
+  const pctOk = Number.isFinite(pct) && pct >= 0 && pct <= 100;
+  // 0% es válido: es el modo "solo anuncio" (el cartel muestra el título nomás,
+  // sin aplicar ningún descuento) para avisar una promo que todavía no arrancó.
+  const soloAnuncio = pctOk && pct === 0;
 
   const save = async (next?: { active: boolean }) => {
     const activo = next ? next.active : active;
     if (activo && (!pctOk || !label.trim())) {
-      showError('Para activarlo cargá el porcentaje y el motivo.');
+      showError('Para activarlo cargá el porcentaje (puede ser 0 para solo anunciarlo) y el motivo.');
       return;
     }
     setSaving(true);
@@ -68,6 +71,9 @@ export default function DiscountsPage() {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Se le aplica al subtotal de <strong>los pedidos que hacen los clientes desde la web</strong>.
         Los que cargás vos en mostrador (o por WhatsApp) siguen a precio de lista.
+        Con <strong>0%</strong> no se aplica ningún descuento: sirve para anunciar
+        uno que todavía no arrancó (ej. &quot;el martes, 40% off&quot;) mostrando
+        sólo el motivo, sin el cartel de porcentaje.
       </Typography>
 
       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
@@ -97,7 +103,7 @@ export default function DiscountsPage() {
         <Alert severity="info" icon={false} sx={{ mb: 2 }}>
           <Typography variant="caption" color="text.secondary">Así lo ve el cliente:</Typography>
           <Typography fontWeight={900} sx={{ textTransform: 'uppercase' }}>
-            {label.trim()} · {pct}% de descuento!
+            {soloAnuncio ? label.trim() : `${label.trim()} · ${pct}% de descuento!`}
           </Typography>
         </Alert>
       )}
@@ -110,7 +116,13 @@ export default function DiscountsPage() {
             onChange={(e) => { setActive(e.target.checked); save({ active: e.target.checked }); }}
           />
         }
-        label={active ? 'Activo — los clientes lo ven y se les aplica' : 'Desactivado'}
+        label={
+          active
+            ? soloAnuncio
+              ? 'Activo — los clientes ven el cartel, sin descuento aplicado'
+              : 'Activo — los clientes lo ven y se les aplica'
+            : 'Desactivado'
+        }
       />
 
       <Box sx={{ mt: 2 }}>

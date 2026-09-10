@@ -20,12 +20,13 @@ export async function getAppDiscount(): Promise<AppDiscountView> {
 }
 
 /**
- * El descuento vigente, o null. Un porcentaje en 0 no es un descuento aunque
- * esté "activo": así el banner no anuncia un 0%.
+ * El descuento vigente, o null. Un porcentaje en 0 SÍ puede estar activo: es
+ * el modo "solo anuncio" (ver DiscountBanner), para avisar un descuento que
+ * todavía no arrancó ("el martes, 40% off") sin aplicar nada todavía.
  */
 export async function getActiveAppDiscount(): Promise<AppDiscountView | null> {
   const d = await getAppDiscount();
-  return d.active && d.percentage > 0 ? d : null;
+  return d.active ? d : null;
 }
 
 export async function saveAppDiscount(data: AppDiscountView): Promise<AppDiscountView> {
