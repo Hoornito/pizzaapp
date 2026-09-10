@@ -96,6 +96,10 @@ interface WAContext {
   lastOrder?: LastOrderSnapshot;
   // Cuando readyOrder es un agregado, acá va el número del pedido original.
   addonOf?: string;
+  // El pedido anterior (lastOrder) ya estaba ENTREGADO cuando el cliente volvió
+  // a escribir: le preguntamos si lo suma igual a ese pedido o hace uno nuevo, y
+  // acá queda el número del pedido en cuestión hasta que conteste.
+  pendingAddonAsk?: { base: string };
   // Motivo por el que la IA derivó a una persona (extra a cobrar, consulta de
   // stock, etc.), para mostrárselo al operador en el chat.
   humanReason?: string;
@@ -563,16 +567,43 @@ export async function handleAIOrder(
     return;
   }
 
-  // ¿El cliente vuelve a escribir justo después de un pedido tomado? Lo nuevo se
-  // encara como AGREGADO vinculado: lo dejamos en 🔴 para que una persona lo tome.
+  // El último mensaje del cliente de la tanda: con el resumen ya mostrado, un
+  // "si" pelado alcanza para dar el pedido por confirmado. También es la
+  // respuesta que leemos si le preguntamos "¿lo sumamos o es nuevo?".
+  const ultimoDelCliente = [...history].reverse().find((t) => t.role === 'user')?.text;
+
+  // ¿El cliente vuelve a escribir justo después de un pedido tomado? Si ese
+  // pedido sigue en curso, lo nuevo se encara como AGREGADO vinculado (🔴 para
+  // que una persona lo tome). Si ya se ENTREGÓ, no asumimos: preguntamos si lo
+  // suma igual a ese pedido o es uno nuevo (con numeración propia).
   if (ctx.lastOrder && Date.now() - ctx.lastOrder.at < ADDON_WINDOW_MS && draft.items.length) {
-    await stageAddon(id, phone, menu, draft, ctx);
-    return;
+    const lo = ctx.lastOrder;
+    if (ctx.pendingAddonAsk?.base === lo.number) {
+      if (esNegacion(ultimoDelCliente)) {
+        ctx.pendingAddonAsk = undefined;
+        ctx.lastOrder = undefined; // se desvincula: sigue como pedido nuevo, más abajo
+      } else if (esAfirmacion(ultimoDelCliente)) {
+        ctx.pendingAddonAsk = undefined;
+        await stageAddon(id, phone, menu, draft, ctx);
+        return;
+      } else {
+        await saveContext(id, ctx);
+        await botSay(id, phone, `¿Lo sumamos a tu pedido anterior #${lo.number} o hacemos uno nuevo? Respondé "sumalo" o "nuevo".`);
+        return;
+      }
+    } else {
+      const prevOrder = await prisma.order.findUnique({ where: { orderNumber: lo.number }, select: { status: true } });
+      if (prevOrder?.status === 'ENTREGADO') {
+        ctx.pendingAddonAsk = { base: lo.number };
+        await saveContext(id, ctx);
+        await botSay(id, phone, `Tu pedido anterior #${lo.number} ya salió entregado. ¿Lo sumamos igual a ese pedido o hacemos uno nuevo?`);
+        return;
+      }
+      await stageAddon(id, phone, menu, draft, ctx);
+      return;
+    }
   }
 
-  // El último mensaje del cliente de la tanda: con el resumen ya mostrado, un
-  // "si" pelado alcanza para dar el pedido por confirmado.
-  const ultimoDelCliente = [...history].reverse().find((t) => t.role === 'user')?.text;
   await respondToDraft({ id, phone }, menu, draft, ctx, ultimoDelCliente);
 }
 
@@ -853,6 +884,21 @@ function esAfirmacion(text?: string): boolean {
   if (!text) return false;
   const limpio = greetingTokens(text).join(' ');
   return !!limpio && AFIRMACIONES.has(limpio);
+}
+
+/**
+ * "no", "nuevo", "aparte"… La respuesta corta a "¿lo sumamos al pedido anterior
+ * o hacemos uno nuevo?" cuando elige pedido nuevo.
+ */
+const NEGACIONES = new Set([
+  'no', 'nel', 'nop', 'nuevo', 'otro', 'aparte', 'distinto', 'diferente', 'separado',
+  'separada', 'uno nuevo', 'pedido nuevo', 'uno aparte', 'no aparte', 'no nuevo',
+  'mejor nuevo', 'mejor aparte',
+]);
+function esNegacion(text?: string): boolean {
+  if (!text) return false;
+  const limpio = greetingTokens(text).join(' ');
+  return !!limpio && NEGACIONES.has(limpio);
 }
 
 /** Mensaje para pedirle al cliente que aclare un ítem que no pudimos identificar. */

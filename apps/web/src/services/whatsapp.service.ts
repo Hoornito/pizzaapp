@@ -1,4 +1,4 @@
-import { sendText, markAsRead } from '@/lib/whatsapp';
+import { sendText, sendTemplate, markAsRead } from '@/lib/whatsapp';
 import { prisma } from '@/lib/prisma';
 import { redis } from '@/lib/redis';
 import jwt from 'jsonwebtoken';
@@ -176,19 +176,24 @@ async function getOrCreateConversation(phone: string, waId: string, profileName?
   return convo;
 }
 
-export async function sendOrderConfirmationWA(
-  phone: string,
-  orderNumber: string,
-  total: number
-): Promise<void> {
-  await sendText(
-    phone,
-    `✅ *¡Pedido confirmado!*  #${orderNumber}
+/**
+ * Nombre e idioma de la plantilla de "pedido listo" para mostrador, aprobados
+ * en el Administrador de WhatsApp de Meta. Sin esto configurado no hay forma
+ * de escribirle primero a un teléfono que nunca abrió conversación con el bot.
+ */
+const ORDER_READY_TEMPLATE = process.env.WHATSAPP_TEMPLATE_ORDER_READY;
+const ORDER_READY_TEMPLATE_LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'es_AR';
 
-*Total:* $${total.toLocaleString('es-AR')}
-
-Te avisamos cuando esté listo 🍕`
-  );
+/**
+ * Aviso de "pedido listo" a un teléfono cargado en mostrador. A diferencia de
+ * `sendOrderStatusUpdateWA` (que le contesta a una conversación ya abierta),
+ * este número nunca le escribió al bot, así que el primer mensaje tiene que
+ * ser una plantilla aprobada (`sendTemplate`): un texto libre WhatsApp lo
+ * rechaza. Sale UNA sola vez por pedido, al pasar a LISTO.
+ */
+export async function sendOrderReadyTemplateWA(phone: string, orderNumber: string): Promise<void> {
+  if (!ORDER_READY_TEMPLATE) return; // sin plantilla configurada (ver WHATSAPP_TEMPLATE_ORDER_READY), no se manda nada
+  await sendTemplate(phone, ORDER_READY_TEMPLATE, ORDER_READY_TEMPLATE_LANG, [orderNumber]);
 }
 
 /**

@@ -178,6 +178,28 @@ export function sanitizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
 }
 
+/**
+ * Deja un teléfono argentino en el formato que pide la Graph API de WhatsApp
+ * para mandar mensajes (549 + código de área + número, sin 0 ni 15).
+ *
+ * Lo necesitamos porque el teléfono de un pedido de WhatsApp ya llega así
+ * desde el webhook de Meta, pero el que se carga a mano en mostrador puede
+ * venir de cualquier forma ("011 15-2233-4455", "+54 9 11 2233-4455",
+ * "1122334455"...). No intentamos sacar el "15" de en medio (no hay forma
+ * confiable sin saber el código de área): si el operador lo escribe, el
+ * número queda mal armado y ese mensaje puntual no sale.
+ */
+export function normalizeWhatsAppPhone(phone: string): string {
+  let d = phone.replace(/\D/g, '');
+  if (!d) return '';
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.startsWith('549')) return d; // ya viene completo
+  if (d.startsWith('54')) d = d.slice(2);
+  if (d.startsWith('9')) d = d.slice(1);
+  if (d.startsWith('0')) d = d.slice(1);
+  return `549${d}`;
+}
+
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

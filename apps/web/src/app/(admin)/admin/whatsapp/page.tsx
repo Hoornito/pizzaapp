@@ -480,8 +480,12 @@ export default function WhatsAppInboxPage() {
                     sx={{
                       alignSelf: m.direction === 'OUT' ? 'flex-end' : 'flex-start',
                       maxWidth: '75%',
-                      bgcolor: m.direction === 'OUT' ? 'success.light' : 'background.paper',
-                      border: '1px solid', borderColor: 'divider', borderRadius: 2, px: 1.5, py: 0.75,
+                      // Salientes (bot/número del local): verde clarito con borde verde,
+                      // igual paleta que las comandas de pedidos de WhatsApp.
+                      bgcolor: m.direction === 'OUT' ? '#E8F5E9' : 'background.paper',
+                      border: '1px solid',
+                      borderColor: m.direction === 'OUT' ? '#81C784' : 'divider',
+                      borderRadius: 2, px: 1.5, py: 0.75,
                     }}
                   >
                     {m.type === 'image' ? (

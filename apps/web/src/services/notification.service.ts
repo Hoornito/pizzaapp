@@ -1,12 +1,18 @@
 import { prisma } from '@/lib/prisma';
 import { redis } from '@/lib/redis';
 import { sendOrderConfirmationEmail, sendOrderStatusEmail } from './email.service';
-import { sendOrderConfirmationWA, sendOrderStatusUpdateWA } from './whatsapp.service';
+import { sendOrderReadyTemplateWA, sendOrderStatusUpdateWA } from './whatsapp.service';
 import { eventBus } from '@/lib/event-bus';
 import { sendOrderStatusPush, sendPaymentReceivedPush } from './push.service';
 import { isWebOrder, isWhatsAppOrder } from '@/lib/utils';
 import type { OrderWithRelations } from '@/types/order.types';
 import type { OrderStatus } from '@prisma/client';
+
+/** Un aviso que falla no debe tirar abajo el resto (mail, push); pero antes se
+ * tragaba el error entero y no quedaba rastro de por qué no llegó. */
+function logNotifyError(canal: string, orderNumber: string, err: unknown) {
+  console.error(`[notify] ${canal} pedido #${orderNumber}:`, err);
+}
 
 /**
  * ¿Corresponde avisar este estado? Devuelve false si es el mismo que ya se
@@ -51,21 +57,11 @@ function setupEventListeners() {
     const tasks = [sendOrderConfirmationEmail(order).catch(() => {})];
 
     // Un pedido = un canal. Los que entran por el chat ya reciben SU
-    // confirmación desde el propio chat (takeReadyOrder), con el detalle y los
-    // datos de transferencia — mandarles ésta de acá los duplicaría. Los que
-    // entran por la web tienen la confirmación ahí mismo, en pantalla: no hace
-    // falta cruzarla a WhatsApp. Sólo mostrador (sin canal propio) recibe este
-    // WhatsApp como confirmación. `source` es null en pedidos web y de
-    // mostrador (nadie lo setea al crearlos, sólo el bot); por eso se usan los
-    // helpers, que ya saben resolver ese caso por el rol del usuario.
-    const isCounterOrder = !isWebOrder(order) && !isWhatsAppOrder(order);
-    if (isCounterOrder && (order.phone || order.user.phone)) {
-      const phone = order.phone || order.user.phone!;
-      tasks.push(
-        sendOrderConfirmationWA(phone, order.orderNumber, Number(order.total)).catch(() => {})
-      );
-    }
-
+    // confirmación desde el propio chat (takeReadyOrder). Los de la web la
+    // tienen en pantalla. Mostrador NO recibe WhatsApp acá: ese teléfono nunca
+    // le escribió al bot, así que un texto libre lo rechaza Meta (hace falta
+    // plantilla), y el único WhatsApp que vale la pena pagar en mostrador es
+    // el aviso de "listo" (ver 'order:status_changed').
     await Promise.allSettled(tasks);
   });
 
@@ -97,7 +93,7 @@ function setupEventListeners() {
     if (!leInteresaAlCliente(order)) return;
     if (!(await shouldNotifyStatus(order.id, order.status))) return;
 
-    const tasks = [sendOrderStatusEmail(order, order.status).catch(() => {})];
+    const tasks = [sendOrderStatusEmail(order, order.status).catch((e) => logNotifyError('email', order.orderNumber, e))];
 
     // Un pedido = un canal, el mismo por el que entró: si lo pidió por la web
     // se avisa por push (la app que ya está usando); si vino por WhatsApp o lo
@@ -106,16 +102,26 @@ function setupEventListeners() {
     if (isWebOrder(order)) {
       // Best-effort: si no hay dispositivos registrados o falta configuración,
       // no hace nada.
-      tasks.push(sendOrderStatusPush(order as never).catch(() => {}));
+      tasks.push(sendOrderStatusPush(order as never).catch((e) => logNotifyError('push', order.orderNumber, e)));
     } else if (order.phone || order.user?.phone) {
       const phone = order.phone || order.user!.phone!;
-      // WhatsApp sólo para los estados que le importan al cliente (ver
-      // WA_NOTIFIED_STATUSES): el resto son pasos internos de cocina.
-      tasks.push(
-        sendOrderStatusUpdateWA(phone, order.orderNumber, order.status, {
-          deliveryType: order.deliveryType,
-        }).catch(() => {})
-      );
+      if (isWhatsAppOrder(order)) {
+        // Ya viene charlando con el bot: la conversación está abierta, un
+        // texto libre le llega sin problema. WhatsApp sólo para los estados
+        // que le importan al cliente (ver WA_NOTIFIED_STATUSES).
+        tasks.push(
+          sendOrderStatusUpdateWA(phone, order.orderNumber, order.status, {
+            deliveryType: order.deliveryType,
+          }).catch((e) => logNotifyError('whatsapp-status', order.orderNumber, e))
+        );
+      } else if (order.status === 'LISTO') {
+        // Mostrador: este teléfono nunca le escribió al bot, así que el único
+        // mensaje posible es la plantilla aprobada (ver sendOrderReadyTemplateWA).
+        // Un solo aviso por pedido, cuando está listo.
+        tasks.push(
+          sendOrderReadyTemplateWA(phone, order.orderNumber).catch((e) => logNotifyError('whatsapp-template', order.orderNumber, e))
+        );
+      }
     }
 
     await Promise.allSettled(tasks);

@@ -819,7 +819,15 @@ export default function PosPage() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
             <Box sx={{ display: 'flex', gap: 1 }}>
               <TextField label="Cliente" size="small" fullWidth value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
-              <TextField label="Teléfono" size="small" fullWidth value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <TextField
+                label="Teléfono"
+                size="small"
+                fullWidth
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="1122334455"
+                helperText={phone ? 'Con código de área, sin 0 ni 15: le avisamos por WhatsApp cuando esté listo' : undefined}
+              />
             </Box>
 
             <RadioGroup row value={deliveryType} onChange={(e) => setDeliveryType(e.target.value as typeof deliveryType)}>

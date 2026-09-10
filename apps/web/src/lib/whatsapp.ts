@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { normalizeWhatsAppPhone } from './utils';
 
 const WA_API_BASE = `https://graph.facebook.com/v19.0`;
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -15,9 +16,36 @@ const waClient = axios.create({
 export async function sendText(to: string, body: string): Promise<void> {
   await waClient.post('/messages', {
     messaging_product: 'whatsapp',
-    to,
+    to: normalizeWhatsAppPhone(to),
     type: 'text',
     text: { body, preview_url: false },
+  });
+}
+
+/**
+ * Mensaje de plantilla, la única forma que admite WhatsApp para escribirle
+ * PRIMERO a un número que nunca abrió una conversación con el bot (o que la
+ * tiene cerrada hace más de 24h): un texto libre (`sendText`) ahí Meta lo
+ * rechaza. La plantilla se crea y se manda a aprobar desde el Administrador de
+ * WhatsApp de Meta; acá sólo se dispara por nombre con sus parámetros.
+ */
+export async function sendTemplate(
+  to: string,
+  templateName: string,
+  languageCode: string,
+  bodyParams: string[] = []
+): Promise<void> {
+  await waClient.post('/messages', {
+    messaging_product: 'whatsapp',
+    to: normalizeWhatsAppPhone(to),
+    type: 'template',
+    template: {
+      name: templateName,
+      language: { code: languageCode },
+      ...(bodyParams.length
+        ? { components: [{ type: 'body', parameters: bodyParams.map((text) => ({ type: 'text', text })) }] }
+        : {}),
+    },
   });
 }
 
