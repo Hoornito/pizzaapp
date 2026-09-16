@@ -107,6 +107,29 @@ export async function createMercadoPagoPreference(order: OrderWithRelations) {
   return pref;
 }
 
+/**
+ * Fecha de cobro real del pago.
+ *
+ * MP vuelve a notificar un pago que ya estaba aprobado cada vez que cambia algo
+ * suyo — el caso típico es el día que libera la plata, unas dos semanas después.
+ * Sellar `new Date()` en cada aviso movía la venta al día del aviso: Finanzas y
+ * Reportes arman el renglón con `payment.paidAt`, así que ventas viejas
+ * reaparecían en la caja de hoy e inflaban el ingreso virtual del día.
+ *
+ * Reglas: el primer cobro manda (si ya hay `paidAt` no se pisa), y cuando no lo
+ * hay vale el `date_approved` de MP, no la hora en que llegó el aviso.
+ * `undefined` deja el campo como está.
+ */
+function resolvePaidAt(
+  current: Date | null | undefined,
+  mpStatus: string,
+  dateApproved?: string | null
+): Date | undefined {
+  if (mpStatus !== 'approved') return undefined;
+  if (current) return undefined;
+  return dateApproved ? new Date(dateApproved) : new Date();
+}
+
 const SYNC_ORDER_INCLUDE = {
   user: { select: { id: true, name: true, email: true, phone: true } },
   address: true,
@@ -143,6 +166,8 @@ export async function syncMercadoPagoPayment(orderId: string) {
         ? 'PENDING'
         : 'REJECTED';
 
+  const actual = await prisma.payment.findUnique({ where: { orderId }, select: { paidAt: true } });
+
   await prisma.payment.update({
     where: { orderId },
     data: {
@@ -150,7 +175,7 @@ export async function syncMercadoPagoPayment(orderId: string) {
       mpStatus,
       mpStatusDetail: (latest.status_detail as string) ?? null,
       status,
-      paidAt: mpStatus === 'approved' ? new Date() : undefined,
+      paidAt: resolvePaidAt(actual?.paidAt, mpStatus, latest.date_approved as string | null),
     },
   });
 
@@ -175,6 +200,8 @@ export async function processMercadoPagoWebhook(paymentId: string) {
   const paymentStatus =
     mpStatus === 'approved' ? 'APPROVED' : mpStatus === 'pending' ? 'PENDING' : 'REJECTED';
 
+  const actual = await prisma.payment.findUnique({ where: { orderId }, select: { paidAt: true } });
+
   const payment = await prisma.payment.update({
     where: { orderId },
     data: {
@@ -182,7 +209,7 @@ export async function processMercadoPagoWebhook(paymentId: string) {
       mpStatus,
       mpStatusDetail: paymentData.status_detail || null,
       status: paymentStatus as 'APPROVED' | 'PENDING' | 'REJECTED',
-      paidAt: mpStatus === 'approved' ? new Date() : undefined,
+      paidAt: resolvePaidAt(actual?.paidAt, mpStatus, paymentData.date_approved),
     },
     include: {
       order: {
