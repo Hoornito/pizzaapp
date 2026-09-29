@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { BrandLogo } from '@/components/layout/BrandLogo';
 import { DiscountBanner } from '@/components/ui/DiscountBanner';
+import { PinCodeField } from '@/components/ui/PinCodeField';
 import type { LoginInput } from '@/lib/validators';
 
 function LoginForm() {
@@ -224,15 +225,12 @@ function LoginForm() {
             Ingresá tu código de 4 dígitos para continuar.
           </Typography>
           {codeError && <Alert severity="error" sx={{ mb: 2 }}>{codeError}</Alert>}
-          <TextField
+          <PinCodeField
             label="Código (4 dígitos)"
-            type="text"
-            fullWidth
             autoFocus
             value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
-            onKeyDown={(e) => { if (e.key === 'Enter' && code.length === 4) submitCode(); }}
-            inputProps={{ inputMode: 'numeric', maxLength: 4, style: { letterSpacing: '0.5em', textAlign: 'center', fontSize: '1.4rem' } }}
+            onChange={setCode}
+            onComplete={submitCode}
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

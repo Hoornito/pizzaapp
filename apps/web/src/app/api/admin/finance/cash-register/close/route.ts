@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { isStaff } from '@/lib/roles';
+import { isStaff, isAdmin } from '@/lib/roles';
 import { closeCashRegisterSchema } from '@/lib/validators';
 import { closeCashRegister } from '@/services/finance.service';
 
@@ -21,7 +21,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const register = await closeCashRegister(parsed.data, session.user.id);
-    return NextResponse.json({ success: true, data: register });
+    // Cierre a ciegas para el mostrador: no le devolvemos esperado ni diferencia.
+    const data = isAdmin(session.user.role) ? register : { id: register.id };
+    return NextResponse.json({ success: true, data });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Error al cerrar la caja' },

@@ -32,8 +32,8 @@ import { isAdmin } from '@/lib/roles';
 
 const DRAWER_WIDTH = 240;
 
-// `adminOnly`: solo lo ve el ADMIN. El MOSTRADOR no ve finanzas, empleados,
-// usuarios ni reportes.
+// `adminOnly`: solo lo ve el ADMIN. El MOSTRADOR no ve dashboard, finanzas,
+// empleados, usuarios ni reportes.
 const navItems = [
   { label: 'Dashboard', icon: <DashboardIcon />, href: '/admin/dashboard', adminOnly: true },
   { label: 'Mostrador', icon: <PointOfSaleIcon />, href: '/admin/pos' },
@@ -44,7 +44,7 @@ const navItems = [
   { label: 'Categorías', icon: <CategoryIcon />, href: '/admin/categories' },
   { label: 'Promociones', icon: <LocalOfferIcon />, href: '/admin/promotions' },
   { label: 'Usuarios', icon: <PeopleIcon />, href: '/admin/users', adminOnly: true },
-  { label: 'Finanzas', icon: <AccountBalanceWalletIcon />, href: '/admin/finance' },
+  { label: 'Finanzas', icon: <AccountBalanceWalletIcon />, href: '/admin/finance', adminOnly: true },
   { label: 'Empleados', icon: <BadgeIcon />, href: '/admin/employees', adminOnly: true },
   { label: 'Impresión', icon: <PrintIcon />, href: '/admin/print-station' },
   { label: 'Reportes', icon: <BarChartIcon />, href: '/admin/reports', adminOnly: true },

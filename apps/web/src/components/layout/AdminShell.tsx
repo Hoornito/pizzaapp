@@ -5,6 +5,7 @@ import Box from '@mui/material/Box';
 import Toolbar from '@mui/material/Toolbar';
 import { AdminSidebar } from '@/components/layout/AdminSidebar';
 import { AdminHeader } from '@/components/layout/AdminHeader';
+import { SectionLock } from '@/components/layout/SectionLock';
 import type { Role } from '@prisma/client';
 
 export function AdminShell({ children, role }: { children: React.ReactNode; role: Role }) {
@@ -21,7 +22,7 @@ export function AdminShell({ children, role }: { children: React.ReactNode; role
           component="main"
           sx={{ flex: 1, p: { xs: 2, md: 3 }, overflowX: 'hidden', overflowY: 'auto', bgcolor: 'grey.50' }}
         >
-          {children}
+          <SectionLock role={role}>{children}</SectionLock>
         </Box>
       </Box>
     </Box>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { isStaff } from '@/lib/roles';
+import { isAdmin } from '@/lib/roles';
 import { prisma } from '@/lib/prisma';
 import { startOfDay, endOfDay } from 'date-fns';
 import { financeTransactionSchema } from '@/lib/validators';
@@ -8,7 +8,7 @@ import { createFinanceTransaction, parseLocalDate } from '@/services/finance.ser
 
 export async function GET(req: NextRequest) {
   const session = await auth();
-  if (!session || !isStaff(session.user.role)) {
+  if (!session || !isAdmin(session.user.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session || !isStaff(session.user.role)) {
+  if (!session || !isAdmin(session.user.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 

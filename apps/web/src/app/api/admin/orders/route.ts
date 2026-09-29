@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
   const openRegister = await getOpenCashRegister();
   if (!openRegister) {
     return NextResponse.json(
-      { error: 'La caja está cerrada. Abrí la caja en Finanzas para tomar pedidos.' },
+      { error: 'La caja está cerrada. Abrí la caja desde Mostrador para tomar pedidos.' },
       { status: 409 }
     );
   }

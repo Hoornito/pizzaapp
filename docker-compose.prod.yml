@@ -42,6 +42,7 @@ services:
       QZ_CERTIFICATE_B64: ${QZ_CERTIFICATE_B64}
       QZ_PRIVATE_KEY_B64: ${QZ_PRIVATE_KEY_B64}
       ADMIN_LOGIN_CODE: ${ADMIN_LOGIN_CODE}
+      ADMIN_SECTIONS_CODE: ${ADMIN_SECTIONS_CODE:-}
       # ─── Notificaciones push (estado del pedido) ───────────────────────────
       # Web (PWA/navegador): generar con `npm run push:vapid --workspace=apps/web`.
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}

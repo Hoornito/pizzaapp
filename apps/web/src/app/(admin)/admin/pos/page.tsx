@@ -26,6 +26,7 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useProducts, useCategories, usePromotions } from '@/hooks/useProducts';
 import { PizzaCounterModal } from '@/components/products/PizzaCounterModal';
+import { CashRegisterBar, type CashRegisterStatus } from '@/components/admin/CashRegisterBar';
 import { ProductCounterModal } from '@/components/products/ProductCounterModal';
 import { EmpanadaDozenModal } from '@/components/products/EmpanadaDozenModal';
 import { EmpanadaLooseModal } from '@/components/products/EmpanadaLooseModal';
@@ -115,10 +116,12 @@ export default function PosPage() {
   // Borrador restaurado desde localStorage: evita pisar el guardado antes de hidratar.
   const [hydrated, setHydrated] = useState(false);
   const [tab, setTab] = useState<string>('');
-  // Estado de la caja: no se pueden tomar pedidos si está cerrada.
-  const [cajaAbierta, setCajaAbierta] = useState<boolean | null>(null);
+  // Estado de la caja: no se pueden tomar pedidos si está cerrada. `undefined`
+  // mientras carga (o si falló la consulta: el server igual valida).
+  const [caja, setCaja] = useState<CashRegisterStatus | null | undefined>(undefined);
+  const cajaAbierta = caja === undefined ? null : caja !== null;
   // Caja de simulación (entrenamiento): los pedidos son de prueba.
-  const [cajaTest, setCajaTest] = useState(false);
+  const cajaTest = !!caja?.isTest;
   const [pizzaOpen, setPizzaOpen] = useState(false);
   const [fainaOpen, setFainaOpen] = useState(false);
   // Cuándo se entrega: ya mismo (con tiempo estimado) o programado a una franja.
@@ -218,10 +221,10 @@ export default function PosPage() {
 
   // Consultamos el estado de la caja al entrar (y se puede refrescar).
   const loadCajaStatus = () => {
-    fetch('/api/admin/finance/summary')
+    fetch('/api/admin/finance/cash-register')
       .then((r) => r.json())
-      .then((d) => { setCajaAbierta(!!d.data?.register); setCajaTest(!!d.data?.register?.isTest); })
-      .catch(() => setCajaAbierta(null));
+      .then((d) => setCaja(d.data?.open ?? null))
+      .catch(() => setCaja(undefined));
   };
   useEffect(() => { loadCajaStatus(); }, []);
 
@@ -448,7 +451,7 @@ export default function PosPage() {
 
   const finalize = async () => {
     if (cajaAbierta === false) {
-      showError('La caja está cerrada. Abrí la caja en Finanzas para tomar pedidos.');
+      showError('La caja está cerrada. Abrí la caja acá arriba para tomar pedidos.');
       return;
     }
     if (items.length === 0) { showError('Agregá al menos un producto'); return; }
@@ -567,9 +570,11 @@ export default function PosPage() {
     <Box>
       <Typography variant="h4" fontWeight={700} sx={{ mb: 2 }}>Mostrador · Nuevo pedido</Typography>
 
+      <CashRegisterBar register={caja} onChange={loadCajaStatus} />
+
       {cajaAbierta === false && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          La caja está <strong>cerrada</strong>. Tenés que <strong>abrir la caja en Finanzas</strong> para poder tomar pedidos.
+          La caja está <strong>cerrada</strong>. Tenés que <strong>abrir la caja</strong> para poder tomar pedidos.
         </Alert>
       )}
 
