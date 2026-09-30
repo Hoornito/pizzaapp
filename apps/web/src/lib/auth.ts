@@ -103,11 +103,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.role = user.role;
         token.phone = user.phone;
         token.sub = user.id;
+      }
+      // useSession().update() (p. ej. al editar el perfil): releemos de la base
+      // en vez de confiar en lo que manda el cliente.
+      if (trigger === 'update' && token.sub) {
+        const fresh = await prisma.user.findUnique({
+          where: { id: token.sub },
+          select: { name: true, phone: true },
+        });
+        if (fresh) {
+          token.name = fresh.name;
+          token.phone = fresh.phone;
+        }
       }
       return token;
     },

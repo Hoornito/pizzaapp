@@ -132,6 +132,37 @@ export const employeeMovementSchema = z.object({
 
 export type EmployeeMovementInput = z.infer<typeof employeeMovementSchema>;
 
+// Años de antigüedad cobrados por adelantado. La fecha llega "YYYY-MM-DD" y se
+// toma como medianoche local, igual que hireDate.
+export const seniorityPayoutSchema = z.object({
+  years: z.coerce.number().int('Tienen que ser años enteros').min(1, 'Tiene que ser al menos 1 año').max(60),
+  paidAt: z.preprocess((val) => {
+    if (typeof val === 'string') {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(val);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    }
+    return val;
+  }, z.date({ required_error: 'Ingresá la fecha del cobro' })),
+  amount: z.coerce.number().min(0, 'El monto no puede ser negativo').optional().nullable(),
+  note: z.string().max(500).optional().nullable(),
+});
+
+export type SeniorityPayoutInput = z.infer<typeof seniorityPayoutSchema>;
+
+// Cuenta de acceso del empleado (crear / vincular / nueva contraseña).
+export const employeeAccountSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('create'),
+    email: z.string().trim().email('Email inválido'),
+    password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+  }),
+  z.object({ action: z.literal('link'), email: z.string().trim().email('Email inválido') }),
+  z.object({
+    action: z.literal('password'),
+    password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+  }),
+]);
+
 export const openCashRegisterSchema = z
   .object({
     // En una caja de simulación (isTest) el turno es opcional.

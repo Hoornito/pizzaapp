@@ -28,6 +28,8 @@ import InputLabel from '@mui/material/InputLabel';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useSnackbar } from '@/app/snackbar-context';
 import { formatCurrency, formatDateShort } from '@/lib/utils';
+import { computeSeniority, formatYearsMonths } from '@/lib/seniority';
+import { EmployeeDetailDialog } from '@/components/admin/EmployeeDetailDialog';
 
 type EmployeeRole = 'COCINERO' | 'REPARTIDOR' | 'OTRO';
 
@@ -88,6 +90,11 @@ export default function EmployeesPage() {
   // Diálogo de movimiento de saldo (descuento adelanto / aporte / retiro a favor)
   const [movCtx, setMovCtx] = useState<{ emp: any; kind: string; title: string } | null>(null);
   const [movForm, setMovForm] = useState({ amount: '', note: '' });
+
+  // Ficha del empleado (al tocar el nombre). Guardamos el id y no el objeto
+  // para que muestre los datos frescos cuando se recarga la lista.
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detailEmp = employees.find((e) => e.id === detailId) ?? null;
 
   // Modal de historial de movimientos del empleado (con filtro por tipo).
   const [histCtx, setHistCtx] = useState<any>(null);
@@ -247,7 +254,7 @@ export default function EmployeesPage() {
               <TableCell align="right"><strong>Sueldo/día</strong></TableCell>
               <TableCell align="center"><strong>Adelantos pend.</strong></TableCell>
               <TableCell align="center"><strong>Acumulado a favor</strong></TableCell>
-              <TableCell align="center"><strong>Ingreso</strong></TableCell>
+              <TableCell align="center"><strong>Ingreso / antigüedad vigente</strong></TableCell>
               <TableCell align="center"><strong>Estado</strong></TableCell>
               <TableCell><strong>Acciones</strong></TableCell>
             </TableRow>
@@ -263,7 +270,17 @@ export default function EmployeesPage() {
             {employees.map((emp) => (
               <TableRow key={emp.id} hover>
                 <TableCell>
-                  <Typography fontWeight={500}>{emp.firstName} {emp.lastName}</Typography>
+                  <Typography
+                    fontWeight={500}
+                    component="button"
+                    onClick={() => setDetailId(emp.id)}
+                    sx={{
+                      p: 0, border: 0, bgcolor: 'transparent', font: 'inherit', textAlign: 'left',
+                      color: 'primary.main', cursor: 'pointer', '&:hover': { textDecoration: 'underline' },
+                    }}
+                  >
+                    {emp.firstName} {emp.lastName}
+                  </Typography>
                   {emp.address && (
                     <Typography variant="caption" color="text.secondary">{emp.address}</Typography>
                   )}
@@ -320,7 +337,12 @@ export default function EmployeesPage() {
                     </Tooltip>
                   </Box>
                 </TableCell>
-                <TableCell align="center">{formatDateShort(emp.hireDate)}</TableCell>
+                <TableCell align="center">
+                  {formatDateShort(emp.hireDate)}
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    {formatYearsMonths(computeSeniority(emp.hireDate, emp.prepaidSeniorityYears ?? 0).current)}
+                  </Typography>
+                </TableCell>
                 <TableCell align="center">
                   <Chip
                     label={emp.active ? 'Activo' : 'Inactivo'}
@@ -578,6 +600,12 @@ export default function EmployeesPage() {
           <Button onClick={() => setHistCtx(null)}>Cerrar</Button>
         </DialogActions>
       </Dialog>
+      <EmployeeDetailDialog
+        employee={detailEmp}
+        onClose={() => setDetailId(null)}
+        onChanged={loadEmployees}
+        onEdit={(emp) => { setDetailId(null); openDialog(emp); }}
+      />
     </Box>
   );
 }

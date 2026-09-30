@@ -79,15 +79,17 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts      Account[]
-  sessions      Session[]
-  addresses     Address[]
-  orders        Order[]
-  cart          Cart?
-  notifications Notification[]
-  pushDevices   PushDevice[]
-  auditLogs     AuditLog[]
+  accounts        Account[]
+  sessions        Session[]
+  addresses       Address[]
+  orders          Order[]
+  cart            Cart?
+  notifications   Notification[]
+  pushDevices     PushDevice[]
+  auditLogs       AuditLog[]
   cancelledOrders Order[]        @relation("OrderCancelledBy")
+  // Si la persona es empleada del local: su cuenta ve "Mi legajo" en el perfil.
+  employee        Employee?
 
   @@index([email])
   @@index([phone])
@@ -844,12 +846,16 @@ model Employee {
   dailyWage     Decimal      @db.Decimal(10, 2)
   hireDate      DateTime
   active        Boolean      @default(true)
+  // Cuenta con la que el empleado entra a ver su legajo (opcional, 1 a 1).
+  userId        String?      @unique
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  transactions   FinanceTransaction[]
-  movements      EmployeeMovement[]
-  deliveryOrders Order[]              @relation("OrderDeliveryEmployee")
+  transactions     FinanceTransaction[]
+  movements        EmployeeMovement[]
+  deliveryOrders   Order[]                   @relation("OrderDeliveryEmployee")
+  seniorityPayouts EmployeeSeniorityPayout[]
+  user             User?                     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([active])
   @@index([role])
@@ -879,4 +885,23 @@ model EmployeeMovement {
   @@index([employeeId])
   @@index([kind])
   @@index([createdAt])
+}
+
+// Años de antigüedad que el empleado cobró por adelantado (como si fuera un
+// despido parcial). La antigüedad oficial sigue contando desde hireDate, pero
+// al irse se le pagan solo los años vigentes: total − años pre-cobrados.
+// No toca la caja: el pago se registra aparte si hace falta.
+model EmployeeSeniorityPayout {
+  id          String   @id @default(cuid())
+  employeeId  String
+  years       Int
+  paidAt      DateTime
+  amount      Decimal? @db.Decimal(12, 2)
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
 }

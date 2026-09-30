@@ -14,15 +14,20 @@ import Avatar from '@mui/material/Avatar';
 import { useSnackbar } from '@/app/snackbar-context';
 import { PushToggle } from '@/components/notifications/PushToggle';
 import { AddressBook } from '@/components/profile/AddressBook';
+import { MyEmployeeRecord } from '@/components/profile/MyEmployeeRecord';
 
 export default function ProfilePage() {
   const { data: session, status, update } = useSession();
   const router = useRouter();
   const { showSuccess, showError } = useSnackbar();
   const [loading, setLoading] = useState(false);
+  // Nombre y teléfono se cargan desde la base (efecto de abajo): en el primer
+  // render la sesión todavía está cargando y el form quedaba vacío, y al guardar
+  // sin tocar el teléfono se borraba el que estaba registrado.
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [form, setForm] = useState({
-    name: session?.user.name || '',
-    phone: session?.user.phone || '',
+    name: '',
+    phone: '',
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
@@ -35,6 +40,21 @@ export default function ProfilePage() {
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login?callbackUrl=/profile');
   }, [status, router]);
+
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    fetch('/api/users/profile')
+      .then((r) => r.json())
+      .then((json) => {
+        if (!json.data) return;
+        setForm((p) => ({ ...p, name: json.data.name || '', phone: json.data.phone || '' }));
+        setProfileLoaded(true);
+      })
+      .catch(() => showError('No se pudieron cargar tus datos'));
+    // showError no es estable (se recrea en cada render del provider): si fuera
+    // dependencia, un error de carga dispararía el fetch en loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
 
   if (!session) return null;
 
@@ -51,7 +71,9 @@ export default function ProfilePage() {
         showError(json.error || 'Error al actualizar perfil');
         return;
       }
-      await update({ name: form.name, phone: form.phone });
+      setForm((p) => ({ ...p, name: json.data.name || '', phone: json.data.phone || '' }));
+      // El callback jwt relee nombre y teléfono de la base al recibir el update.
+      await update({});
       showSuccess('Perfil actualizado');
     } catch {
       showError('Error de conexión');
@@ -147,13 +169,15 @@ export default function ProfilePage() {
           <Button
             variant="contained"
             onClick={handleUpdateProfile}
-            disabled={loading}
+            disabled={loading || !profileLoaded}
             sx={{ alignSelf: 'flex-end' }}
           >
             Guardar cambios
           </Button>
         </Box>
       </Paper>
+
+      <MyEmployeeRecord />
 
       <AddressBook />
 
