@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { updateUserSchema, adminUpdateUserSchema } from '@/lib/validators';
+import { deleteCustomerUser } from '@/services/user.service';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -56,6 +57,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
   const { id } = await params;
-  await prisma.user.delete({ where: { id } });
+  try {
+    await deleteCustomerUser(id, session.user.id);
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
   return NextResponse.json({ success: true });
 }

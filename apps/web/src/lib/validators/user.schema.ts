@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { Role } from '@prisma/client';
 
 export const updateUserSchema = z.object({
   name: z.string().min(2).optional(),
@@ -7,10 +6,10 @@ export const updateUserSchema = z.object({
   image: z.string().optional(),
 });
 
+// Sin `role`: el rol no se cambia desde la app (ver api/admin/users/[id]).
 export const adminUpdateUserSchema = z.object({
   name: z.string().min(2).optional(),
   phone: z.string().optional(),
-  role: z.nativeEnum(Role).optional(),
   image: z.string().optional(),
 });
 

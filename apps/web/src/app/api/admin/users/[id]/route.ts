@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { z } from 'zod';
-
-const patchSchema = z.object({
-  role: z.enum(['CUSTOMER', 'ADMIN']).optional(),
-});
+import { deleteCustomerUser } from '@/services/user.service';
 
 export async function GET(
   _req: NextRequest,
@@ -42,8 +38,10 @@ export async function GET(
   return NextResponse.json({ success: true, data: safeUser });
 }
 
-export async function PATCH(
-  req: NextRequest,
+// El rol NO se cambia desde el panel: pasar a un cliente a ADMIN le daría
+// acceso a todo (finanzas, empleados). Las cuentas del personal se crean aparte.
+export async function DELETE(
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
@@ -52,16 +50,10 @@ export async function PATCH(
   }
 
   const { id } = await params;
-  const body = await req.json();
-  const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 });
+  try {
+    await deleteCustomerUser(id, session.user.id);
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
-
-  const user = await prisma.user.update({
-    where: { id },
-    data: parsed.data,
-  });
-
-  return NextResponse.json({ success: true, data: { id: user.id, role: user.role } });
+  return NextResponse.json({ success: true });
 }

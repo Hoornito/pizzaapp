@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { registerSchema } from '@/lib/validators';
 import bcrypt from 'bcryptjs';
+import { findUserByEmail } from '@/services/user.service';
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Datos inválidos', details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+  const existing = await findUserByEmail(parsed.data.email);
   if (existing) {
     return NextResponse.json({ error: 'El email ya está registrado' }, { status: 409 });
   }

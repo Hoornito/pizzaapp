@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { getEmployeeBalance } from '@/services/employee-balance.service';
+import { normalizeEmail } from '@/lib/utils';
 
 /**
  * Cuenta de acceso del empleado: el admin le crea un usuario (email +
@@ -35,7 +36,7 @@ export async function createEmployeeAccount(employeeId: string, email: string, p
   return prisma.user.create({
     data: {
       name: `${employee.firstName} ${employee.lastName}`.trim(),
-      email: email.trim().toLowerCase(),
+      email: normalizeEmail(email),
       password: hashed,
       role: 'CUSTOMER',
       employee: { connect: { id: employee.id } },

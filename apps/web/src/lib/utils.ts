@@ -200,6 +200,14 @@ export function normalizeWhatsAppPhone(phone: string): string {
   return `549${d}`;
 }
 
+/**
+ * Los emails se guardan siempre en minúsculas: "Jorge@..." y "jorge@..." son la
+ * misma casilla y tienen que ser la misma cuenta.
+ */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -7,11 +7,6 @@ import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
 import Chip from '@mui/material/Chip';
 import Button from '@mui/material/Button';
-import Select from '@mui/material/Select';
-import MenuItem from '@mui/material/MenuItem';
-import FormControl from '@mui/material/FormControl';
-import InputLabel from '@mui/material/InputLabel';
-import Divider from '@mui/material/Divider';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -20,6 +15,7 @@ import TableRow from '@mui/material/TableRow';
 import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '@/lib/constants';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useSnackbar } from '@/app/snackbar-context';
 
 interface Props {
@@ -32,39 +28,34 @@ export default function AdminUserDetailPage({ params }: Props) {
   const { showSuccess, showError } = useSnackbar();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [newRole, setNewRole] = useState('');
-  const [updating, setUpdating] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetch(`/api/admin/users/${id}`)
       .then((r) => r.json())
       .then((d) => {
         setUser(d.data);
-        setNewRole(d.data?.role || '');
       })
       .finally(() => setLoading(false));
   }, [id]);
 
-  const handleUpdateRole = async () => {
-    if (newRole === user.role) return;
-    setUpdating(true);
+  const handleDelete = async () => {
+    setDeleting(true);
     try {
-      const res = await fetch(`/api/admin/users/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: newRole }),
-      });
+      const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
       const json = await res.json();
       if (!res.ok) {
-        showError(json.error || 'Error al actualizar rol');
+        showError(json.error || 'No se pudo borrar el usuario');
         return;
       }
-      setUser((prev: any) => ({ ...prev, role: newRole }));
-      showSuccess('Rol actualizado');
+      showSuccess('Usuario borrado');
+      router.push('/admin/users');
     } catch {
       showError('Error de conexión');
     } finally {
-      setUpdating(false);
+      setDeleting(false);
+      setConfirmOpen(false);
     }
   };
 
@@ -103,26 +94,22 @@ export default function AdminUserDetailPage({ params }: Props) {
             </Box>
           </Paper>
 
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" fontWeight={600} gutterBottom>Cambiar rol</Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Rol</InputLabel>
-                <Select value={newRole} label="Rol" onChange={(e) => setNewRole(e.target.value)}>
-                  <MenuItem value="CUSTOMER">CUSTOMER</MenuItem>
-                  <MenuItem value="ADMIN">ADMIN</MenuItem>
-                </Select>
-              </FormControl>
-              <Button
-                variant="contained"
-                fullWidth
-                onClick={handleUpdateRole}
-                disabled={updating || newRole === user.role}
-              >
-                Actualizar rol
-              </Button>
-            </Box>
-          </Paper>
+          {/* Solo clientes sin pedidos: el resto lo rechaza el servidor igual
+              (ver deleteCustomerUser), acá sólo evitamos ofrecer lo imposible. */}
+          {user.role === 'CUSTOMER' && (
+            <Paper sx={{ p: 3 }}>
+              <Typography variant="h6" fontWeight={600} gutterBottom>Borrar usuario</Typography>
+              {user._count?.orders > 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No se puede borrar: tiene pedidos, que son parte del historial de ventas.
+                </Typography>
+              ) : (
+                <Button variant="outlined" color="error" fullWidth onClick={() => setConfirmOpen(true)}>
+                  Borrar usuario
+                </Button>
+              )}
+            </Paper>
+          )}
         </Box>
 
         <Paper sx={{ p: 3 }}>
@@ -165,6 +152,17 @@ export default function AdminUserDetailPage({ params }: Props) {
           )}
         </Paper>
       </Box>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="¿Borrar este usuario?"
+        description={`Se borra la cuenta de ${user.email || user.name || 'este usuario'} con sus direcciones. No se puede deshacer.`}
+        confirmLabel="Borrar"
+        destructive
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </Box>
   );
 }

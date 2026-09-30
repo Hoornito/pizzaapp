@@ -8,9 +8,11 @@ import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import type { Role } from '@prisma/client';
+import { findUserByEmail } from '@/services/user.service';
+import { normalizeEmail } from '@/lib/utils';
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().toLowerCase().email(),
   password: z.string().min(6),
   // Segundo factor solo para ADMIN (código de 4 dígitos).
   code: z.string().optional(),
@@ -54,11 +56,21 @@ if (process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET) {
   oauthProviders.push(Facebook({ allowDangerousEmailAccountLinking: true }));
 }
 
+const baseAdapter = PrismaAdapter(prisma);
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // Detrás del reverse proxy (Caddy) Auth.js no confía en el Host por defecto;
   // se lo indicamos explícitamente para producción.
   trustHost: true,
-  adapter: PrismaAdapter(prisma),
+  // El adapter de Prisma busca el email tal cual llega: si alguien se registró
+  // como "Jorge@gmail.com" y después entra con Google ("jorge@gmail.com"), le
+  // creaba una cuenta nueva en vez de enlazarla. Lo buscamos sin distinguir
+  // mayúsculas y lo guardamos siempre en minúsculas.
+  adapter: {
+    ...baseAdapter,
+    getUserByEmail: (email) => findUserByEmail(email) as never,
+    createUser: (user) => baseAdapter.createUser!({ ...user, email: normalizeEmail(user.email) }),
+  },
   session: { strategy: 'jwt' },
   pages: {
     signIn: '/login',
@@ -76,9 +88,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = loginSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email },
-        });
+        const user = await findUserByEmail(parsed.data.email);
 
         if (!user || !user.password) return null;
 
