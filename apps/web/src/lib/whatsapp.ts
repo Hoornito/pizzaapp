@@ -33,8 +33,13 @@ export async function sendTemplate(
   to: string,
   templateName: string,
   languageCode: string,
-  bodyParams: string[] = []
+  // Array para variables posicionales ({{1}}, {{2}}); objeto para variables
+  // con nombre ({{numero_orden}}), que Meta exige mandar con su parameter_name.
+  bodyParams: string[] | Record<string, string> = []
 ): Promise<void> {
+  const parameters = Array.isArray(bodyParams)
+    ? bodyParams.map((text) => ({ type: 'text', text }))
+    : Object.entries(bodyParams).map(([parameter_name, text]) => ({ type: 'text', parameter_name, text }));
   await waClient.post('/messages', {
     messaging_product: 'whatsapp',
     to: normalizeWhatsAppPhone(to),
@@ -42,9 +47,7 @@ export async function sendTemplate(
     template: {
       name: templateName,
       language: { code: languageCode },
-      ...(bodyParams.length
-        ? { components: [{ type: 'body', parameters: bodyParams.map((text) => ({ type: 'text', text })) }] }
-        : {}),
+      ...(parameters.length ? { components: [{ type: 'body', parameters }] } : {}),
     },
   });
 }

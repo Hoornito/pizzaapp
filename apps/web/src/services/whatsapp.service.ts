@@ -193,7 +193,8 @@ const ORDER_READY_TEMPLATE_LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'es_AR';
  */
 export async function sendOrderReadyTemplateWA(phone: string, orderNumber: string): Promise<void> {
   if (!ORDER_READY_TEMPLATE) return; // sin plantilla configurada (ver WHATSAPP_TEMPLATE_ORDER_READY), no se manda nada
-  await sendTemplate(phone, ORDER_READY_TEMPLATE, ORDER_READY_TEMPLATE_LANG, [orderNumber]);
+  // La plantilla aprobada usa la variable con nombre {{numero_orden}}.
+  await sendTemplate(phone, ORDER_READY_TEMPLATE, ORDER_READY_TEMPLATE_LANG, { numero_orden: orderNumber });
 }
 
 /**
