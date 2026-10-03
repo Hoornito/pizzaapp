@@ -4,7 +4,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import PrintIcon from '@mui/icons-material/Print';
 import type { OrderWithRelations } from '@/types/order.types';
-import { toNumber, formatDate, formatOrderPayment } from '@/lib/utils';
+import { toNumber, formatDate, formatOrderPayment, orderContactPhone } from '@/lib/utils';
 import { DeliveryMapQR } from '@/components/orders/DeliveryMapQR';
 
 interface KitchenTicketProps {
@@ -45,8 +45,8 @@ export function KitchenTicket({ order }: KitchenTicketProps) {
 
         <Box sx={{ fontSize: '11px', mb: 1 }}>
           <Box><strong>Cliente:</strong> {order.user.name}</Box>
-          {(order.phone || order.user.phone) && (
-            <Box><strong>Tel:</strong> {order.phone || order.user.phone}</Box>
+          {orderContactPhone(order) && (
+            <Box><strong>Tel:</strong> {orderContactPhone(order)}</Box>
           )}
           <Box><strong>Tipo:</strong> {order.deliveryType === 'DELIVERY' ? '🛵 DELIVERY' : '🏪 RETIRO'}</Box>
           {order.address && (

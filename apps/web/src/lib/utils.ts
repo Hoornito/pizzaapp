@@ -271,6 +271,22 @@ export function isWhatsAppOrder(order: { source?: string | null }): boolean {
   return order.source === 'WHATSAPP';
 }
 
+/**
+ * Teléfono del cliente de un pedido. Si el pedido no trae uno propio, sólo se
+ * cae al de la cuenta cuando es la de un CLIENTE: los de mostrador van con la
+ * cuenta del local, y su teléfono (el fijo del local) salía en la comanda y se
+ * usaba para el aviso de WhatsApp como si fuera del cliente.
+ */
+export function orderContactPhone(order: {
+  phone?: string | null;
+  user?: { phone?: string | null; role?: string | null } | null;
+}): string | null {
+  const propio = order.phone?.trim();
+  if (propio) return propio;
+  if (order.user?.role === 'CUSTOMER') return order.user.phone?.trim() || null;
+  return null;
+}
+
 /** Porción del total de un pedido que ingresa en efectivo a la caja. */
 export function orderCashPortion(order: PayableOrder): number {
   if (order.paymentMethod === 'EFECTIVO') return toNumber(order.total);

@@ -6,7 +6,7 @@ import { auth } from '@/lib/auth';
 import { isStaff } from '@/lib/roles';
 import { prisma } from '@/lib/prisma';
 import { isPizzaItemNotes } from '@/lib/pizza';
-import { formatOrderPayment, parseOrderCustomer, groupTicketItems } from '@/lib/utils';
+import { formatOrderPayment, parseOrderCustomer, groupTicketItems, orderContactPhone } from '@/lib/utils';
 
 const esc = (s: unknown) =>
   String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
@@ -106,7 +106,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
   <div class="sep"></div>
   <div>
     ${customerName ? `<div><b>Cliente:</b> ${esc(customerName)}</div>` : ''}
-    ${order.phone || order.user?.phone ? `<div><b>Tel:</b> ${esc(order.phone || order.user?.phone)}</div>` : ''}
+    ${orderContactPhone(order) ? `<div><b>Tel:</b> ${esc(orderContactPhone(order))}</div>` : ''}
     <div><b>Tipo:</b> ${order.deliveryType === 'DELIVERY' ? 'DELIVERY' : order.deliveryType === 'PEDIDOS_YA' ? 'PEDIDOS YA' : 'RETIRO EN LOCAL'}</div>
     <div><b>Pago:</b> ${esc(formatOrderPayment(order, { emoji: false }))}</div>
   </div>

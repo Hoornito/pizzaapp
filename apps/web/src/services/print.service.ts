@@ -1,5 +1,5 @@
 import type { OrderWithRelations } from '@/types/order.types';
-import { toNumber, formatDate, formatOrderPayment, groupTicketItems } from '@/lib/utils';
+import { toNumber, formatDate, formatOrderPayment, groupTicketItems, orderContactPhone } from '@/lib/utils';
 import { isPizzaItemNotes } from '@/lib/pizza';
 
 export function generateKitchenTicketHtml(order: OrderWithRelations): string {
@@ -78,7 +78,7 @@ export function generateKitchenTicketHtml(order: OrderWithRelations): string {
       <td><strong>Cliente:</strong></td>
       <td>${order.user.name || 'Sin nombre'}</td>
     </tr>
-    ${order.phone || order.user.phone ? `<tr><td><strong>Teléfono:</strong></td><td>${order.phone || order.user.phone}</td></tr>` : ''}
+    ${orderContactPhone(order) ? `<tr><td><strong>Teléfono:</strong></td><td>${orderContactPhone(order)}</td></tr>` : ''}
     ${
       order.address
         ? `<tr>

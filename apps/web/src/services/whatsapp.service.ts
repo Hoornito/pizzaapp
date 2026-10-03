@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { redis } from '@/lib/redis';
 import jwt from 'jsonwebtoken';
 import { WHATSAPP_TOKEN_REDIS_TTL } from '@/lib/constants';
+import { normalizeWhatsAppPhone } from '@/lib/utils';
 import type { WAMessage } from '@/types/whatsapp.types';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret';
@@ -140,6 +141,10 @@ export async function processIncomingMessage(
   // Takeover humano: si la conversación está "atendida a mano", el bot no responde.
   if (conversation.botPaused) return;
 
+  // Respuesta a un aviso automático de mostrador ("tu pedido está listo"): no
+  // es un pedido nuevo, el bot no lo toma (ver handleAvisoReply).
+  if (await handleAvisoReply(conversation.id, from)) return;
+
   // Toda respuesta automática sale del bot con SUS instrucciones (las de la base,
   // editables desde /admin/whatsapp/bot). No hay menús ni textos fijos acá: si el
   // bot no puede contestar, no contestamos nada y el mensaje queda en el inbox
@@ -177,24 +182,108 @@ async function getOrCreateConversation(phone: string, waId: string, profileName?
 }
 
 /**
- * Nombre e idioma de la plantilla de "pedido listo" para mostrador, aprobados
- * en el Administrador de WhatsApp de Meta. Sin esto configurado no hay forma
- * de escribirle primero a un teléfono que nunca abrió conversación con el bot.
+ * Plantillas de aviso para mostrador, aprobadas en el Administrador de WhatsApp
+ * de Meta. Sin esto configurado no hay forma de escribirle primero a un
+ * teléfono que nunca abrió conversación con el bot.
+ *  - ORDER_READY: "tu pedido está listo" (retiro en el local).
+ *  - ORDER_ON_THE_WAY: "tu pedido está en camino" (delivery propio).
  */
 const ORDER_READY_TEMPLATE = process.env.WHATSAPP_TEMPLATE_ORDER_READY;
-const ORDER_READY_TEMPLATE_LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'es_AR';
+const ORDER_ON_THE_WAY_TEMPLATE = process.env.WHATSAPP_TEMPLATE_ORDER_ON_THE_WAY;
+const TEMPLATE_LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'es_AR';
 
 /**
- * Aviso de "pedido listo" a un teléfono cargado en mostrador. A diferencia de
- * `sendOrderStatusUpdateWA` (que le contesta a una conversación ya abierta),
- * este número nunca le escribió al bot, así que el primer mensaje tiene que
- * ser una plantilla aprobada (`sendTemplate`): un texto libre WhatsApp lo
- * rechaza. Sale UNA sola vez por pedido, al pasar a LISTO.
+ * Después de un aviso automático de mostrador, lo que conteste el cliente
+ * ("buenísimo, gracias", "ok, ahí paso") NO va al bot: el bot lo tomaba como el
+ * arranque de un pedido nuevo y le contestaba "contame qué te gustaría pedir".
+ * Durante esta ventana se le contesta una sola vez con un texto fijo y el resto
+ * queda en el inbox para que lo vea una persona.
+ */
+const AVISO_TTL_S = 3 * 60 * 60;
+type AvisoKind = 'PICKUP' | 'DELIVERY';
+const AVISO_REPLY: Record<AvisoKind, string> = {
+  PICKUP: 'Dale, te esperamos!',
+  DELIVERY: 'Dale, ya sale para allá!',
+};
+const avisoKey = (phone: string) => `wa:aviso:${normalizeWhatsAppPhone(phone)}`;
+const avisoReplyKey = (phone: string) => `wa:aviso:resp:${normalizeWhatsAppPhone(phone)}`;
+
+/**
+ * Manda la plantilla, la deja en el hilo del inbox (si no, la respuesta del
+ * cliente aparece sin contexto) y abre la ventana de silencio del bot.
+ */
+async function sendMostradorAviso(phone: string, template: string, kind: AvisoKind, orderNumber: string) {
+  // Las dos plantillas aprobadas usan la variable con nombre {{numero_orden}}.
+  await sendTemplate(phone, template, TEMPLATE_LANG, { numero_orden: orderNumber });
+
+  try {
+    await redis.del(avisoReplyKey(phone));
+    await redis.setex(avisoKey(phone), AVISO_TTL_S, kind);
+  } catch (e) {
+    console.error('[WA] no se pudo marcar el aviso de mostrador:', e);
+  }
+
+  try {
+    const digits = normalizeWhatsAppPhone(phone);
+    const convo = await prisma.whatsAppConversation.upsert({
+      where: { phone: `+${digits}` },
+      update: {},
+      create: { phone: `+${digits}`, waId: digits, state: 'AI_ORDERING' },
+    });
+    await logMessage(convo.id, {
+      direction: 'OUT',
+      type: 'template',
+      body: `[Aviso automático: ${template}] Pedido #${orderNumber}`,
+    });
+  } catch (e) {
+    console.error('[WA] no se pudo registrar el aviso en el inbox:', e);
+  }
+}
+
+/**
+ * ¿Este mensaje entrante es la respuesta a un aviso de mostrador? Si lo es, se
+ * encarga él (contesta una sola vez con el texto fijo) y devuelve true para que
+ * el bot NO lo procese. Ante un error de Redis devuelve false: sigue el bot.
+ */
+async function handleAvisoReply(conversationId: string, phone: string): Promise<boolean> {
+  let kind: string | null;
+  let primera: boolean;
+  try {
+    kind = await redis.get(avisoKey(phone));
+    if (kind !== 'PICKUP' && kind !== 'DELIVERY') return false;
+    // NX: si el cliente manda dos mensajes seguidos, se contesta uno solo.
+    primera = (await redis.set(avisoReplyKey(phone), '1', 'EX', AVISO_TTL_S, 'NX')) !== null;
+  } catch {
+    return false;
+  }
+  if (!primera) return true;
+
+  const body = AVISO_REPLY[kind];
+  try {
+    await sendText(phone, body);
+    await logMessage(conversationId, { direction: 'OUT', body });
+  } catch (e) {
+    console.error('[WA] no se pudo contestar la respuesta al aviso:', e);
+  }
+  return true;
+}
+
+/**
+ * Aviso de "pedido listo" a un teléfono cargado en mostrador para RETIRAR. A
+ * diferencia de `sendOrderStatusUpdateWA` (que le contesta a una conversación ya
+ * abierta), este número nunca le escribió al bot, así que el primer mensaje
+ * tiene que ser una plantilla aprobada (`sendTemplate`): un texto libre WhatsApp
+ * lo rechaza. Sale UNA sola vez por pedido, al pasar a LISTO.
  */
 export async function sendOrderReadyTemplateWA(phone: string, orderNumber: string): Promise<void> {
   if (!ORDER_READY_TEMPLATE) return; // sin plantilla configurada (ver WHATSAPP_TEMPLATE_ORDER_READY), no se manda nada
-  // La plantilla aprobada usa la variable con nombre {{numero_orden}}.
-  await sendTemplate(phone, ORDER_READY_TEMPLATE, ORDER_READY_TEMPLATE_LANG, { numero_orden: orderNumber });
+  await sendMostradorAviso(phone, ORDER_READY_TEMPLATE, 'PICKUP', orderNumber);
+}
+
+/** Igual que el de listo, pero para delivery propio: sale al pasar a EN_REPARTO. */
+export async function sendOrderOnTheWayTemplateWA(phone: string, orderNumber: string): Promise<void> {
+  if (!ORDER_ON_THE_WAY_TEMPLATE) return; // ver WHATSAPP_TEMPLATE_ORDER_ON_THE_WAY
+  await sendMostradorAviso(phone, ORDER_ON_THE_WAY_TEMPLATE, 'DELIVERY', orderNumber);
 }
 
 /**

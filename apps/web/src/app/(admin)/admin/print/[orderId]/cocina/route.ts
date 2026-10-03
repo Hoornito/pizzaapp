@@ -4,7 +4,7 @@ import { isStaff } from '@/lib/roles';
 import { prisma } from '@/lib/prisma';
 import { isPizzaItemNotes } from '@/lib/pizza';
 import QRCode from 'qrcode';
-import { parseOrderCustomer, groupTicketItems, buildWazeUrl, wholeFainaTitle } from '@/lib/utils';
+import { parseOrderCustomer, groupTicketItems, buildWazeUrl, wholeFainaTitle, orderContactPhone } from '@/lib/utils';
 import { ORDER_PAYMENT_METHOD_LABELS } from '@/lib/constants';
 
 const esc = (s: unknown) =>
@@ -139,7 +139,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
     <div><b>Tipo:</b> ${order.deliveryType === 'DELIVERY' ? 'DELIVERY' : order.deliveryType === 'PEDIDOS_YA' ? 'PEDIDOS YA' : 'RETIRO EN LOCAL'}</div>
     ${order.courierName ? `<div><b>Repartidor:</b> ${esc(order.courierName)}</div>` : ''}
     ${customerName ? `<div><b>Cliente:</b> ${esc(customerName)}</div>` : ''}
-    ${order.phone || order.user?.phone ? `<div><b>Tel:</b> ${esc(order.phone || order.user?.phone)}</div>` : ''}
+    ${orderContactPhone(order) ? `<div><b>Tel:</b> ${esc(orderContactPhone(order))}</div>` : ''}
     ${order.deliveryType === 'DELIVERY' && order.address ? `<div><b>Dirección:</b> ${esc(order.address.street)} ${esc(order.address.number)}${order.address.apartment ? ' ' + esc(order.address.apartment) : ''}, ${esc(order.address.city)}</div>` : ''}
     ${order.deliveryType === 'DELIVERY' && order.address?.reference ? `<div><b>Ref:</b> ${esc(order.address.reference)}</div>` : ''}
   </div>

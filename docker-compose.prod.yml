@@ -29,6 +29,8 @@ services:
       WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
       # Plantilla de "pedido listo" para mostrador (primer mensaje a un número que nunca escribió).
       WHATSAPP_TEMPLATE_ORDER_READY: ${WHATSAPP_TEMPLATE_ORDER_READY:-}
+      # Plantilla de "pedido en camino" para delivery de mostrador.
+      WHATSAPP_TEMPLATE_ORDER_ON_THE_WAY: ${WHATSAPP_TEMPLATE_ORDER_ON_THE_WAY:-}
       WHATSAPP_TEMPLATE_LANG: ${WHATSAPP_TEMPLATE_LANG:-es_AR}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}

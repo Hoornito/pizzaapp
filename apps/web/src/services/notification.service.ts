@@ -1,10 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import { redis } from '@/lib/redis';
 import { sendOrderConfirmationEmail, sendOrderStatusEmail } from './email.service';
-import { sendOrderReadyTemplateWA, sendOrderStatusUpdateWA } from './whatsapp.service';
+import { sendOrderOnTheWayTemplateWA, sendOrderReadyTemplateWA, sendOrderStatusUpdateWA } from './whatsapp.service';
 import { eventBus } from '@/lib/event-bus';
 import { sendOrderStatusPush, sendPaymentReceivedPush } from './push.service';
-import { isWebOrder, isWhatsAppOrder } from '@/lib/utils';
+import { isWebOrder, isWhatsAppOrder, orderContactPhone } from '@/lib/utils';
 import type { OrderWithRelations } from '@/types/order.types';
 import type { OrderStatus } from '@prisma/client';
 
@@ -103,8 +103,8 @@ function setupEventListeners() {
       // Best-effort: si no hay dispositivos registrados o falta configuración,
       // no hace nada.
       tasks.push(sendOrderStatusPush(order as never).catch((e) => logNotifyError('push', order.orderNumber, e)));
-    } else if (order.phone || order.user?.phone) {
-      const phone = order.phone || order.user!.phone!;
+    } else if (orderContactPhone(order)) {
+      const phone = orderContactPhone(order)!;
       if (isWhatsAppOrder(order)) {
         // Ya viene charlando con el bot: la conversación está abierta, un
         // texto libre le llega sin problema. WhatsApp sólo para los estados
@@ -114,12 +114,18 @@ function setupEventListeners() {
             deliveryType: order.deliveryType,
           }).catch((e) => logNotifyError('whatsapp-status', order.orderNumber, e))
         );
-      } else if (order.status === 'LISTO') {
+      } else if (order.status === 'LISTO' && order.deliveryType === 'PICKUP') {
         // Mostrador: este teléfono nunca le escribió al bot, así que el único
-        // mensaje posible es la plantilla aprobada (ver sendOrderReadyTemplateWA).
-        // Un solo aviso por pedido, cuando está listo.
+        // mensaje posible es una plantilla aprobada. Un solo aviso por pedido:
+        // si lo retira, cuando está listo...
         tasks.push(
           sendOrderReadyTemplateWA(phone, order.orderNumber).catch((e) => logNotifyError('whatsapp-template', order.orderNumber, e))
+        );
+      } else if (order.status === 'EN_REPARTO' && order.deliveryType === 'DELIVERY') {
+        // ...y si va con nuestro reparto, cuando sale. Un "está listo" ahí lo
+        // haría venir al local. Pedidos Ya no recibe nada: avisa la plataforma.
+        tasks.push(
+          sendOrderOnTheWayTemplateWA(phone, order.orderNumber).catch((e) => logNotifyError('whatsapp-template', order.orderNumber, e))
         );
       }
     }
